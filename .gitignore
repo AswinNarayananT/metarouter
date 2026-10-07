@@ -1,0 +1,21 @@
+# --- Editor / IDE Settings ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Backend / Python ---
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.env
+
+# --- Frontend / Node ---
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.DS_Store
+
+# --- Docker & Database Storage ---
+postgres_data/
+.env
