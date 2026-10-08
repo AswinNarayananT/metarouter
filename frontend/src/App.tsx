@@ -2,6 +2,36 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Home } from '@/pages/Home';
 import { Register } from '@/pages/Register';
 import { Login } from '@/pages/Login';
+import { SuperAdminLogin } from '@/pages/SuperAdminLogin';
+import { ProtectedAdminRoute } from '@/components/superadmin/ProtectedAdminRoute';
+import { SuperAdminLayout } from '@/components/superadmin/SuperAdminLayout';
+import { SuperAdminDashboard } from '@/pages/admin/Dashboard';
+import { OrganizationListPage } from '@/pages/admin/Organizations';
+import { CreateOrganizationPage } from '@/pages/admin/CreateOrganization';
+import { OrganizationDetailPage } from '@/pages/admin/OrganizationDetail';
+
+// Import Workspace Components
+import { TenantLayout } from '@/pages/workspace/TenantLayout';
+import { WorkspaceOverview } from '@/pages/workspace/WorkspaceOverview';
+import { CustomerChats } from '@/pages/workspace/CustomerChats';
+import { Broadcast } from '@/pages/workspace/Broadcast';
+import { TeamMembers } from '@/pages/workspace/TeamMembers';
+import { WorkspaceSettings } from '@/pages/workspace/WorkspaceSettings';
+
+import { useAppSelector } from '@/store';
+
+function SuperAdminLoginGate() {
+  const token = useAppSelector((state) => state.superAdmin.token);
+  if (token) return <Navigate to="/admin/dashboard" replace />;
+  return <SuperAdminLogin />;
+}
+
+// Protected Route Guard for Workspace / Tenant Users
+function ProtectedWorkspaceRoute({ children }: { children: React.ReactNode }) {
+  const token = useAppSelector((state) => state.workspace.token) || localStorage.getItem('workspace_token');
+  if (!token) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
 
 function App() {
   return (
@@ -10,7 +40,41 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
-        {/* Placeholder for dashboard setup after registration */}
+
+        {/* Super Admin Routes */}
+        <Route path="/admin/login" element={<SuperAdminLoginGate />} />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedAdminRoute>
+              <SuperAdminLayout />
+            </ProtectedAdminRoute>
+          }
+        >
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<SuperAdminDashboard />} />
+          <Route path="organizations" element={<OrganizationListPage />} />
+          <Route path="organizations/new" element={<CreateOrganizationPage />} />
+          <Route path="organizations/:id" element={<OrganizationDetailPage />} />
+        </Route>
+
+        {/* Tenant Workspace Dashboard Routes */}
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedWorkspaceRoute>
+              <TenantLayout />
+            </ProtectedWorkspaceRoute>
+          }
+        >
+          <Route index element={<WorkspaceOverview />} />
+          <Route path="chats" element={<CustomerChats />} />
+          <Route path="broadcast" element={<Broadcast />} />
+          <Route path="members" element={<TeamMembers />} />
+          <Route path="settings" element={<WorkspaceSettings />} />
+        </Route>
+
+        {/* Setup Route placeholder */}
         <Route
           path="/dashboard/setup"
           element={
@@ -27,7 +91,7 @@ function App() {
             </div>
           }
         />
-        {/* Catch-all */}
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

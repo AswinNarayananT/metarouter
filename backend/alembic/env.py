@@ -6,6 +6,7 @@ from alembic import context
 # 1. Import your FastAPI settings and SQLAlchemy Base metadata
 from app.config import settings
 from app.database import Base
+import app.models
 
 # Import all your models here so Alembic can detect them for autogeneration
 # Example: from app.models import workspace_model, user_model
