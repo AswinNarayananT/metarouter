@@ -1,4 +1,4 @@
-from app.schemas.auth_schema import SuperAdminLoginRequest, SuperAdminResponse, TokenResponse
+from app.schemas.super_admin_schema import SuperAdminLoginRequest, SuperAdminResponse, TokenResponse
 from app.schemas.organization_schema import (
     OrganizationCreateRequest,
     OrganizationCreateResponse,

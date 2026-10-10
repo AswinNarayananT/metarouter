@@ -7,6 +7,7 @@ from app.core.init_db import init_super_admin
 from app.api.v1.admin_auth import router as admin_auth_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.invitations import router as invitations_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,6 +43,7 @@ app.add_middleware(
 app.include_router(admin_auth_router, prefix="/api/v1")
 app.include_router(organizations_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(invitations_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():

@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     META_API_VERSION: str = "v20.0"
+
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
     
     # Super Admin Bootstrap Settings
     SUPER_ADMIN_NAME: str

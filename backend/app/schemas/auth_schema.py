@@ -1,21 +1,22 @@
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr
 
-class SuperAdminLoginRequest(BaseModel):
+class TenantLoginRequest(BaseModel):
     email: EmailStr
     password: str
+    org_slug: str  # Extracted from subdomain or input context
 
-class SuperAdminResponse(BaseModel):
+class WorkspaceUserResponse(BaseModel):
     id: int
     name: str
     email: str
-    role: str = "super_admin"
-    created_at: Optional[datetime] = None
+    role: str
+    organization_name: str
 
-    model_config = ConfigDict(from_attributes=True)
-
-class TokenResponse(BaseModel):
+class TenantLoginResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"
-    user: SuperAdminResponse
+    token_type: str
+    user: WorkspaceUserResponse
+
+class TokenRefreshResponse(BaseModel):
+    access_token: str
+    token_type: str

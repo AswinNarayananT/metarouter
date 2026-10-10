@@ -2,10 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin_model import SuperAdmin
-from app.schemas.auth_schema import SuperAdminLoginRequest, TokenResponse, SuperAdminResponse
+from app.schemas.super_admin_schema import SuperAdminLoginRequest, TokenResponse, SuperAdminResponse
 from app.core.security import verify_password, create_access_token
 
-# Only keep /admin here; /api/v1 will be handled in main.py
 router = APIRouter(prefix="/admin", tags=["Super Admin Authentication"])
 
 @router.post("/login", response_model=TokenResponse)

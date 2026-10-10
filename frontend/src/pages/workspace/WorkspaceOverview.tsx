@@ -1,8 +1,10 @@
-import React from 'react';
-import { Users, MessageSquare, Send, Activity } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Users, MessageSquare, Send } from 'lucide-react';
+import { useAppSelector } from '@/store';
 
 export function WorkspaceOverview() {
-  const userProfile = JSON.parse(localStorage.getItem('workspace_user') || '{}');
+  // Pull user and access token securely from the Redux store state
+  const { user} = useAppSelector((state) => state.workspace);
 
   const stats = [
     { label: 'Active Chats', value: '12', icon: MessageSquare, change: '+4 today' },
@@ -14,9 +16,11 @@ export function WorkspaceOverview() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-on-surface">
-          Welcome back, {userProfile.name || 'Agent'}!
+          Welcome back, {user?.name || 'Agent'}!
         </h1>
-        <p className="text-sm text-on-surface-variant">Here is your workspace activity snapshot for {userProfile.organization_name}.</p>
+        <p className="text-sm text-on-surface-variant">
+          Here is your workspace activity snapshot for {user?.organization_name || 'your organization'}.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

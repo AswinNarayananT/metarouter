@@ -1,50 +1,52 @@
 import axios from 'axios';
+import { store } from '@/store'; // Import your Redux store directly
 
-// Create an Axios instance with base configuration
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Required for sending/receiving the HTTP-only cookie
 });
 
-// Request Interceptor: Attach JWT token automatically
+// Request Interceptor: Pull token dynamically from Redux memory state
 api.interceptors.request.use(
   (config) => {
-    // Check for super admin token first, fall back to general user token if needed
-    const token = localStorage.getItem('super_admin_token') || localStorage.getItem('access_token');
+    const state = store.getState();
+    const token = state.workspace.token || state.superAdmin.token;
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Handle 401 Unauthorized errors
+// Response Interceptor: 401 handling & silent token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const isRefreshRoute = originalRequest.url?.includes('/auth/refresh-token');
 
-    // If error is 401 and we haven't already retried this request
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isRefreshRoute) {
       originalRequest._retry = true;
 
-      // Clear local storage tokens
-      localStorage.removeItem('super_admin_token');
-      localStorage.removeItem('super_admin_user');
-      localStorage.removeItem('access_token');
+      try {
+        const response = await api.post('/api/v1/auth/refresh-token');
+        const { access_token } = response.data;
 
-      // Determine if we are in the admin portal or client portal and redirect accordingly
-      const currentPath = window.location.pathname;
-      if (currentPath.startsWith('/admin')) {
-        window.location.href = '/admin/login';
-      } else {
+        // Update the token in Redux memory and localStorage
+        store.dispatch({ type: 'workspace/setCredentials', payload: { access_token, user: store.getState().workspace.user } });
+        localStorage.setItem('workspace_token', access_token);
+
+        originalRequest.headers.Authorization = `Bearer ${access_token}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        store.dispatch({ type: 'workspace/logoutWorkspace' });
         window.location.href = '/login';
+        return Promise.reject(refreshError);
       }
     }
 

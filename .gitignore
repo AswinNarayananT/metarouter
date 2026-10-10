@@ -1,6 +1,7 @@
 # --- Editor / IDE Settings ---
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 

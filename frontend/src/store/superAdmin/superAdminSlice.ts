@@ -41,6 +41,8 @@ const superAdminSlice = createSlice({
         state.isLoading = false;
         state.token = action.payload.access_token;
         state.user = action.payload.user;
+        localStorage.setItem('super_admin_token', action.payload.access_token);
+        localStorage.setItem('super_admin_user', JSON.stringify(action.payload.user));
       })
       .addCase(loginSuperAdmin.rejected, (state, action) => {
         state.isLoading = false;

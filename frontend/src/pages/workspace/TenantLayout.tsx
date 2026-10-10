@@ -1,6 +1,6 @@
-    import React from 'react';
+import React from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
-import { MessageSquare, Send, Users, Settings, LogOut, LayoutDashboard } from 'lucide-react';
+import { MessageSquare, Send, Users, UserPlus, Settings, LogOut, LayoutDashboard } from 'lucide-react';
 import { useAppDispatch } from '@/store';
 import { logoutWorkspace } from '@/store/workspace/workspaceSlice';
 
@@ -21,7 +21,10 @@ export function TenantLayout() {
     { label: 'Overview', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare },
     { label: 'Broadcast', path: '/dashboard/broadcast', icon: Send },
-    ...(isAdmin ? [{ label: 'Team Members', path: '/dashboard/members', icon: Users }] : []),
+    { label: 'Team Members', path: '/dashboard/members', icon: Users },
+    ...(isAdmin ? [
+      { label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus },
+    ] : []),
     { label: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
