@@ -32,9 +32,9 @@ export const fetchCurrentUser = createAsyncThunk(
 // Async Thunk to fetch organization details
 export const fetchOrganization = createAsyncThunk(
   'workspace/fetchOrganization',
-  async (organizationId: number, { rejectWithValue }) => {
+  async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/api/v1/organizations/${organizationId}`);
+      const response = await api.get('/api/v1/organizations/current');
       return response.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.detail || 'Failed to fetch organization');

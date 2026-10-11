@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, Copy, KeyRound, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Check, Copy, KeyRound, ShieldCheck, AlertCircle, X } from 'lucide-react';
 import { Card, Container } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { CopyField } from '@/components/superadmin/CopyField';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { fetchOrganization } from '@/store/superAdmin/organizationThunks';
+import { fetchOrganization, updateOrganizationStatus } from '@/store/superAdmin/organizationThunks';
 
 interface LocationState {
   adminPassword?: string;
@@ -23,6 +23,11 @@ export function OrganizationDetailPage() {
   const { current, isLoading, error } = useAppSelector((state) => state.organizations);
   const [bundleCopied, setBundleCopied] = useState(false);
 
+  // Modal State for Status Change Confirmation
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string>('');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
   const navState = (location.state || {}) as LocationState;
   const storedPassword = id ? sessionStorage.getItem(passwordKey(id)) : null;
   const adminPassword = navState.adminPassword || storedPassword || '';
@@ -30,6 +35,27 @@ export function OrganizationDetailPage() {
   useEffect(() => {
     if (id) dispatch(fetchOrganization(Number(id)));
   }, [dispatch, id]);
+
+  const isActive = current?.subscription_status === 'active';
+
+  const handleToggleClick = () => {
+    const nextStatus = isActive ? 'inactive' : 'active';
+    setPendingStatus(nextStatus);
+    setIsModalOpen(true);
+  };
+
+  const confirmStatusChange = async () => {
+    if (!id || !pendingStatus) return;
+    setIsUpdatingStatus(true);
+    try {
+      await dispatch(updateOrganizationStatus({ id: Number(id), status: pendingStatus })).unwrap();
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error('Failed to update status:', err);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const credentialBundle = useMemo(() => {
     if (!current) return '';
@@ -95,9 +121,17 @@ export function OrganizationDetailPage() {
           <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">{current.name}</h1>
           <p className="mt-1 font-mono text-sm text-on-surface-variant">{current.slug}</p>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-surface-container-low text-primary border border-outline-variant/30 w-fit">
-          {current.subscription_status}
-        </span>
+        
+        <div className="flex items-center gap-3">
+          <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border border-outline-variant/30 ${
+            isActive ? 'bg-primary/10 text-primary' : 'bg-error/10 text-error'
+          }`}>
+            {current.subscription_status}
+          </span>
+          <Button variant="secondary" size="sm" onClick={handleToggleClick}>
+            {isActive ? 'Deactivate Workspace' : 'Activate Workspace'}
+          </Button>
+        </div>
       </div>
 
       {navState.justCreated && (
@@ -149,6 +183,41 @@ export function OrganizationDetailPage() {
           )}
         </Card>
       </div>
+
+      {/* Confirmation Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center text-warning">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <h3 className="text-lg font-bold text-on-surface">Confirm Status Change</h3>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              Are you sure you want to change the status of <strong>{current.name}</strong> to <span className="uppercase font-semibold text-primary">{pendingStatus}</span>? This will immediately affect tenant access.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" size="sm" onClick={() => setIsModalOpen(false)} disabled={isUpdatingStatus}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={confirmStatusChange} disabled={isUpdatingStatus}>
+                {isUpdatingStatus ? 'Updating...' : 'Confirm'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Container>
   );
 }

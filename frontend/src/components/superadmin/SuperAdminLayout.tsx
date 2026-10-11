@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Building2, LayoutDashboard, LogOut, Plus, ShieldCheck } from 'lucide-react';
+import { Building2, LayoutDashboard, LogOut, Plus, ShieldCheck, Settings } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BrandLogo } from '@/components/BrandLogo';
 import { Button } from '@/components/Button';
@@ -9,6 +9,7 @@ import { logoutSuperAdmin } from '@/store/superAdmin/superAdminSlice';
 const NAV = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/organizations', label: 'Organizations', icon: Building2, end: false },
+  { to: '/admin/settings', label: 'Settings', icon: Settings, end: true },
 ];
 
 export function SuperAdminLayout() {

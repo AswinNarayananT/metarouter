@@ -1,19 +1,19 @@
 import axios from 'axios';
-import { store } from '@/store'; // Import your Redux store directly
+import { store } from '@/store';
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Required for sending/receiving the HTTP-only cookie
+  withCredentials: true,
 });
 
-// Request Interceptor: Pull token dynamically from Redux memory state
+// Request Interceptor: Pull ONLY workspace token
 api.interceptors.request.use(
   (config) => {
     const state = store.getState();
-    const token = state.workspace.token || state.superAdmin.token;
+    const token = state.workspace.token;
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -23,7 +23,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: 401 handling & silent token refresh
+// Response Interceptor: Workspace 401 handling & token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -37,8 +37,10 @@ api.interceptors.response.use(
         const response = await api.post('/api/v1/auth/refresh-token');
         const { access_token } = response.data;
 
-        // Update the token in Redux memory and localStorage
-        store.dispatch({ type: 'workspace/setCredentials', payload: { access_token, user: store.getState().workspace.user } });
+        store.dispatch({ 
+          type: 'workspace/setCredentials', 
+          payload: { access_token, user: store.getState().workspace.user } 
+        });
         localStorage.setItem('workspace_token', access_token);
 
         originalRequest.headers.Authorization = `Bearer ${access_token}`;

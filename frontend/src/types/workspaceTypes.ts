@@ -3,6 +3,7 @@ export interface WorkspaceUser {
   name: string;
   email: string;
   role: string;
+  organization_id:number;
   organization_name: string;
 }
 

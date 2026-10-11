@@ -14,6 +14,7 @@ import { SuperAdminDashboard } from '@/pages/admin/Dashboard';
 import { OrganizationListPage } from '@/pages/admin/Organizations';
 import { CreateOrganizationPage } from '@/pages/admin/CreateOrganization';
 import { OrganizationDetailPage } from '@/pages/admin/OrganizationDetail';
+import { SuperAdminSettings } from '@/pages/admin/SuperAdminSettings';
 
 // Tenant Workspace Pages & Layout
 import { TenantLayout } from '@/pages/workspace/TenantLayout';
@@ -80,6 +81,7 @@ function App() {
           <Route path="organizations" element={<OrganizationListPage />} />
           <Route path="organizations/new" element={<CreateOrganizationPage />} />
           <Route path="organizations/:id" element={<OrganizationDetailPage />} />
+          <Route path="settings" element={<SuperAdminSettings />} />
         </Route>
 
         {/* ========================================== */}

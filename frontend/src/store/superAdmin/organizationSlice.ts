@@ -5,6 +5,7 @@ import {
   fetchDashboardStats,
   fetchOrganization,
   fetchOrganizations,
+  updateOrganizationStatus,
 } from './organizationThunks';
 
 interface OrganizationState {
@@ -83,6 +84,30 @@ const organizationSlice = createSlice({
         state.current = action.payload;
       })
       .addCase(createOrganization.rejected, (state, action) => {
+        state.isSaving = false;
+        state.error = action.payload as string;
+      })
+      // Update Organization Status Handling
+      .addCase(updateOrganizationStatus.pending, (state) => {
+        state.isSaving = true;
+        state.error = null;
+      })
+      .addCase(updateOrganizationStatus.fulfilled, (state, action) => {
+        state.isSaving = false;
+        const updatedStatus = action.payload.subscription_status;
+
+        // Update current organization detail if currently loaded
+        if (state.current && state.current.id === action.payload.id) {
+          state.current.subscription_status = updatedStatus;
+        }
+
+        // Also update the list array
+        const index = state.list.findIndex((org) => org.id === action.payload.id);
+        if (index !== -1) {
+          state.list[index].subscription_status = updatedStatus;
+        }
+      })
+      .addCase(updateOrganizationStatus.rejected, (state, action) => {
         state.isSaving = false;
         state.error = action.payload as string;
       });

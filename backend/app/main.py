@@ -4,9 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import SessionLocal
 from app.core.init_db import init_super_admin
-from app.api.v1.admin_auth import router as admin_auth_router
-from app.api.v1.organizations import router as organizations_router
+from app.api.v1.super_admin_auth import router as super_admin_auth_router
+from app.api.v1.super_admin_organizations import router as super_admin_organizations_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.organization import router as organization_router
 from app.api.v1.invitations import router as invitations_router
 
 @asynccontextmanager
@@ -40,9 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(admin_auth_router, prefix="/api/v1")
-app.include_router(organizations_router, prefix="/api/v1")
+app.include_router(super_admin_auth_router, prefix="/api/v1")
+app.include_router(super_admin_organizations_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(organization_router, prefix="/api/v1")
 app.include_router(invitations_router, prefix="/api/v1")
 
 @app.get("/")

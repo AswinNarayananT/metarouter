@@ -99,3 +99,6 @@ class DashboardStats(BaseModel):
     recent_organizations: List[OrganizationListItem]
 
     model_config = ConfigDict(from_attributes=True)
+
+class UpdateStatusRequest(BaseModel):
+    subscription_status: str  # e.g., "active", "inactive"    

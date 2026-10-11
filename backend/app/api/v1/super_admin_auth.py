@@ -5,7 +5,7 @@ from app.models.admin_model import SuperAdmin
 from app.schemas.super_admin_schema import SuperAdminLoginRequest, TokenResponse, SuperAdminResponse
 from app.core.security import verify_password, create_access_token
 
-router = APIRouter(prefix="/admin", tags=["Super Admin Authentication"])
+router = APIRouter(prefix="/superadmin", tags=["Super Admin Authentication"])
 
 @router.post("/login", response_model=TokenResponse)
 def super_admin_login(payload: SuperAdminLoginRequest, db: Session = Depends(get_db)):

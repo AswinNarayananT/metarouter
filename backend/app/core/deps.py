@@ -18,13 +18,16 @@ def get_current_super_admin(token: str = Depends(oauth2_scheme), db: Session = D
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+    print(("hi"))
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
         
     email: str = payload.get("sub")
     role: str = payload.get("role")
+    print(email)
+    print(role
+           )
     
     if email is None or role != "super_admin":
         raise credentials_exception

@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     META_API_VERSION: str = "v20.0"
 
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAILS_FROM_EMAIL: str = "opticoasis0@gmail.com"
     FRONTEND_BASE_URL: str = "http://localhost:5173"
     
     # Super Admin Bootstrap Settings

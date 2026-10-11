@@ -135,6 +135,7 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
             "name": user.name,
             "email": user.email,
             "role": user.role,
+            "organization_id":org.id if org else None,
             "organization_name": org.name if org else None
         }
     }

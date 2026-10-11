@@ -14,10 +14,11 @@ from app.schemas.organization_schema import (
     OrganizationDetail,
     OrganizationListItem,
     DashboardStats,
+    UpdateStatusRequest,
 )
 
 router = APIRouter(
-    prefix="/admin/organizations",
+    prefix="/superadmin/organizations",
     tags=["Super Admin Organizations"],
     dependencies=[Depends(get_current_super_admin)],
 )
@@ -153,3 +154,34 @@ def get_organization(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
         
     return OrganizationDetail.from_orm_custom(org)
+
+
+
+
+
+@router.patch("/{org_id}/status")
+def update_organization_status(
+    org_id: int,
+    payload: UpdateStatusRequest,
+    db: Session = Depends(get_db),
+    current_admin: SuperAdmin = Depends(get_current_super_admin)
+):
+    # Find organization by ID
+    organization = db.query(Organization).filter(Organization.id == org_id).first()
+    if not organization:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found"
+        )
+    
+    # Update status
+    organization.subscription_status = payload.subscription_status
+    db.commit()
+    db.refresh(organization)
+    
+    return {
+        "message": f"Organization status updated to {payload.subscription_status} successfully",
+        "id": organization.id,
+        "name": organization.name,
+        "subscription_status": organization.subscription_status
+    }

@@ -1,12 +1,12 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/api/axios';
+import { superAdminApi } from '@/api/superAdminApi';
 
 // Async Thunk for Super Admin Login
 export const loginSuperAdmin = createAsyncThunk(
   'superAdmin/login',
   async (credentials: { email: string; password: string }, { rejectWithValue }) => {
     try {
-      const response = await api.post('/api/v1/admin/login', credentials);
+      const response = await superAdminApi.post('/api/v1/superadmin/login', credentials);
       const data = response.data;
 
       // Persist in localStorage
