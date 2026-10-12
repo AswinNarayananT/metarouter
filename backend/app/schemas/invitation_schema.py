@@ -1,6 +1,8 @@
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import List
+from typing import List, Literal, Optional
+
+InvitationStatus = Literal["pending", "accepted", "expired"]
 
 # ------------------------------------------------------------------
 # Request Schemas
@@ -56,6 +58,24 @@ class VerifyInvitationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class InvitationListItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    status: InvitationStatus
+    expires_at: datetime
+    created_at: Optional[datetime] = None
+
+
+class PaginatedInvitationsResponse(BaseModel):
+    items: List[InvitationListItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class SingleInvitationResponse(BaseModel):

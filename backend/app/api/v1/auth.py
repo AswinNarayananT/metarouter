@@ -3,8 +3,9 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.organization_model import Organization, User
-from app.core.security import verify_password, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload
-from app.schemas.auth_schema import TenantLoginRequest, TenantLoginResponse, TokenRefreshResponse
+from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload
+from app.core.deps import get_current_tenant_user
+from app.schemas.auth_schema import TenantLoginRequest, TenantLoginResponse, TokenRefreshResponse, ChangePasswordRequest
 
 router = APIRouter(prefix="/auth", tags=["Tenant Authentication"])
 
@@ -139,3 +140,21 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
             "organization_name": org.name if org else None
         }
     }
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_tenant_user)
+):
+    # 400 (not 401) so the client doesn't treat a wrong password as an expired session
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    if verify_password(payload.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="New password must be different from the current password")
+
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+
+    return {"message": "Password updated successfully"}

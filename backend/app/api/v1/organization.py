@@ -1,7 +1,9 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.deps import get_db, get_current_tenant_user
 from app.models.organization_model import Organization, User
+from app.schemas.workspace_schema import TeamMemberResponse
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
@@ -34,3 +36,19 @@ def get_current_organization(
         "slug": organization.slug,
         "created_at": organization.created_at
     }
+
+
+@router.get("/members", response_model=List[TeamMemberResponse])
+def list_organization_members(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_tenant_user)
+):
+    """
+    List all team members in the current user's organization.
+    """
+    return (
+        db.query(User)
+        .filter(User.organization_id == current_user.organization_id)
+        .order_by(User.created_at.asc())
+        .all()
+    )

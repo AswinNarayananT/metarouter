@@ -1,8 +1,29 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, Copy, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { generateWorkspaceInvitations } from '@/store/workspace/workspaceThunks';
+import { fetchInvitations, generateWorkspaceInvitations } from '@/store/workspace/workspaceThunks';
 import { resetInviteState, clearWorkspaceError } from '@/store/workspace/workspaceSlice';
+import type { InvitationStatus } from '@/types/workspaceTypes';
+
+const INVITATIONS_PAGE_SIZE = 10;
+
+const STATUS_FILTERS: { label: string; value: InvitationStatus | undefined }[] = [
+  { label: 'All', value: undefined },
+  { label: 'Pending', value: 'pending' },
+  { label: 'Accepted', value: 'accepted' },
+  { label: 'Expired', value: 'expired' },
+];
+
+const STATUS_BADGE_STYLES: Record<InvitationStatus, string> = {
+  pending: 'bg-amber-500/10 text-amber-600',
+  accepted: 'bg-green-500/10 text-green-600',
+  expired: 'bg-error/10 text-error',
+};
+
+function formatDate(value: string | null) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
 
 interface MemberInput {
   name: string;
@@ -12,7 +33,7 @@ interface MemberInput {
 
 export function InviteMembers() {
   const dispatch = useAppDispatch();
-  const { isInviting, inviteSuccess, lastInvitations, error } = useAppSelector((state) => state.workspace);
+  const { isInviting, inviteSuccess, lastInvitations, error, user } = useAppSelector((state) => state.workspace);
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [members, setMembers] = useState<MemberInput[]>([
@@ -182,6 +203,142 @@ export function InviteMembers() {
                 className="px-4 py-2 bg-surface-container text-on-surface rounded-xl text-xs font-medium hover:bg-surface-container-high transition-colors cursor-pointer"
               >
                 Invite More Members
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {user?.role === 'admin' && <InvitationsList />}
+    </div>
+  );
+}
+
+function InvitationsList() {
+  const dispatch = useAppDispatch();
+  const { invitations, isLoadingInvitations, invitationsError, inviteSuccess } = useAppSelector(
+    (state) => state.workspace
+  );
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<InvitationStatus | undefined>(undefined);
+
+  const loadInvitations = () =>
+    dispatch(fetchInvitations({ page, page_size: INVITATIONS_PAGE_SIZE, status: statusFilter }));
+
+  useEffect(() => {
+    loadInvitations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, page, statusFilter, inviteSuccess]);
+
+  const handleFilterChange = (value: InvitationStatus | undefined) => {
+    setStatusFilter(value);
+    setPage(1);
+  };
+
+  const items = invitations?.items ?? [];
+  const totalPages = invitations?.total_pages ?? 1;
+  const total = invitations?.total ?? 0;
+  const rangeStart = total === 0 ? 0 : (page - 1) * INVITATIONS_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * INVITATIONS_PAGE_SIZE, total);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-on-surface">Invitations</h2>
+          <p className="text-sm text-on-surface-variant">Track invitations sent to your organization.</p>
+        </div>
+        <div className="flex gap-1 p-1 rounded-full bg-surface-container-low border border-outline-variant/30">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter.label}
+              type="button"
+              onClick={() => handleFilterChange(filter.value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                statusFilter === filter.value
+                  ? 'bg-primary text-on-primary'
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-xl overflow-hidden">
+        {isLoadingInvitations && !invitations ? (
+          <p className="p-6 text-sm text-on-surface-variant text-center">Loading invitations...</p>
+        ) : invitationsError ? (
+          <div className="p-6 text-center space-y-3">
+            <p className="text-sm text-error">{invitationsError}</p>
+            <button
+              type="button"
+              onClick={loadInvitations}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        ) : items.length === 0 ? (
+          <p className="p-6 text-sm text-on-surface-variant text-center">No invitations found.</p>
+        ) : (
+          <div className={`divide-y divide-outline-variant/30 ${isLoadingInvitations ? 'opacity-60' : ''}`}>
+            {items.map((invite) => (
+              <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs">
+                    {invite.name[0]?.toUpperCase()}
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-on-surface">{invite.name}</h4>
+                    <p className="text-xs text-on-surface-variant">{invite.email}</p>
+                    <p className="text-[11px] text-on-surface-variant/80">
+                      Sent {formatDate(invite.created_at)}
+                      {invite.status === 'pending' && ` · Expires ${formatDate(invite.expires_at)}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary uppercase">
+                    {invite.role}
+                  </span>
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium uppercase ${STATUS_BADGE_STYLES[invite.status]}`}
+                  >
+                    {invite.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-outline-variant/30">
+            <p className="text-xs text-on-surface-variant">
+              Showing {rangeStart}-{rangeEnd} of {total}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => p - 1)}
+                disabled={page <= 1 || isLoadingInvitations}
+                className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant/30 text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-on-surface-variant">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= totalPages || isLoadingInvitations}
+                className="px-3 py-1 rounded-lg text-xs font-medium border border-outline-variant/30 text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5"
+              >
+                Next
               </button>
             </div>
           </div>

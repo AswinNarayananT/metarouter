@@ -21,7 +21,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
-import { fetchOrganization } from '@/store/workspace/workspaceThunks';
+import { fetchOrganization, changePassword } from '@/store/workspace/workspaceThunks';
+import { resetChangePasswordState } from '@/store/workspace/workspaceSlice';
 
 type SettingsTab = 'workspace' | 'profile' | 'security';
 
@@ -140,7 +141,15 @@ function PasswordField({
 
 export function WorkspaceSettings() {
   const dispatch = useAppDispatch();
-  const { user, organization, isLoading, error } = useAppSelector((state) => state.workspace);
+  const {
+    user,
+    organization,
+    isLoading,
+    error,
+    isChangingPassword,
+    changePasswordSuccess,
+    changePasswordError,
+  } = useAppSelector((state) => state.workspace);
   const isAdmin = user?.role === 'admin';
 
   const [tab, setTab] = useState<SettingsTab | null>(null);
@@ -155,8 +164,13 @@ export function WorkspaceSettings() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
-  const [passwordUpdated, setPasswordUpdated] = useState(false);
+
+  // Clear password success/error banners when leaving the page
+  useEffect(() => {
+    return () => {
+      dispatch(resetChangePasswordState());
+    };
+  }, [dispatch]);
 
   // Fetch organization only once when admin and user info is present
   useEffect(() => {
@@ -238,18 +252,23 @@ export function WorkspaceSettings() {
   const canUpdatePassword =
     currentPassword.length > 0 && passedRules === rules.length && passwordsMatch;
 
-  const handlePasswordUpdate = () => {
-    if (!canUpdatePassword) return;
-    setIsUpdatingPassword(true);
-    setPasswordUpdated(false);
-    // TODO: Implement change password API call
-    setTimeout(() => {
-      setIsUpdatingPassword(false);
-      setPasswordUpdated(true);
+  const handlePasswordUpdate = async () => {
+    if (!canUpdatePassword || isChangingPassword) return;
+    const result = await dispatch(
+      changePassword({ current_password: currentPassword, new_password: newPassword })
+    );
+    if (changePassword.fulfilled.match(result)) {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    }, 1000);
+    }
+  };
+
+  const handlePasswordInput = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    if (changePasswordSuccess || changePasswordError) {
+      dispatch(resetChangePasswordState());
+    }
   };
 
   /* ----- Tabs ----- */
@@ -475,7 +494,7 @@ export function WorkspaceSettings() {
               title="Change password"
               description="Use a strong password you don't use anywhere else."
             >
-              {passwordUpdated && (
+              {changePasswordSuccess && (
                 <div
                   role="status"
                   className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-sm text-on-surface"
@@ -485,13 +504,20 @@ export function WorkspaceSettings() {
                 </div>
               )}
 
+              {changePasswordError && (
+                <div
+                  role="alert"
+                  className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error-container/20 border border-error/30 text-sm text-error"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{changePasswordError}</span>
+                </div>
+              )}
+
               <Field label="Current password">
                 <PasswordField
                   value={currentPassword}
-                  onChange={(v) => {
-                    setCurrentPassword(v);
-                    setPasswordUpdated(false);
-                  }}
+                  onChange={handlePasswordInput(setCurrentPassword)}
                   autoComplete="current-password"
                 />
               </Field>
@@ -500,10 +526,7 @@ export function WorkspaceSettings() {
                 <div className="space-y-3">
                   <PasswordField
                     value={newPassword}
-                    onChange={(v) => {
-                      setNewPassword(v);
-                      setPasswordUpdated(false);
-                    }}
+                    onChange={handlePasswordInput(setNewPassword)}
                     autoComplete="new-password"
                   />
 
@@ -549,10 +572,7 @@ export function WorkspaceSettings() {
               <Field label="Confirm new password">
                 <PasswordField
                   value={confirmPassword}
-                  onChange={(v) => {
-                    setConfirmPassword(v);
-                    setPasswordUpdated(false);
-                  }}
+                  onChange={handlePasswordInput(setConfirmPassword)}
                   autoComplete="new-password"
                 />
                 {confirmPassword.length > 0 && !passwordsMatch && (
@@ -567,11 +587,11 @@ export function WorkspaceSettings() {
                 </p>
                 <button
                   onClick={handlePasswordUpdate}
-                  disabled={!canUpdatePassword || isUpdatingPassword}
+                  disabled={!canUpdatePassword || isChangingPassword}
                   className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary text-sm font-medium rounded-xl hover:bg-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
                 >
                   <KeyRound className="w-4 h-4" />
-                  <span>{isUpdatingPassword ? 'Updating...' : 'Update password'}</span>
+                  <span>{isChangingPassword ? 'Updating...' : 'Update password'}</span>
                 </button>
               </div>
             </SectionCard>

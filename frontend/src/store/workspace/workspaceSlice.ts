@@ -5,6 +5,9 @@ import {
   loginWorkspaceUser, 
   fetchCurrentUser,
   fetchOrganization,
+  fetchTeamMembers,
+  fetchInvitations,
+  changePassword,
   generateWorkspaceInvitations, 
   verifyInvitationToken, 
   acceptWorkspaceInvitation 
@@ -24,6 +27,15 @@ const initialState: WorkspaceState = {
   verifiedInvite: null,
   isAcceptingInvite: false,
   acceptSuccess: false,
+  teamMembers: [],
+  isLoadingTeamMembers: false,
+  teamMembersError: null,
+  invitations: null,
+  isLoadingInvitations: false,
+  invitationsError: null,
+  isChangingPassword: false,
+  changePasswordSuccess: false,
+  changePasswordError: null,
 };
 
 export const workspaceSlice = createSlice({
@@ -46,7 +58,20 @@ export const workspaceSlice = createSlice({
       state.verifiedInvite = null;
       state.isAcceptingInvite = false;
       state.acceptSuccess = false;
+      state.teamMembers = [];
+      state.isLoadingTeamMembers = false;
+      state.teamMembersError = null;
+      state.invitations = null;
+      state.isLoadingInvitations = false;
+      state.invitationsError = null;
+      state.isChangingPassword = false;
+      state.changePasswordSuccess = false;
+      state.changePasswordError = null;
       localStorage.removeItem('workspace_token');
+    },
+    resetChangePasswordState: (state) => {
+      state.changePasswordSuccess = false;
+      state.changePasswordError = null;
     },
     clearWorkspaceError: (state) => {
       state.error = null;
@@ -104,6 +129,46 @@ export const workspaceSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
+      // Fetch Team Members
+      .addCase(fetchTeamMembers.pending, (state) => {
+        state.isLoadingTeamMembers = true;
+        state.teamMembersError = null;
+      })
+      .addCase(fetchTeamMembers.fulfilled, (state, action) => {
+        state.isLoadingTeamMembers = false;
+        state.teamMembers = action.payload;
+      })
+      .addCase(fetchTeamMembers.rejected, (state, action) => {
+        state.isLoadingTeamMembers = false;
+        state.teamMembersError = action.payload as string;
+      })
+      // Fetch Sent Invitations
+      .addCase(fetchInvitations.pending, (state) => {
+        state.isLoadingInvitations = true;
+        state.invitationsError = null;
+      })
+      .addCase(fetchInvitations.fulfilled, (state, action) => {
+        state.isLoadingInvitations = false;
+        state.invitations = action.payload;
+      })
+      .addCase(fetchInvitations.rejected, (state, action) => {
+        state.isLoadingInvitations = false;
+        state.invitationsError = action.payload as string;
+      })
+      // Change Password
+      .addCase(changePassword.pending, (state) => {
+        state.isChangingPassword = true;
+        state.changePasswordSuccess = false;
+        state.changePasswordError = null;
+      })
+      .addCase(changePassword.fulfilled, (state) => {
+        state.isChangingPassword = false;
+        state.changePasswordSuccess = true;
+      })
+      .addCase(changePassword.rejected, (state, action) => {
+        state.isChangingPassword = false;
+        state.changePasswordError = action.payload as string;
+      })
       // Bulk Invitations Generation
       .addCase(generateWorkspaceInvitations.pending, (state) => {
         state.isInviting = true;
@@ -152,5 +217,11 @@ export const workspaceSlice = createSlice({
   },
 });
 
-export const { setCredentials, logoutWorkspace, clearWorkspaceError, resetInviteState } = workspaceSlice.actions;
+export const {
+  setCredentials,
+  logoutWorkspace,
+  clearWorkspaceError,
+  resetInviteState,
+  resetChangePasswordState,
+} = workspaceSlice.actions;
 export default workspaceSlice.reducer;

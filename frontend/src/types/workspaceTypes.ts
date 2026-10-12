@@ -7,6 +7,40 @@ export interface WorkspaceUser {
   organization_name: string;
 }
 
+export interface TeamMember {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'expired';
+
+export interface InvitationListItem {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  status: InvitationStatus;
+  expires_at: string;
+  created_at: string | null;
+}
+
+export interface PaginatedInvitations {
+  items: InvitationListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface FetchInvitationsParams {
+  page?: number;
+  page_size?: number;
+  status?: InvitationStatus;
+}
+
 export interface InvitePayloadItem {
   name: string;
   email: string;
@@ -48,6 +82,23 @@ export interface WorkspaceState {
   verifiedInvite: VerifyInvitationResponse | null;
   isAcceptingInvite: boolean;
   acceptSuccess: boolean;
+  // Team Members
+  teamMembers: TeamMember[];
+  isLoadingTeamMembers: boolean;
+  teamMembersError: string | null;
+  // Sent Invitations (admin only)
+  invitations: PaginatedInvitations | null;
+  isLoadingInvitations: boolean;
+  invitationsError: string | null;
+  // Change Password
+  isChangingPassword: boolean;
+  changePasswordSuccess: boolean;
+  changePasswordError: string | null;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
 }
 
 export interface LoginCredentials {

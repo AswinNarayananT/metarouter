@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+import math
 import secrets
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
 from app.models.organization_model import Organization, User
@@ -11,13 +12,74 @@ from app.schemas.invitation_schema import (
     BulkInviteRequest,
     AcceptInvitationRequest,
     VerifyInvitationResponse,
-    BulkInvitationResponse
+    BulkInvitationResponse,
+    InvitationStatus,
+    PaginatedInvitationsResponse
 )
 from app.core.security import  get_password_hash
 from app.core.deps import get_current_tenant_user
 from app.config import settings
+from app.workers.email_tasks import send_invitation_email_task
 
 router = APIRouter(prefix="/invitations", tags=["Workspace Invitations"])
+
+
+def _invitation_status(invitation: Invitation, now: datetime) -> str:
+    if invitation.is_used:
+        return "accepted"
+    if invitation.expires_at < now:
+        return "expired"
+    return "pending"
+
+
+# List invitations sent by the organization (admin only, paginated)
+@router.get("", response_model=PaginatedInvitationsResponse)
+def list_invitations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    status_filter: Optional[InvitationStatus] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_tenant_user)
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only workspace administrators can view invitations")
+
+    now = datetime.now(timezone.utc)
+    query = db.query(Invitation).filter(Invitation.organization_id == current_user.organization_id)
+
+    if status_filter == "accepted":
+        query = query.filter(Invitation.is_used == True)
+    elif status_filter == "expired":
+        query = query.filter(Invitation.is_used == False, Invitation.expires_at < now)
+    elif status_filter == "pending":
+        query = query.filter(Invitation.is_used == False, Invitation.expires_at >= now)
+
+    total = query.count()
+    invitations = (
+        query.order_by(Invitation.created_at.desc(), Invitation.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            {
+                "id": inv.id,
+                "name": inv.name,
+                "email": inv.email,
+                "role": inv.role,
+                "status": _invitation_status(inv, now),
+                "expires_at": inv.expires_at,
+                "created_at": inv.created_at,
+            }
+            for inv in invitations
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, math.ceil(total / page_size)),
+    }
 
 @router.post("/generate", response_model=BulkInvitationResponse)
 def generate_invitations(
@@ -38,7 +100,7 @@ def generate_invitations(
             User.organization_id == current_user.organization_id
         ).first()
         if existing_user:
-            continue  # Skip or handle duplicates
+            continue
 
         token = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(days=3)
@@ -55,6 +117,15 @@ def generate_invitations(
         db.commit()
 
         invite_link = f"{settings.FRONTEND_BASE_URL}/register?token={token}"
+        
+        # Dispatch email task asynchronously via Celery
+        send_invitation_email_task.delay(
+            to_email=item.email,
+            name=item.name,
+            org_name=org.name if org else "Workspace",
+            invite_link=invite_link
+        )
+
         created_invitations.append({
             "name": item.name,
             "email": item.email,
@@ -63,10 +134,9 @@ def generate_invitations(
         })
 
     return {
-        "message": "Invitations generated successfully",
+        "message": "Invitations generated and email tasks queued successfully",
         "invitations": created_invitations
     }
-
 # (Keep your verify and accept endpoints as they are)
 
 

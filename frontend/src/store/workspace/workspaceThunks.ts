@@ -1,7 +1,8 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api } from '@/api/axios';
 import type { LoginCredentials, VerifyInvitationResponse, 
-  AcceptInvitationPayload} from '@/types/workspaceTypes';
+  AcceptInvitationPayload, TeamMember, PaginatedInvitations,
+  FetchInvitationsParams, ChangePasswordPayload } from '@/types/workspaceTypes';
 
 // Async Thunk for Tenant / Workspace Login
 export const loginWorkspaceUser = createAsyncThunk(
@@ -42,7 +43,49 @@ export const fetchOrganization = createAsyncThunk(
   }
 );
 
+// Async Thunk to fetch team members of the current organization
+export const fetchTeamMembers = createAsyncThunk(
+  'workspace/fetchTeamMembers',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get<TeamMember[]>('/api/v1/organizations/members');
+      return response.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.detail || 'Failed to fetch team members');
+    }
+  }
+);
 
+// Async Thunk to fetch invitations sent by the organization (admin only, paginated)
+export const fetchInvitations = createAsyncThunk(
+  'workspace/fetchInvitations',
+  async (params: FetchInvitationsParams = {}, { rejectWithValue }) => {
+    try {
+      const response = await api.get<PaginatedInvitations>('/api/v1/invitations', { params });
+      return response.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.detail || 'Failed to fetch invitations');
+    }
+  }
+);
+
+// Async Thunk to change the current user's password
+export const changePassword = createAsyncThunk(
+  'workspace/changePassword',
+  async (payload: ChangePasswordPayload, { rejectWithValue }) => {
+    try {
+      const response = await api.post('/api/v1/auth/change-password', payload);
+      return response.data; // Returns { message: "Password updated successfully" }
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      // FastAPI validation errors (422) return detail as an array
+      if (Array.isArray(detail)) {
+        return rejectWithValue(detail[0]?.msg?.replace(/^Value error, /, '') || 'Invalid password');
+      }
+      return rejectWithValue(detail || 'Failed to update password');
+    }
+  }
+);
 
 export const generateWorkspaceInvitations = createAsyncThunk(
   'workspace/generateInvitations',
