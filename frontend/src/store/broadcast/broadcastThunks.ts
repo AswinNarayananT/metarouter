@@ -80,6 +80,18 @@ export const createBroadcast = createAsyncThunk(
   }
 );
 
+export const resumeBroadcast = createAsyncThunk(
+  'broadcast/resume',
+  async (id: number, { rejectWithValue }) => {
+    try {
+      const response = await api.post<{ id: number; status: string; message: string }>(`/api/v1/broadcasts/${id}/resume`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to resume the broadcast'));
+    }
+  }
+);
+
 export const fetchBroadcasts = createAsyncThunk(
   'broadcast/fetchList',
   async (page: number = 1, { rejectWithValue }) => {

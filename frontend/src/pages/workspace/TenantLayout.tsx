@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { logoutWorkspace } from '@/store/workspace/workspaceSlice';
+import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
+import { DisconnectedNumberBanner } from '@/components/channels/DisconnectedNumberBanner';
 
 export function TenantLayout() {
   const dispatch = useAppDispatch();
@@ -27,6 +29,12 @@ export function TenantLayout() {
   // User comes from the Redux store (organization_name lives on the user)
   const user = useAppSelector((state) => state.workspace.user);
   const isAdmin = user?.role === 'admin';
+  const numbers = useAppSelector((state) => state.broadcast.numbers);
+
+  // Load the workspace's numbers once so a disconnected one shows a banner on every page
+  useEffect(() => {
+    dispatch(fetchWhatsAppNumbers());
+  }, [dispatch]);
 
   // Desktop: collapse to icon rail. Mobile: slide-over drawer.
   const [collapsed, setCollapsed] = useState(false);
@@ -218,6 +226,7 @@ export function TenantLayout() {
 
         {/* Main Dynamic Workspace Area */}
         <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-surface">
+          <DisconnectedNumberBanner numbers={numbers} isAdmin={isAdmin} />
           <Outlet />
         </main>
       </div>

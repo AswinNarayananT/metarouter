@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from app.core.encryption import EncryptedText
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -15,6 +15,10 @@ class WhatsAppNumber(Base):
     access_token = Column(EncryptedText, nullable=False)                     # Permanent token from Embedded Signup, encrypted at rest
     quality_rating = Column(String, default="GREEN")                         # GREEN, YELLOW, RED
     messaging_tier = Column(String, default="TIER_1K")                       # TIER_1K, TIER_10K, etc.
+    status = Column(String, nullable=False, default="connected", server_default="connected")  # connected, disconnected (token stopped working)
+    disconnected_at = Column(DateTime(timezone=True), nullable=True)
+    disconnect_reason = Column(Text, nullable=True)                          # Meta's error message
+    disconnect_subcode = Column(Integer, nullable=True)                      # Meta's error_subcode (458 app removed, 460 password changed ...)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     organization = relationship("Organization", back_populates="whatsapp_numbers")

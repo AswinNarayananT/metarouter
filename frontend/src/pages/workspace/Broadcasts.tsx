@@ -19,7 +19,9 @@ export function Broadcasts() {
   }, [dispatch, page]);
 
   // Keep progress live while any broadcast on this page is still going out
-  const inProgress = !!list?.items.some((b) => b.status === 'queued' || b.status === 'sending');
+  const inProgress = !!list?.items.some(
+    (b) => b.status === 'queued' || b.status === 'sending' || (b.status === 'paused' && b.pause_reason === 'tier_limit')
+  );
   useEffect(() => {
     if (!inProgress) return;
     const timer = window.setInterval(() => dispatch(fetchBroadcasts(page)), POLL_INTERVAL_MS);

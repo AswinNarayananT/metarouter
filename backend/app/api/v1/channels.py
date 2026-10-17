@@ -4,6 +4,7 @@ from app.database import get_db
 from app.core.deps import get_current_tenant_user
 from app.models.organization_model import User
 from app.models.whatsapp_model import WhatsAppNumber
+from app.services.channel_service import disconnect_explanation
 
 router = APIRouter(prefix="/channels", tags=["Channels"])
 
@@ -22,6 +23,9 @@ def list_whatsapp_numbers(db: Session = Depends(get_db), current_user: User = De
                 "display_phone_number": number.display_phone_number,
                 "quality_rating": number.quality_rating,
                 "messaging_tier": number.messaging_tier,
+                "status": number.status,
+                "disconnected_at": number.disconnected_at,
+                "disconnect_message": disconnect_explanation(number.disconnect_subcode) if number.status == "disconnected" else None,
                 "created_at": number.created_at
             }
             for number in numbers

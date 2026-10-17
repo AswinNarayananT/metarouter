@@ -1,19 +1,20 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
-import shutil
+import hashlib
 import os
-import tempfile
+import uuid
+from datetime import datetime, timezone
 from app.database import get_db
+from app.config import settings
 from app.core.deps import get_current_tenant_user
 from app.models.organization_model import User
-from app.models.ai_chat import OrganizationAISettings
-from app.services.vector_service import process_and_store_pdf
+from app.models.ai_chat import OrganizationAISettings, KnowledgeDocument
+from app.workers.tasks.knowledge_tasks import process_knowledge_document_task
 
 router = APIRouter(prefix="/ai-settings", tags=["AI Settings & Knowledge"])
 
 VALID_HANDOVER_ROLES = {"admin", "manager", "service"}
-MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 DEFAULT_BOT_NAME = "Support Assistant"
 DEFAULT_HANDOVER_ROLES = "admin,manager"
 
@@ -48,7 +49,6 @@ async def save_ai_settings(
     bot_name: str = Form(...),
     system_instructions: str = Form(""),
     allowed_roles_for_handover: str = Form(...),
-    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_tenant_user)
 ):
@@ -69,12 +69,6 @@ async def save_ai_settings(
     if invalid_roles:
         raise HTTPException(status_code=422, detail=f"Invalid roles: {', '.join(sorted(invalid_roles))}")
 
-    if file and file.filename:
-        if not file.filename.lower().endswith(".pdf") or file.content_type not in ("application/pdf", "application/octet-stream"):
-            raise HTTPException(status_code=422, detail="Knowledge base file must be a PDF")
-        if file.size is not None and file.size > MAX_PDF_SIZE_BYTES:
-            raise HTTPException(status_code=422, detail="PDF must be 10 MB or smaller")
-
     # 2. Update or create organization AI settings
     settings_obj = db.query(OrganizationAISettings).filter_by(organization_id=organization_id).first()
     if not settings_obj:
@@ -87,27 +81,132 @@ async def save_ai_settings(
     db.commit()
     db.refresh(settings_obj)
 
-    # 3. Process uploaded PDF if provided (temp file avoids name collisions / path tricks in the filename)
-    if file and file.filename:
-        fd, temp_path = tempfile.mkstemp(suffix=".pdf")
-        try:
-            with os.fdopen(fd, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            process_and_store_pdf(db, organization_id, temp_path, os.path.basename(file.filename))
-        except Exception as e:
-            # Settings above are already committed; drop any partially added chunks
-            db.rollback()
-            print(f"Knowledge base processing error: {e}")
-            raise HTTPException(
-                status_code=502,
-                detail="Settings were saved, but the PDF could not be processed. Please try uploading it again.",
-            )
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
     return {
         "status": "success",
-        "message": "AI settings and knowledge base updated successfully.",
+        "message": "AI settings updated successfully.",
         "settings": _serialize(settings_obj),
+    }
+
+
+@router.get("/knowledge")
+def list_knowledge_documents(db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    _require_admin(current_user)
+
+    documents = db.query(KnowledgeDocument).filter(KnowledgeDocument.organization_id == current_user.organization_id).order_by(KnowledgeDocument.created_at.desc(), KnowledgeDocument.id.desc()).all()
+
+    return {"documents": [_serialize_document(d) for d in documents], "max_documents": settings.KNOWLEDGE_MAX_DOCUMENTS}
+
+
+@router.post("/knowledge", status_code=202)
+def upload_knowledge_document(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    _require_admin(current_user)
+    organization_id = current_user.organization_id
+
+    # 1. Must be a PDF within the size limit (read one byte more to detect bigger files)
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=422, detail="Knowledge base file must be a PDF")
+
+    content = file.file.read(settings.KNOWLEDGE_MAX_PDF_BYTES + 1)
+    if len(content) > settings.KNOWLEDGE_MAX_PDF_BYTES:
+        raise HTTPException(status_code=422, detail=f"PDF must be {settings.KNOWLEDGE_MAX_PDF_BYTES // (1024 * 1024)} MB or smaller")
+    if not content.startswith(b"%PDF"):
+        raise HTTPException(status_code=422, detail="This file is not a valid PDF")
+
+    # 2. Same file already uploaded (failed uploads can be uploaded again)
+    sha256 = hashlib.sha256(content).hexdigest()
+    duplicate = db.query(KnowledgeDocument).filter(KnowledgeDocument.organization_id == organization_id, KnowledgeDocument.sha256 == sha256, KnowledgeDocument.status != "failed").first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"This PDF is already in the knowledge base as \"{duplicate.file_name}\"")
+
+    count = db.query(KnowledgeDocument.id).filter(KnowledgeDocument.organization_id == organization_id).count()
+    if count >= settings.KNOWLEDGE_MAX_DOCUMENTS:
+        raise HTTPException(status_code=400, detail=f"The knowledge base can hold {settings.KNOWLEDGE_MAX_DOCUMENTS} documents. Delete one to upload another.")
+
+    # 3. Save as org_<id>/<random name>.pdf (never trust the uploaded file name); temp file first so a crash leaves no half file
+    relative_path = os.path.join(f"org_{organization_id}", f"{uuid.uuid4().hex}.pdf")
+    full_path = os.path.join(settings.KNOWLEDGE_STORAGE_PATH, relative_path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    with open(full_path + ".part", "wb") as f:
+        f.write(content)
+    os.replace(full_path + ".part", full_path)
+
+    # 4. Save the document and process it in the background
+    document = KnowledgeDocument(
+        organization_id=organization_id,
+        file_name=os.path.basename(file.filename)[:255],
+        storage_path=relative_path,
+        file_size=len(content),
+        sha256=sha256,
+        status="processing",
+        processing_started_at=datetime.now(timezone.utc),
+        uploaded_by=current_user.id
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+
+    process_knowledge_document_task.delay(document.id)
+
+    return {"message": "PDF uploaded. The assistant can use it once processing finishes.", "document": _serialize_document(document)}
+
+
+@router.post("/knowledge/{document_id}/retry")
+def retry_knowledge_document(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    _require_admin(current_user)
+
+    document = _get_document(db, current_user.organization_id, document_id)
+    if document.status != "failed":
+        raise HTTPException(status_code=400, detail="Only a failed document can be processed again")
+    if not document.storage_path:
+        raise HTTPException(status_code=400, detail="The PDF file is no longer stored. Upload it again.")
+
+    document.status = "processing"
+    document.error = None
+    document.processing_started_at = datetime.now(timezone.utc)
+    db.commit()
+
+    process_knowledge_document_task.delay(document.id)
+
+    return {"message": "Processing the PDF again", "document": _serialize_document(document)}
+
+
+@router.delete("/knowledge/{document_id}")
+def delete_knowledge_document(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    _require_admin(current_user)
+
+    document = _get_document(db, current_user.organization_id, document_id)
+    storage_path = document.storage_path
+
+    # 1. Delete the document; its chunks go with it, so the assistant stops using it right away
+    db.delete(document)
+    db.commit()
+
+    # 2. Remove the stored file
+    if storage_path:
+        full_path = os.path.join(settings.KNOWLEDGE_STORAGE_PATH, storage_path)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+
+    return {"message": "Document removed from the knowledge base"}
+
+
+def _get_document(db: Session, organization_id: int, document_id: int) -> KnowledgeDocument:
+    document = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == document_id, KnowledgeDocument.organization_id == organization_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
+
+
+def _serialize_document(document: KnowledgeDocument) -> dict:
+    return {
+        "id": document.id,
+        "file_name": document.file_name,
+        "file_size": document.file_size,
+        "page_count": document.page_count,
+        "status": document.status,
+        "error": document.error,
+        "chunk_count": document.chunk_count,
+        "can_retry": document.status == "failed" and bool(document.storage_path),
+        "created_at": document.created_at,
+        "processed_at": document.processed_at
     }

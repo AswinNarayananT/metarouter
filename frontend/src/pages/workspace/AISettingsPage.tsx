@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { AlertCircle, Bot, CheckCircle2, FileText, Save, Upload, X } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, Save } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchAISettings, saveAISettings } from '@/store/workspace/workspaceThunks';
 import { resetAISettingsSaveState } from '@/store/workspace/workspaceSlice';
 import type { HandoverRole } from '@/types/workspaceTypes';
+import { KnowledgeBaseCard } from '@/components/knowledge/KnowledgeBaseCard';
 
 const MAX_INSTRUCTIONS_LENGTH = 4000;
-const MAX_PDF_SIZE_MB = 10;
-const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 const HANDOVER_ROLES: { value: HandoverRole; label: string; description: string }[] = [
   { value: 'admin', label: 'Administrator', description: 'Workspace admins' },
@@ -21,7 +20,6 @@ interface AISettingsFormValues {
   bot_name: string;
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
-  file: File | null;
 }
 
 const validationSchema = Yup.object({
@@ -37,14 +35,6 @@ const validationSchema = Yup.object({
   allowed_roles_for_handover: Yup.array()
     .of(Yup.string().oneOf(HANDOVER_ROLES.map((r) => r.value)))
     .min(1, 'Select at least one role for human handover'),
-  file: Yup.mixed<File>()
-    .nullable()
-    .test('fileType', 'Only PDF files are allowed', (file) =>
-      !file || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-    )
-    .test('fileSize', `PDF must be ${MAX_PDF_SIZE_MB} MB or smaller`, (file) =>
-      !file || file.size <= MAX_PDF_SIZE_BYTES
-    ),
 });
 
 const inputClass =
@@ -52,10 +42,6 @@ const inputClass =
 
 function fieldBorder(hasError: boolean) {
   return hasError ? 'border-error focus:border-error' : 'border-outline/30 focus:border-primary';
-}
-
-function formatFileSize(bytes: number) {
-  return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function AISettingsPage() {
@@ -68,7 +54,6 @@ export default function AISettingsPage() {
     aiSettingsSaveSuccess,
     aiSettingsSaveError,
   } = useAppSelector((state) => state.workspace);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     dispatch(fetchAISettings());
@@ -82,7 +67,6 @@ export default function AISettingsPage() {
       bot_name: aiSettings?.bot_name ?? 'Support Assistant',
       system_instructions: aiSettings?.system_instructions ?? '',
       allowed_roles_for_handover: aiSettings?.allowed_roles_for_handover ?? ['admin', 'manager'],
-      file: null,
     }),
     [aiSettings]
   );
@@ -92,17 +76,13 @@ export default function AISettingsPage() {
     enableReinitialize: true, // re-sync with the store after load / save
     validationSchema,
     onSubmit: async (values) => {
-      const result = await dispatch(
+      await dispatch(
         saveAISettings({
           bot_name: values.bot_name.trim(),
           system_instructions: values.system_instructions.trim(),
           allowed_roles_for_handover: values.allowed_roles_for_handover,
-          file: values.file,
         })
       );
-      if (saveAISettings.fulfilled.match(result) && fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     },
   });
 
@@ -121,17 +101,6 @@ export default function AISettingsPage() {
     const next = current.includes(role) ? current.filter((r) => r !== role) : [...current, role];
     setFieldValue('allowed_roles_for_handover', next);
     setFieldTouched('allowed_roles_for_handover', true, false);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    setFieldValue('file', file);
-    setFieldTouched('file', true, false);
-  };
-
-  const clearFile = () => {
-    setFieldValue('file', null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const showError = (field: keyof AISettingsFormValues) =>
@@ -172,7 +141,6 @@ export default function AISettingsPage() {
   const botNameError = showError('bot_name');
   const instructionsError = showError('system_instructions');
   const rolesError = showError('allowed_roles_for_handover');
-  const fileError = showError('file');
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -312,60 +280,13 @@ export default function AISettingsPage() {
             {rolesError && <p className="text-xs text-error">{rolesError}</p>}
           </fieldset>
 
-          {/* Knowledge base PDF */}
-          <div className="space-y-1.5">
-            <span className="block text-sm font-medium text-on-surface">Knowledge base (PDF)</span>
-            <p className="text-xs text-on-surface-variant">
-              Upload manuals or policies for the assistant to answer from. Max {MAX_PDF_SIZE_MB} MB.
-            </p>
-
-            {values.file ? (
-              <div
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border bg-surface ${fieldBorder(!!fileError)}`}
-              >
-                <FileText className="w-5 h-5 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-on-surface truncate">{values.file.name}</p>
-                  <p className="text-xs text-on-surface-variant">{formatFileSize(values.file.size)}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={clearFile}
-                  aria-label="Remove file"
-                  className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <label
-                htmlFor="knowledge_file"
-                className="flex flex-col items-center justify-center gap-2 px-4 py-6 rounded-xl border border-dashed border-outline/40 bg-surface hover:bg-surface-container transition-colors cursor-pointer text-center"
-              >
-                <Upload className="w-5 h-5 text-on-surface-variant" />
-                <span className="text-sm text-on-surface">Click to choose a PDF</span>
-              </label>
-            )}
-            <input
-              ref={fileInputRef}
-              id="knowledge_file"
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={handleFileChange}
-              className="sr-only"
-            />
-            {fileError && <p className="text-xs text-error">{fileError}</p>}
-          </div>
         </div>
 
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-outline-variant/30">
           {dirty && (
             <button
               type="button"
-              onClick={() => {
-                formik.resetForm();
-                if (fileInputRef.current) fileInputRef.current.value = '';
-              }}
+              onClick={() => formik.resetForm()}
               disabled={isSavingAISettings}
               className="px-5 py-2.5 bg-surface-container text-on-surface text-sm font-medium rounded-xl hover:bg-surface-container-high transition-all disabled:opacity-50 cursor-pointer"
             >
@@ -379,15 +300,13 @@ export default function AISettingsPage() {
           >
             <Save className="w-4 h-4" />
             <span>
-              {isSavingAISettings
-                ? values.file
-                  ? 'Processing & embedding...'
-                  : 'Saving...'
-                : 'Save configuration'}
+              {isSavingAISettings ? 'Saving...' : 'Save configuration'}
             </span>
           </button>
         </div>
       </form>
+
+      <KnowledgeBaseCard />
     </div>
   );
 }

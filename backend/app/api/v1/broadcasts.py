@@ -1,5 +1,6 @@
 import json
 import math
+import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Form, File, UploadFile
 from sqlalchemy import func
@@ -11,9 +12,12 @@ from app.models.organization_model import User
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.ai_chat import ChatMessage
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
-from app.services.whatsapp_service import get_message_templates, WhatsAppRetryableError, WhatsAppPermanentError
-from app.services.broadcast_service import parse_contacts_csv, build_audience, summarize_template, render_body, check_messaging_tier
+from app.services.whatsapp_service import get_message_templates, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
+from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
+from app.services.broadcast_service import parse_contacts_csv, build_audience, summarize_template, render_body, check_number_quality, tier_capacity
 from app.workers.tasks.broadcast_tasks import process_broadcast_task
+from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
+from app.models.ai_chat import MessageStatus
 
 router = APIRouter(prefix="/broadcasts", tags=["Broadcasts"])
 
@@ -29,6 +33,9 @@ def list_templates(phone_number_id: str = Query(...), db: Session = Depends(get_
 
     try:
         templates = get_message_templates(number.waba_id, number.access_token)
+    except WhatsAppTokenError as exc:
+        mark_number_disconnected(db, number, exc)
+        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
     except (WhatsAppRetryableError, WhatsAppPermanentError) as exc:
         raise HTTPException(status_code=502, detail=f"Could not load templates from WhatsApp: {exc}")
 
@@ -59,11 +66,24 @@ def preview_broadcast(
     if use_contact_name:
         sample_parameters = [(first or {}).get("name") or settings.BROADCAST_DEFAULT_NAME] + sample_parameters
 
+    # Quality decides if it can start; the tier decides how many go out now vs later
+    quality = check_number_quality(prepared["number"])
+    capacity = tier_capacity(db, prepared["number"])
+    send_now = audience["queued_count"] if capacity["remaining"] is None else min(audience["queued_count"], capacity["remaining"])
+
     return {
         "template": prepared["template"],
         "audience_source": prepared["audience_source"],
         "sample_message": render_body(prepared["template"]["body_text"], sample_parameters),
-        "tier_error": check_messaging_tier(db, prepared["number"], audience["queued_count"]),
+        "quality_rating": prepared["number"].quality_rating,
+        "quality_blocked": quality["blocked"],
+        "quality_warning": quality["warning"],
+        "messaging_tier": prepared["number"].messaging_tier,
+        "tier_limit": capacity["limit"],
+        "tier_remaining": capacity["remaining"],
+        "send_now_count": send_now,
+        "send_later_count": audience["queued_count"] - send_now,
+        "tier_resume_at": capacity["resume_at"],
         **_audience_counts(audience)
     }
 
@@ -90,10 +110,10 @@ def create_broadcast(
     if audience["queued_count"] == 0:
         raise HTTPException(status_code=400, detail="No customers left to message after removing duplicates, invalid numbers, opted-out customers and customers messaged in the last 7 days")
 
-    # 2. Stay inside the number's daily messaging tier
-    tier_error = check_messaging_tier(db, prepared["number"], audience["queued_count"])
-    if tier_error:
-        raise HTTPException(status_code=400, detail=tier_error)
+    # 2. A flagged (RED) number can't start a broadcast; the tier is handled while sending
+    quality = check_number_quality(prepared["number"])
+    if quality["blocked"]:
+        raise HTTPException(status_code=400, detail=quality["warning"])
 
     # 3. Save the broadcast with every recipient (skipped ones keep their reason)
     broadcast = Broadcast(
@@ -112,14 +132,15 @@ def create_broadcast(
         skipped_opted_out=audience["skipped_opted_out"],
         skipped_invalid=audience["skipped_invalid"],
         queued_count=audience["queued_count"],
-        created_by=current_user.id
+        created_by=current_user.id,
+        dispatch_token=uuid.uuid4().hex
     )
     broadcast.recipients = [BroadcastRecipient(**recipient) for recipient in audience["recipients"]]
     db.add(broadcast)
     db.commit()
 
-    # 4. Create and send the messages in the background
-    process_broadcast_task.delay(broadcast.id)
+    # 4. Release the messages in batches in the background (quality and tier checked before each batch)
+    process_broadcast_task.delay(broadcast_id=broadcast.id, dispatch_token=broadcast.dispatch_token)
 
     return {
         "id": broadcast.id,
@@ -201,6 +222,57 @@ def get_broadcast(
     }
 
 
+@router.post("/{broadcast_id}/resume")
+def resume_broadcast(broadcast_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
+
+    broadcast = db.query(Broadcast).filter(
+        Broadcast.id == broadcast_id,
+        Broadcast.organization_id == current_user.organization_id
+    ).with_for_update().first()
+
+    if not broadcast:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+
+    if broadcast.status != "paused":
+        raise HTTPException(status_code=400, detail="Only a paused broadcast can be resumed")
+
+    # 1. The number must have recovered from a low quality rating
+    number = _get_number(db, current_user.organization_id, broadcast.phone_number_id)
+    quality = check_number_quality(number)
+    if quality["blocked"]:
+        raise HTTPException(status_code=400, detail=quality["warning"])
+
+    # 2. Clear the pause; a new token makes any older scheduled run stop
+    broadcast.status = "sending"
+    broadcast.pause_reason = None
+    broadcast.paused_at = None
+    broadcast.resume_at = None
+    broadcast.dispatch_token = uuid.uuid4().hex
+    db.commit()
+
+    # 3. Re-queue messages that were held back, then continue releasing the rest
+    held_back = db.query(ChatMessage.id).join(BroadcastRecipient, BroadcastRecipient.chat_message_id == ChatMessage.id).filter(
+        BroadcastRecipient.broadcast_id == broadcast.id,
+        ChatMessage.status == MessageStatus.PENDING
+    ).order_by(ChatMessage.id).all()
+
+    for index, row in enumerate(held_back):
+        send_whatsapp_message_task.apply_async(args=[row.id], countdown=index // settings.BROADCAST_MESSAGES_PER_SECOND)
+
+    process_broadcast_task.apply_async(
+        kwargs={"broadcast_id": broadcast.id, "dispatch_token": broadcast.dispatch_token},
+        countdown=math.ceil(len(held_back) / settings.BROADCAST_MESSAGES_PER_SECOND)
+    )
+
+    return {
+        "id": broadcast.id,
+        "status": broadcast.status,
+        "message": f"Broadcast resumed, {len(held_back)} held-back messages re-queued"
+    }
+
+
 def _get_number(db: Session, organization_id: int, phone_number_id: str) -> WhatsAppNumber:
     number = db.query(WhatsAppNumber).filter(
         WhatsAppNumber.organization_id == organization_id,
@@ -209,6 +281,10 @@ def _get_number(db: Session, organization_id: int, phone_number_id: str) -> What
 
     if not number:
         raise HTTPException(status_code=404, detail="WhatsApp number not found for this workspace")
+
+    # Templates, preview, create and resume all need a working token
+    if number.status == "disconnected":
+        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
     return number
 
 
@@ -219,6 +295,9 @@ def _prepare_broadcast(db: Session, current_user: User, phone_number_id: str, te
     # 2. The template must exist, be approved and be a supported kind
     try:
         templates = get_message_templates(number.waba_id, number.access_token)
+    except WhatsAppTokenError as exc:
+        mark_number_disconnected(db, number, exc)
+        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
     except (WhatsAppRetryableError, WhatsAppPermanentError) as exc:
         raise HTTPException(status_code=502, detail=f"Could not load templates from WhatsApp: {exc}")
 
@@ -314,6 +393,10 @@ def _serialize_broadcast(broadcast: Broadcast, delivery: dict) -> dict:
         "use_contact_name": broadcast.use_contact_name,
         "audience_source": broadcast.audience_source,
         "status": status,
+        "pause_reason": broadcast.pause_reason if status == "paused" else None,
+        "paused_at": broadcast.paused_at if status == "paused" else None,
+        "resume_at": broadcast.resume_at if status == "paused" else None,
+        "not_released_count": max(broadcast.queued_count - created_messages, 0),  # Waiting for the tier window / resume
         "error": broadcast.error,
         "created_at": broadcast.created_at,
         "total_input": broadcast.total_input,

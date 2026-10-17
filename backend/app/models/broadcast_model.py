@@ -16,7 +16,11 @@ class Broadcast(Base):
     variables = Column(JSONB, nullable=True)                            # Values for {{1}}, {{2}} ...
     use_contact_name = Column(Boolean, default=False)                   # {{1}} = each contact's name
     audience_source = Column(String(20), nullable=False)                # customers, contacts
-    status = Column(String(20), default="queued", nullable=False)       # queued, sending, completed, failed
+    status = Column(String(20), default="queued", nullable=False)       # queued, sending, paused, completed, failed
+    pause_reason = Column(String(20), nullable=True)                    # quality_low, tier_limit
+    paused_at = Column(DateTime(timezone=True), nullable=True)
+    resume_at = Column(DateTime(timezone=True), nullable=True)          # When a tier pause continues automatically
+    dispatch_token = Column(String(64), nullable=True)                  # Only the latest scheduled dispatcher run continues
     total_input = Column(Integer, default=0)
     duplicates_removed = Column(Integer, default=0)
     skipped_recent = Column(Integer, default=0)
@@ -39,7 +43,7 @@ class BroadcastRecipient(Base):
     name = Column(String(255), nullable=True)
     status = Column(String(20), default="pending", nullable=False)      # pending, queued, skipped
     skip_reason = Column(String(50), nullable=True)                     # duplicate, invalid, opted_out, recently_messaged
-    chat_message_id = Column(Integer, ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True)
+    chat_message_id = Column(Integer, ForeignKey("chat_messages.id", ondelete="SET NULL"), index=True, nullable=True)
 
     broadcast = relationship("Broadcast", back_populates="recipients")
     chat_message = relationship("ChatMessage")

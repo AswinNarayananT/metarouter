@@ -11,11 +11,19 @@ from app.config import settings
 from app.models.ai_chat import ChatMessage, ConversationStatus
 from app.models.attachment_model import ChatAttachment
 from app.models.whatsapp_model import WhatsAppNumber
-from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError
+from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
+from app.services.channel_service import mark_number_disconnected, number_is_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.services.document_parser import parse_document, DocumentParseError
 from app.workers.tasks.chat_tasks import _get_or_create_conversation, reply_with_ai
+from app.core.redis_client import redis_client
 
 RETRY_BASE_SECONDS = 30
+MEDIA_LOCK_SECONDS = 300  # Longer than a 25 MB download / one Gemini parse; released as soon as the task finishes
+RETRY_MARKER_GRACE_SECONDS = 120
+
+
+def media_retry_marker_key(attachment_id: int) -> str:
+    return f"media:retry:{attachment_id}"
 
 # File types we store with a known extension and send to the parser
 PARSEABLE_TYPES = {
@@ -76,11 +84,18 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
 @celery_app.task(name="download_whatsapp_media_task", bind=True, max_retries=4)
 def download_whatsapp_media_task(self, attachment_id: int):
     db = SessionLocal()
+    lock_key = f"media:download-lock:{attachment_id}"
+    locked = False
     try:
         attachment = db.query(ChatAttachment).filter(ChatAttachment.id == attachment_id).first()
 
         # 1. Only download once (a re-run or duplicate task does nothing)
         if not attachment or attachment.download_status != "pending":
+            return
+
+        # Only one worker downloads a file at a time (the sweeper may queue it again)
+        locked = bool(redis_client.set(lock_key, 1, nx=True, ex=MEDIA_LOCK_SECONDS))
+        if not locked:
             return
 
         conversation = attachment.message.conversation
@@ -90,6 +105,11 @@ def download_whatsapp_media_task(self, attachment_id: int):
         ).first()
         if not number:
             _mark_download_failed(db, attachment, "No WhatsApp number connected for this conversation")
+            return
+
+        # Disconnected number: the token can't download the file
+        if number.status == "disconnected":
+            _mark_download_failed(db, attachment, NUMBER_DISCONNECTED_ERROR)
             return
 
         try:
@@ -105,6 +125,10 @@ def download_whatsapp_media_task(self, attachment_id: int):
             if expected_sha256 and expected_sha256 not in (digest.hexdigest(), base64.b64encode(digest.digest()).decode()):
                 raise WhatsAppRetryableError("Downloaded file does not match Meta's sha256")
 
+        except WhatsAppTokenError as exc:
+            mark_number_disconnected(db, number, exc)
+            _mark_download_failed(db, attachment, NUMBER_DISCONNECTED_ERROR)
+            return
         except WhatsAppPermanentError as exc:
             _mark_download_failed(db, attachment, str(exc))
             return
@@ -112,8 +136,10 @@ def download_whatsapp_media_task(self, attachment_id: int):
             if self.request.retries >= self.max_retries:
                 _mark_download_failed(db, attachment, f"Gave up after {self.max_retries + 1} attempts: {exc}")
                 return
-            # 30s, 60s, 120s, 240s
-            raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
+            # 30s, 60s, 120s, 240s; tell the stuck-media sweeper a retry is already scheduled
+            countdown = RETRY_BASE_SECONDS * 2 ** self.request.retries
+            redis_client.set(media_retry_marker_key(attachment.id), 1, ex=countdown + RETRY_MARKER_GRACE_SECONDS)
+            raise self.retry(exc=exc, countdown=countdown)
 
         # 4. Save as org_<id>/<yyyy>/<mm>/<random name><ext> (never trust the customer's file name)
         mime_type = info["mime_type"] or attachment.mime_type
@@ -144,17 +170,27 @@ def download_whatsapp_media_task(self, attachment_id: int):
             _acknowledge_document(db, attachment, f"[Document received] The customer sent a {attachment.kind} ({mime_type}) that can't be read automatically.")
 
     finally:
+        # Release the lock so a scheduled retry can run
+        if locked:
+            redis_client.delete(lock_key)
         db.close()
 
 
 @celery_app.task(name="parse_document_task", bind=True, max_retries=2)
 def parse_document_task(self, attachment_id: int):
     db = SessionLocal()
+    lock_key = f"media:parse-lock:{attachment_id}"
+    locked = False
     try:
         attachment = db.query(ChatAttachment).filter(ChatAttachment.id == attachment_id).first()
 
         # 1. Only parse downloaded files that haven't been parsed yet
         if not attachment or attachment.download_status != "done" or attachment.parse_status != "pending":
+            return
+
+        # Only one worker parses a file at a time, so the AI acknowledges it once
+        locked = bool(redis_client.set(lock_key, 1, nx=True, ex=MEDIA_LOCK_SECONDS))
+        if not locked:
             return
 
         # 2. Read the stored file
@@ -166,8 +202,10 @@ def parse_document_task(self, attachment_id: int):
             parsed = parse_document(content, attachment.mime_type)
         except DocumentParseError as exc:
             if self.request.retries < self.max_retries:
-                # 30s, 60s
-                raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
+                # 30s, 60s; tell the stuck-media sweeper a retry is already scheduled
+                countdown = RETRY_BASE_SECONDS * 2 ** self.request.retries
+                redis_client.set(media_retry_marker_key(attachment.id), 1, ex=countdown + RETRY_MARKER_GRACE_SECONDS)
+                raise self.retry(exc=exc, countdown=countdown)
             attachment.parse_status = "failed"
             attachment.error = str(exc)
             db.commit()
@@ -194,6 +232,8 @@ def parse_document_task(self, attachment_id: int):
         _acknowledge_document(db, attachment, summary)
 
     finally:
+        if locked:
+            redis_client.delete(lock_key)
         db.close()
 
 
@@ -210,5 +250,8 @@ def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str)
     # AI stays silent while a team member is handling the chat
     conversation = attachment.message.conversation
     if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
+        return
+    # ... and when the number is disconnected (the reply couldn't be delivered)
+    if number_is_disconnected(db, conversation.organization_id, conversation.phone_number_id):
         return
     reply_with_ai(db, conversation, summary)

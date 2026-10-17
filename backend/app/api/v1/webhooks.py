@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from app.config import settings
 from app.workers.tasks.chat_tasks import process_chat_message_task
-from app.workers.tasks.whatsapp_tasks import process_whatsapp_status_task
+from app.workers.tasks.whatsapp_tasks import process_whatsapp_status_task, process_quality_update_task
 from app.workers.tasks.media_tasks import process_media_message_task
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
@@ -81,6 +81,17 @@ async def receive_whatsapp_webhook(request: Request):
 
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
+            # Quality / tier changes of a business number (entry id is the WABA id)
+            if change.get("field") == "phone_number_quality_update":
+                value = change.get("value", {})
+                process_quality_update_task.delay(
+                    waba_id=entry.get("id"),
+                    display_phone_number=value.get("display_phone_number"),
+                    event=value.get("event"),
+                    current_limit=value.get("current_limit")
+                )
+                continue
+
             if change.get("field") != "messages":
                 continue
             value = change.get("value", {})

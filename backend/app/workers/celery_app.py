@@ -1,3 +1,4 @@
+from datetime import timedelta
 from celery import Celery
 from app.config import settings
 
@@ -13,6 +14,8 @@ celery_app = Celery(
         "app.workers.tasks.whatsapp_tasks",
         "app.workers.tasks.media_tasks",
         "app.workers.tasks.broadcast_tasks",
+        "app.workers.tasks.maintenance_tasks",
+        "app.workers.tasks.knowledge_tasks",
     ],
 )
 
@@ -25,3 +28,19 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
 )
+
+# Scheduled jobs, run by the celery_beat service (intervals come from .env)
+celery_app.conf.beat_schedule = {
+    "refresh-whatsapp-numbers": {
+        "task": "refresh_whatsapp_numbers_task",
+        "schedule": timedelta(minutes=settings.NUMBER_REFRESH_INTERVAL_MINUTES),
+    },
+    "sweep-stuck-messages": {
+        "task": "sweep_stuck_messages_task",
+        "schedule": timedelta(minutes=settings.MESSAGE_SWEEP_INTERVAL_MINUTES),
+    },
+    "resume-due-broadcasts": {
+        "task": "resume_due_broadcasts_task",
+        "schedule": timedelta(seconds=settings.BROADCAST_CHECK_INTERVAL_SECONDS),
+    },
+}

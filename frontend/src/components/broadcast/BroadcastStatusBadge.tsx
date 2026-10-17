@@ -1,9 +1,10 @@
-import { CheckCircle2, Clock, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Loader2, PauseCircle, XCircle } from 'lucide-react';
 import type { BroadcastStatus } from '@/types/broadcastTypes';
 
 const STYLES: Record<BroadcastStatus, { label: string; className: string; icon: React.ElementType; spin?: boolean }> = {
   queued: { label: 'Queued', className: 'bg-surface-container text-on-surface-variant', icon: Clock },
   sending: { label: 'Sending', className: 'bg-primary/10 text-primary', icon: Loader2, spin: true },
+  paused: { label: 'Paused', className: 'bg-amber-500/10 text-amber-700', icon: PauseCircle },
   completed: { label: 'Completed', className: 'bg-green-500/10 text-green-700', icon: CheckCircle2 },
   failed: { label: 'Failed', className: 'bg-error/10 text-error', icon: XCircle },
 };

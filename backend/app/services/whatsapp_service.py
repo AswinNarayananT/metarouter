@@ -39,6 +39,16 @@ class WhatsAppPermanentError(Exception):
         super().__init__(f"[{code}] {message}" if code else message)
 
 
+# 190: the stored access token no longer works (app removed, password changed, expired, invalidated)
+TOKEN_ERROR_CODE = 190
+
+
+class WhatsAppTokenError(WhatsAppPermanentError):
+    def __init__(self, message: str, subcode: Optional[int] = None):
+        self.subcode = subcode
+        super().__init__(TOKEN_ERROR_CODE, message)
+
+
 def _error_from_response(response: requests.Response) -> tuple[Optional[int], str]:
     try:
         error = response.json().get("error", {})
@@ -59,7 +69,15 @@ def _raise_for_meta_error(response: requests.Response):
     if code in RETRYABLE_ERROR_CODES or response.status_code == 429 or response.status_code >= 500:
         raise WhatsAppRetryableError(message, code)
 
-    # 2. Everything else is a real rejection (24h window, invalid number, expired token ...) -> failed
+    # 2. Token no longer works -> the number is disconnected (the subcode tells why)
+    if code == TOKEN_ERROR_CODE:
+        try:
+            subcode = response.json().get("error", {}).get("error_subcode")
+        except ValueError:
+            subcode = None
+        raise WhatsAppTokenError(message, subcode)
+
+    # 3. Everything else is a real rejection (24h window, invalid number ...) -> failed
     raise WhatsAppPermanentError(code, message)
 
 
@@ -123,6 +141,23 @@ def _post_message(url: str, access_token: str, payload: dict) -> str:
         return response.json()["messages"][0]["id"]
     except (ValueError, KeyError, IndexError) as exc:
         raise WhatsAppRetryableError(f"Unexpected response from Meta: {response.text[:200]}") from exc
+
+
+def get_phone_number_status(phone_number_id: str, access_token: str) -> dict:
+    url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{phone_number_id}"
+
+    try:
+        response = requests.get(url, params={"fields": "quality_rating,messaging_limit_tier"}, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.WHATSAPP_REQUEST_TIMEOUT_SECONDS)
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        raise WhatsAppRetryableError(f"Network error: {exc}") from exc
+
+    _raise_for_meta_error(response)
+
+    data = response.json()
+    return {
+        "quality_rating": data.get("quality_rating"),
+        "messaging_limit_tier": data.get("messaging_limit_tier")
+    }
 
 
 def get_message_templates(waba_id: str, access_token: str, max_pages: int = 10) -> list:

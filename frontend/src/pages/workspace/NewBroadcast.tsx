@@ -15,6 +15,7 @@ import { TemplateVariablesFields } from '@/components/broadcast/TemplateVariable
 import { AudienceSelector } from '@/components/broadcast/AudienceSelector';
 import { AudienceSummary } from '@/components/broadcast/AudienceSummary';
 import { MessagePreviewBubble } from '@/components/broadcast/MessagePreviewBubble';
+import { QualityBadge } from '@/components/broadcast/QualityBadge';
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
 
@@ -99,9 +100,13 @@ export function NewBroadcast() {
     }
   }, [numbers, values.phone_number_id, setFieldValue]);
 
+  // A disconnected number can't load templates (its token no longer works)
+  const selectedNumber = numbers.find((n) => n.phone_number_id === values.phone_number_id);
+  const numberDisconnected = selectedNumber?.status === 'disconnected';
+
   useEffect(() => {
-    if (values.phone_number_id) dispatch(fetchTemplates(values.phone_number_id));
-  }, [dispatch, values.phone_number_id]);
+    if (values.phone_number_id && !numberDisconnected) dispatch(fetchTemplates(values.phone_number_id));
+  }, [dispatch, values.phone_number_id, numberDisconnected]);
 
   const selectedTemplate = useMemo(
     () => templates.find((t) => templateKey(t) === values.template_key) ?? null,
@@ -155,7 +160,8 @@ export function NewBroadcast() {
   const variableTouched = values.variables.map((_, i) =>
     touchedVariables === true || (Array.isArray(touchedVariables) && !!touchedVariables[i])
   );
-  const canSend = !!preview && preview.queued_count > 0 && !preview.tier_error && !isCreating;
+  // A flagged (RED) number can't start a broadcast; the tier only decides now vs later
+  const canSend = !!preview && preview.queued_count > 0 && !preview.quality_blocked && !isCreating;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -202,7 +208,9 @@ export function NewBroadcast() {
                       >
                         <option value="">Choose a WhatsApp number</option>
                         {numbers.map((n) => (
-                          <option key={n.phone_number_id} value={n.phone_number_id}>{n.display_phone_number}</option>
+                          <option key={n.phone_number_id} value={n.phone_number_id}>
+                            {n.display_phone_number}{n.status === 'disconnected' ? ' (disconnected)' : ''}
+                          </option>
                         ))}
                       </select>
                       {formik.touched.phone_number_id && formik.errors.phone_number_id && (
@@ -211,7 +219,27 @@ export function NewBroadcast() {
                     </div>
                   )}
 
-                  {values.phone_number_id && (
+                  {selectedNumber && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 rounded-xl bg-surface border border-outline-variant/30">
+                      <span className="text-sm text-on-surface">
+                        Sending from <strong>{selectedNumber.display_phone_number}</strong>
+                        <span className="text-on-surface-variant"> · {selectedNumber.messaging_tier}</span>
+                      </span>
+                      <QualityBadge rating={selectedNumber.quality_rating} />
+                    </div>
+                  )}
+                  {numberDisconnected ? (
+                    <p role="alert" className="text-sm text-error">
+                      This number is disconnected, so broadcasts can't be sent from it. {selectedNumber?.disconnect_message}{' '}
+                      <Link to="/dashboard/channels" className="font-medium underline">Reconnect in Channels</Link>
+                    </p>
+                  ) : selectedNumber?.quality_rating === 'RED' && (
+                    <p role="alert" className="text-sm text-error">
+                      This number is flagged for low quality, so broadcasts can't be sent from it until it recovers.
+                    </p>
+                  )}
+
+                  {values.phone_number_id && !numberDisconnected && (
                     <section className="space-y-3" aria-label="Template">
                       <h2 className="text-sm font-semibold text-on-surface">Choose a template</h2>
                       {isLoadingTemplates ? (
@@ -296,7 +324,7 @@ export function NewBroadcast() {
                 </div>
               ) : preview ? (
                 <div className="grid gap-6 lg:grid-cols-2">
-                  <AudienceSummary counts={preview} tierError={preview.tier_error} />
+                  <AudienceSummary counts={preview} preview={preview} />
                   <MessagePreviewBubble text={preview.sample_message} label={`Example · ${preview.template.name}`} />
                 </div>
               ) : null}
@@ -333,7 +361,8 @@ export function NewBroadcast() {
               <button
                 type="button"
                 onClick={goNext}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
+                disabled={numberDisconnected}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {step === 2 ? 'Check audience' : 'Next'} <ArrowRight className="w-4 h-4" />
               </button>

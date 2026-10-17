@@ -5,6 +5,7 @@ import superAdminReducer from './superAdmin/superAdminSlice';
 import organizationReducer from './superAdmin/organizationSlice';
 import workspaceReducer from './workspace/workspaceSlice';
 import broadcastReducer from './broadcast/broadcastSlice';
+import knowledgeReducer from './knowledge/knowledgeSlice';
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     organizations: organizationReducer,
     workspace: workspaceReducer,
     broadcast: broadcastReducer,
+    knowledge: knowledgeReducer,
   },
 });
 

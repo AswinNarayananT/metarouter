@@ -7,6 +7,7 @@ import {
   fetchTemplates,
   fetchWhatsAppNumbers,
   previewBroadcast,
+  resumeBroadcast,
 } from './broadcastThunks';
 
 const initialState: BroadcastState = {
@@ -24,6 +25,9 @@ const initialState: BroadcastState = {
 
   isCreating: false,
   createError: null,
+
+  isResuming: false,
+  resumeError: null,
 
   list: null,
   isLoadingList: false,
@@ -102,6 +106,18 @@ const broadcastSlice = createSlice({
       .addCase(createBroadcast.rejected, (state, action) => {
         state.isCreating = false;
         state.createError = action.payload as string;
+      })
+
+      .addCase(resumeBroadcast.pending, (state) => {
+        state.isResuming = true;
+        state.resumeError = null;
+      })
+      .addCase(resumeBroadcast.fulfilled, (state) => {
+        state.isResuming = false;
+      })
+      .addCase(resumeBroadcast.rejected, (state, action) => {
+        state.isResuming = false;
+        state.resumeError = action.payload as string;
       })
 
       .addCase(fetchBroadcasts.pending, (state) => {

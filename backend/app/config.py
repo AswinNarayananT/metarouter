@@ -25,14 +25,30 @@ class Settings(BaseSettings):
     MEDIA_MAX_PARSE_BYTES: int = 15728640  # 15 MB (Gemini inline request limit is 20 MB)
     GEMINI_PARSER_MODEL: str = "gemini-3.8-flash"
 
+    # Knowledge base PDFs (processed in the background, stored on the media_data volume)
+    KNOWLEDGE_STORAGE_PATH: str = "/data/media/knowledge"
+    KNOWLEDGE_MAX_PDF_BYTES: int = 10485760  # 10 MB
+    KNOWLEDGE_CHUNK_SIZE: int = 1000  # Characters per chunk sent for embedding
+    KNOWLEDGE_CHUNK_OVERLAP: int = 200  # Characters repeated between chunks so answers aren't cut off
+    KNOWLEDGE_MAX_DOCUMENTS: int = 50  # Per organization
+
     # Broadcasts
     BROADCAST_MESSAGES_PER_SECOND: int = 20  # Spread sends below Meta's per-number throughput
+    BROADCAST_DISPATCH_BATCH_SIZE: int = 500  # Messages released per dispatcher run (quality/tier re-checked between runs)
     BROADCAST_RECENT_MESSAGE_DAYS: int = 7  # Skip customers we messaged within this many days
     BROADCAST_MAX_RECIPIENTS: int = 10000
     BROADCAST_MAX_CSV_BYTES: int = 2097152  # 2 MB
     BROADCAST_DEFAULT_NAME: str = "Customer"  # Used for {{1}} when a contact has no name
     OPT_OUT_KEYWORDS: str = "STOP,UNSUBSCRIBE"
     OPT_IN_KEYWORDS: str = "START"
+
+    # Scheduled jobs (Celery Beat)
+    NUMBER_REFRESH_INTERVAL_MINUTES: int = 360  # Refresh quality rating + tier from Meta
+    MESSAGE_SWEEP_INTERVAL_MINUTES: int = 5  # Re-queue outgoing messages stuck in pending
+    STUCK_MESSAGE_MINUTES: int = 10  # A pending message older than this is considered stuck
+    STUCK_MEDIA_MAX_AGE_HOURS: int = 24  # Customer media still pending after this is marked failed instead of retried
+    BROADCAST_CHECK_INTERVAL_SECONDS: int = 60  # Restart tier-paused broadcasts that are due
+    STALLED_BROADCAST_MINUTES: int = 10  # Sending broadcast with no progress for this long is restarted
 
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

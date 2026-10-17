@@ -48,7 +48,7 @@ def process_chat_message_task(
     try:
         # 0. Which organization owns the business number the customer wrote to
         number = (
-            db.query(WhatsAppNumber.organization_id)
+            db.query(WhatsAppNumber.organization_id, WhatsAppNumber.status)
             .filter(WhatsAppNumber.phone_number_id == phone_number_id)
             .first()
         )
@@ -56,6 +56,8 @@ def process_chat_message_task(
             print(f"[WEBHOOK] Message for unknown phone_number_id {phone_number_id}; ignoring")
             return
         organization_id = number.organization_id
+        # Disconnected number: keep the message (and STOP/START), but nothing can be sent back
+        disconnected = number.status == "disconnected"
 
         # 1. Get or create conversation
         conversation = _get_or_create_conversation(db, organization_id, phone_number_id, customer_phone)
@@ -84,20 +86,27 @@ def process_chat_message_task(
                     db.commit()
                 except IntegrityError:
                     db.rollback()  # Already opted out by a parallel message
-            queue_outgoing_message(db, conversation, sender="model", content=OPT_OUT_CONFIRMATION_TEXT)
+            if not disconnected:
+                queue_outgoing_message(db, conversation, sender="model", content=OPT_OUT_CONFIRMATION_TEXT)
             return
 
         if keyword in opt_in_keywords:
             db.query(ContactOptOut).filter(ContactOptOut.organization_id == organization_id, ContactOptOut.customer_phone == customer_phone).delete()
             db.commit()
-            queue_outgoing_message(db, conversation, sender="model", content=OPT_IN_CONFIRMATION_TEXT)
+            if not disconnected:
+                queue_outgoing_message(db, conversation, sender="model", content=OPT_IN_CONFIRMATION_TEXT)
             return
 
         # 4. Human takeover: keep the message for the agent, AI stays silent
         if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
             return
 
-        # 5. Generate and send the AI reply
+        # 5. Disconnected: no AI reply (it couldn't be delivered)
+        if disconnected:
+            print(f"[WEBHOOK] {phone_number_id} is disconnected; saved the message without an AI reply")
+            return
+
+        # 6. Generate and send the AI reply
         reply_with_ai(db, conversation, user_text)
 
     finally:
@@ -107,6 +116,10 @@ def process_chat_message_task(
 def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
     # 1. Generate AI reply
     ai_raw_reply = generate_ai_response(db, conversation, user_text)
+
+    # Empty reply (can't be sent): hand over to the team instead of staying silent
+    if not ai_raw_reply or not ai_raw_reply.strip():
+        ai_raw_reply = f"{ESCALATION_TAG} {HANDOVER_FALLBACK_TEXT}"
 
     # 2. Handle Human Handover Detection
     if ESCALATION_TAG in ai_raw_reply:

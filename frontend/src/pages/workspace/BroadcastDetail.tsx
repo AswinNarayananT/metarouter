@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, Upload, Users } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Clock, Loader2, Play, ShieldAlert, Unplug, Upload, Users } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { fetchBroadcastDetail } from '@/store/broadcast/broadcastThunks';
+import { fetchBroadcastDetail, resumeBroadcast } from '@/store/broadcast/broadcastThunks';
 import { BroadcastStatusBadge } from '@/components/broadcast/BroadcastStatusBadge';
 import { DeliveryProgress } from '@/components/broadcast/DeliveryProgress';
 import { AudienceSummary } from '@/components/broadcast/AudienceSummary';
@@ -15,7 +15,7 @@ export function BroadcastDetail() {
   const dispatch = useAppDispatch();
   const { id } = useParams();
   const broadcastId = Number(id);
-  const { detail, isLoadingDetail, detailError } = useAppSelector((state) => state.broadcast);
+  const { detail, isLoadingDetail, detailError, isResuming, resumeError } = useAppSelector((state) => state.broadcast);
   const [page, setPage] = useState(1);
 
   // Ignore a detail left over from another broadcast
@@ -25,13 +25,23 @@ export function BroadcastDetail() {
     if (broadcastId) dispatch(fetchBroadcastDetail({ id: broadcastId, page }));
   }, [dispatch, broadcastId, page]);
 
-  // Keep progress live until every message has left the queue
-  const inProgress = broadcast?.status === 'queued' || broadcast?.status === 'sending';
+  // Keep progress live until every message has left the queue (a tier pause continues on its own)
+  const inProgress =
+    broadcast?.status === 'queued' ||
+    broadcast?.status === 'sending' ||
+    (broadcast?.status === 'paused' && broadcast.pause_reason === 'tier_limit');
   useEffect(() => {
     if (!inProgress) return;
     const timer = window.setInterval(() => dispatch(fetchBroadcastDetail({ id: broadcastId, page })), POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [dispatch, broadcastId, page, inProgress]);
+
+  const handleResume = async () => {
+    const result = await dispatch(resumeBroadcast(broadcastId));
+    if (resumeBroadcast.fulfilled.match(result)) {
+      dispatch(fetchBroadcastDetail({ id: broadcastId, page }));
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -73,6 +83,44 @@ export function BroadcastDetail() {
             <div role="alert" className="flex items-start gap-2 px-4 py-3 rounded-xl bg-error/10 text-sm text-error">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{broadcast.error}</span>
+            </div>
+          )}
+
+          {/* Paused: why, what happens next, and Resume */}
+          {broadcast.status === 'paused' && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800">
+              <span className="flex items-start gap-2 min-w-0">
+                {broadcast.pause_reason === 'number_disconnected' ? (
+                  <Unplug className="w-4 h-4 shrink-0 mt-0.5" />
+                ) : broadcast.pause_reason === 'quality_low' ? (
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                ) : (
+                  <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                )}
+                <span>
+                  {broadcast.pause_reason === 'number_disconnected'
+                    ? `Paused because this WhatsApp number was disconnected. Reconnect it in Channels, then Resume to send to the customers still waiting.`
+                    : broadcast.pause_reason === 'quality_low'
+                    ? `Paused because WhatsApp flagged this number for low quality. ${broadcast.not_released_count.toLocaleString()} customers are still waiting. Resume once the quality recovers.`
+                    : `Daily messaging limit reached. ${broadcast.not_released_count.toLocaleString()} customers will get the message automatically${broadcast.resume_at ? ` from ${formatDateTime(broadcast.resume_at)}` : ' when the limit frees up'}.`}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={handleResume}
+                disabled={isResuming}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isResuming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Resume
+              </button>
+            </div>
+          )}
+
+          {resumeError && (
+            <div role="alert" className="flex items-start gap-2 px-4 py-3 rounded-xl bg-error/10 text-sm text-error">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{resumeError}</span>
             </div>
           )}
 

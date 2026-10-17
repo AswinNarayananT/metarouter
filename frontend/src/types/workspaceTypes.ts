@@ -126,7 +126,6 @@ export interface SaveAISettingsPayload {
   bot_name: string;
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
-  file: File | null;
 }
 
 export interface ChangePasswordPayload {

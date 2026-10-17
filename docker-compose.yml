@@ -80,6 +80,28 @@ services:
     networks:
       - metarouter_net
 
+  # Runs the scheduled jobs (number refresh, stuck-message sweeper, broadcast restarts);
+  # the jobs themselves are executed by celery_worker
+  celery_beat:
+    build: ./backend
+    container_name: metarouter_celery_beat
+    # Keep the schedule file out of the mounted code folder
+    command: celery -A app.workers.celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/metarouter_db
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+    networks:
+      - metarouter_net
+
   frontend:
     build: ./frontend
     container_name: metarouter_frontend
