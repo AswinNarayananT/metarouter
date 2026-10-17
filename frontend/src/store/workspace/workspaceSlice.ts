@@ -1,13 +1,17 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import type { WorkspaceState, VerifyInvitationResponse } from '@/types/workspaceTypes';
+import type { WorkspaceState, WorkspaceUser, VerifyInvitationResponse } from '@/types/workspaceTypes';
 import { 
   loginWorkspaceUser, 
   fetchCurrentUser,
   fetchOrganization,
+  updateCurrentUser,
+  updateOrganization,
   fetchTeamMembers,
   fetchInvitations,
   changePassword,
+  fetchAISettings,
+  saveAISettings,
   generateWorkspaceInvitations, 
   verifyInvitationToken, 
   acceptWorkspaceInvitation 
@@ -20,6 +24,8 @@ const initialState: WorkspaceState = {
   organization: null,
   isLoading: false,
   error: null,
+  settingsSaveSuccess: false,
+  settingsSaveError: null,
   isInviting: false,
   inviteSuccess: false,
   lastInvitations: [],
@@ -36,13 +42,19 @@ const initialState: WorkspaceState = {
   isChangingPassword: false,
   changePasswordSuccess: false,
   changePasswordError: null,
+  aiSettings: null,
+  isLoadingAISettings: false,
+  aiSettingsLoadError: null,
+  isSavingAISettings: false,
+  aiSettingsSaveSuccess: false,
+  aiSettingsSaveError: null,
 };
 
 export const workspaceSlice = createSlice({
   name: 'workspace',
   initialState,
   reducers: {
-    setCredentials: (state, action: PayloadAction<{ user: any; access_token: string }>) => {
+    setCredentials: (state, action: PayloadAction<{ user: WorkspaceUser | null; access_token: string }>) => {
       state.token = action.payload.access_token;
       state.user = action.payload.user;
       localStorage.setItem('workspace_token', action.payload.access_token);
@@ -51,6 +63,9 @@ export const workspaceSlice = createSlice({
       state.user = null;
       state.token = null;
       state.error = null;
+      state.organization = null;
+      state.settingsSaveSuccess = false;
+      state.settingsSaveError = null;
       state.isInviting = false;
       state.inviteSuccess = false;
       state.lastInvitations = [];
@@ -67,7 +82,21 @@ export const workspaceSlice = createSlice({
       state.isChangingPassword = false;
       state.changePasswordSuccess = false;
       state.changePasswordError = null;
+      state.aiSettings = null;
+      state.isLoadingAISettings = false;
+      state.aiSettingsLoadError = null;
+      state.isSavingAISettings = false;
+      state.aiSettingsSaveSuccess = false;
+      state.aiSettingsSaveError = null;
       localStorage.removeItem('workspace_token');
+    },
+    resetSettingsSaveState: (state) => {
+      state.settingsSaveSuccess = false;
+      state.settingsSaveError = null;
+    },
+    resetAISettingsSaveState: (state) => {
+      state.aiSettingsSaveSuccess = false;
+      state.aiSettingsSaveError = null;
     },
     resetChangePasswordState: (state) => {
       state.changePasswordSuccess = false;
@@ -129,6 +158,31 @@ export const workspaceSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
+      // Update Current User Profile
+      .addCase(updateCurrentUser.pending, (state) => {
+        state.settingsSaveSuccess = false;
+        state.settingsSaveError = null;
+      })
+      .addCase(updateCurrentUser.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.settingsSaveSuccess = true;
+      })
+      .addCase(updateCurrentUser.rejected, (state, action) => {
+        state.settingsSaveError = action.payload as string;
+      })
+      // Update Organization
+      .addCase(updateOrganization.pending, (state) => {
+        state.settingsSaveSuccess = false;
+        state.settingsSaveError = null;
+      })
+      .addCase(updateOrganization.fulfilled, (state, action) => {
+        state.organization = action.payload;
+        if (state.user) state.user.organization_name = action.payload.name;
+        state.settingsSaveSuccess = true;
+      })
+      .addCase(updateOrganization.rejected, (state, action) => {
+        state.settingsSaveError = action.payload as string;
+      })
       // Fetch Team Members
       .addCase(fetchTeamMembers.pending, (state) => {
         state.isLoadingTeamMembers = true;
@@ -168,6 +222,34 @@ export const workspaceSlice = createSlice({
       .addCase(changePassword.rejected, (state, action) => {
         state.isChangingPassword = false;
         state.changePasswordError = action.payload as string;
+      })
+      // Fetch AI Settings
+      .addCase(fetchAISettings.pending, (state) => {
+        state.isLoadingAISettings = true;
+        state.aiSettingsLoadError = null;
+      })
+      .addCase(fetchAISettings.fulfilled, (state, action) => {
+        state.isLoadingAISettings = false;
+        state.aiSettings = action.payload;
+      })
+      .addCase(fetchAISettings.rejected, (state, action) => {
+        state.isLoadingAISettings = false;
+        state.aiSettingsLoadError = action.payload as string;
+      })
+      // Save AI Settings
+      .addCase(saveAISettings.pending, (state) => {
+        state.isSavingAISettings = true;
+        state.aiSettingsSaveSuccess = false;
+        state.aiSettingsSaveError = null;
+      })
+      .addCase(saveAISettings.fulfilled, (state, action) => {
+        state.isSavingAISettings = false;
+        state.aiSettingsSaveSuccess = true;
+        state.aiSettings = action.payload;
+      })
+      .addCase(saveAISettings.rejected, (state, action) => {
+        state.isSavingAISettings = false;
+        state.aiSettingsSaveError = action.payload as string;
       })
       // Bulk Invitations Generation
       .addCase(generateWorkspaceInvitations.pending, (state) => {
@@ -222,6 +304,8 @@ export const {
   logoutWorkspace,
   clearWorkspaceError,
   resetInviteState,
+  resetSettingsSaveState,
   resetChangePasswordState,
+  resetAISettingsSaveState,
 } = workspaceSlice.actions;
 export default workspaceSlice.reducer;

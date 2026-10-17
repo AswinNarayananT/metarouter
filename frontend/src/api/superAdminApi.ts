@@ -27,7 +27,9 @@ superAdminApi.interceptors.request.use(
 superAdminApi.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // A 401 from login means bad credentials — don't reload the page and wipe the error
+    const isLoginRoute = error.config?.url?.includes('/superadmin/login');
+    if (error.response?.status === 401 && !isLoginRoute) {
       store.dispatch({ type: 'superAdmin/logoutSuperAdmin' }); // Or equivalent logout action
       window.location.href = '/admin/login';
     }

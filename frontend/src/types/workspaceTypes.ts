@@ -7,6 +7,13 @@ export interface WorkspaceUser {
   organization_name: string;
 }
 
+export interface WorkspaceOrganization {
+  id: number;
+  name: string;
+  slug: string;
+  created_at: string | null;
+}
+
 export interface TeamMember {
   id: number;
   name: string;
@@ -71,9 +78,12 @@ export interface AcceptInvitationPayload {
 export interface WorkspaceState {
   user: WorkspaceUser | null;
   token: string | null;
-  organization: any | null;
+  organization: WorkspaceOrganization | null;
   isLoading: boolean;
   error: string | null;
+  // Profile / Workspace settings save
+  settingsSaveSuccess: boolean;
+  settingsSaveError: string | null;
   isInviting: boolean;
   inviteSuccess: boolean;
   lastInvitations: InvitationItemResult[];
@@ -94,6 +104,29 @@ export interface WorkspaceState {
   isChangingPassword: boolean;
   changePasswordSuccess: boolean;
   changePasswordError: string | null;
+  // AI Assistant Settings (admin only)
+  aiSettings: AISettings | null;
+  isLoadingAISettings: boolean;
+  aiSettingsLoadError: string | null;
+  isSavingAISettings: boolean;
+  aiSettingsSaveSuccess: boolean;
+  aiSettingsSaveError: string | null;
+}
+
+export type HandoverRole = 'admin' | 'manager' | 'service';
+
+export interface AISettings {
+  bot_name: string;
+  system_instructions: string;
+  allowed_roles_for_handover: HandoverRole[];
+  is_active: boolean;
+}
+
+export interface SaveAISettingsPayload {
+  bot_name: string;
+  system_instructions: string;
+  allowed_roles_for_handover: HandoverRole[];
+  file: File | null;
 }
 
 export interface ChangePasswordPayload {

@@ -1,6 +1,7 @@
 services:
   db:
-    image: postgres:15-alpine
+    # pgvector image = Postgres 15 + the `vector` extension needed for knowledge_chunks embeddings
+    image: pgvector/pgvector:pg15
     container_name: metarouter_db
     environment:
       POSTGRES_USER: postgres
@@ -10,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d metarouter_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - metarouter_net
 
@@ -18,6 +24,11 @@ services:
     container_name: metarouter_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - metarouter_net
 
@@ -27,13 +38,21 @@ services:
     command: sh -c "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./backend:/app
+      - media_data:/data/media
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
+    # Override the localhost URLs in .env with the compose service hostnames
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/metarouter_db
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_BASE_URL: http://localhost
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - metarouter_net
 
@@ -43,11 +62,21 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info
     volumes:
       - ./backend:/app
+      - media_data:/data/media
     env_file:
       - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/metarouter_db
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_BASE_URL: http://localhost
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Wait for the backend so migrations have run before tasks touch the DB
+      backend:
+        condition: service_started
     networks:
       - metarouter_net
 
@@ -63,6 +92,7 @@ services:
 
 volumes:
   postgres_data:
+  media_data:
 
 networks:
   metarouter_net:

@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.organization_model import Organization, User
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload
 from app.core.deps import get_current_tenant_user
-from app.schemas.auth_schema import TenantLoginRequest, TenantLoginResponse, TokenRefreshResponse, ChangePasswordRequest
+from app.schemas.auth_schema import TenantLoginRequest, TenantLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest
 
 router = APIRouter(prefix="/auth", tags=["Tenant Authentication"])
 
@@ -158,3 +158,27 @@ def change_password(
     db.commit()
 
     return {"message": "Password updated successfully"}
+
+
+@router.patch("/me")
+def update_current_user(
+    payload: UpdateNameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_tenant_user)
+):
+    current_user.name = payload.name
+    db.commit()
+    db.refresh(current_user)
+
+    org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+
+    return {
+        "user": {
+            "id": current_user.id,
+            "name": current_user.name,
+            "email": current_user.email,
+            "role": current_user.role,
+            "organization_id": current_user.organization_id,
+            "organization_name": org.name if org else None
+        }
+    }

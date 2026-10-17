@@ -1,57 +1,61 @@
-import React, { useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Lock, Mail, AlertCircle } from 'lucide-react';
+import { useFormik } from 'formik';
 import * as Yup from 'yup';
+import { ShieldCheck, Lock, Mail, AlertCircle } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { loginSuperAdmin } from '@/store/superAdmin/superAdminThunks';
 import { clearSuperAdminError } from '@/store/superAdmin/superAdminSlice';
+import { emailField, fieldError } from '@/validation/schemas';
 
-// Define Yup validation schema for Super Admin login
-const loginSchema = Yup.object().shape({
-  email: Yup.string()
-    .email('Please enter a valid email address')
-    .required('Admin email is required'),
+interface SuperAdminLoginValues {
+  email: string;
+  password: string;
+}
+
+// Yup validation schema for Super Admin login
+const loginSchema = Yup.object({
+  email: emailField('Admin email'),
   password: Yup.string()
     .min(6, 'Password must be at least 6 characters')
     .required('Master password is required'),
 });
 
+const inputClass =
+  'w-full pl-10 pr-4 py-2.5 bg-surface border rounded-xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 text-sm transition-all';
+
+function borderClass(hasError: boolean) {
+  return hasError
+    ? 'border-error focus:border-error focus:ring-error'
+    : 'border-outline/30 focus:border-primary focus:ring-primary';
+}
+
 export function SuperAdminLoginForm() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [validationError, setValidationError] = useState('');
-  
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { isLoading, error } = useAppSelector((state) => state.superAdmin);
 
-  const handleLogin = async (e: React.SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setValidationError('');
+  useEffect(() => {
     dispatch(clearSuperAdminError());
+  }, [dispatch]);
 
-    try {
-      // Validate inputs using Yup before dispatching
-      await loginSchema.validate({ email, password }, { abortEarly: false });
-
-      // Dispatch Redux async thunk
-      const resultAction = await dispatch(loginSuperAdmin({ email, password }));
+  const formik = useFormik<SuperAdminLoginValues>({
+    initialValues: { email: '', password: '' },
+    validationSchema: loginSchema,
+    onSubmit: async (values) => {
+      dispatch(clearSuperAdminError());
+      const resultAction = await dispatch(
+        loginSuperAdmin({ email: values.email.trim(), password: values.password })
+      );
 
       if (loginSuperAdmin.fulfilled.match(resultAction)) {
         navigate('/admin/dashboard');
       }
-    } catch (err: any) {
-      if (err instanceof Yup.ValidationError) {
-        // Grab the first validation error message
-        setValidationError(err.errors[0]);
-      } else {
-        setValidationError(err.message || 'An unexpected error occurred.');
-      }
-    }
-  };
+    },
+  });
 
-  // Display either Yup validation errors or Redux API errors
-  const displayError = validationError || error;
+  const emailError = fieldError(formik, 'email');
+  const passwordError = fieldError(formik, 'password');
 
   return (
     <div className="relative bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-xl p-8 backdrop-blur-md">
@@ -65,16 +69,19 @@ export function SuperAdminLoginForm() {
         </p>
       </div>
 
-      {displayError && (
+      {error && (
         <div className="mb-4 p-3 rounded-lg bg-error-container text-on-error-container text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{displayError}</span>
+          <span>{error}</span>
         </div>
       )}
 
-      <form onSubmit={handleLogin} className="space-y-4">
+      <form onSubmit={formik.handleSubmit} noValidate className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
+          <label
+            htmlFor="admin-email"
+            className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5"
+          >
             Admin Email
           </label>
           <div className="relative">
@@ -82,17 +89,23 @@ export function SuperAdminLoginForm() {
               <Mail className="w-4 h-4" />
             </span>
             <input
+              id="admin-email"
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               placeholder="aswin@neurosta.ai"
-              className="w-full pl-10 pr-4 py-2.5 bg-surface border border-outline/30 rounded-xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm transition-all"
+              aria-invalid={!!emailError}
+              {...formik.getFieldProps('email')}
+              className={`${inputClass} ${borderClass(!!emailError)}`}
             />
           </div>
+          {emailError && <p className="mt-1 text-xs text-error">{emailError}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
+          <label
+            htmlFor="admin-password"
+            className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5"
+          >
             Master Password
           </label>
           <div className="relative">
@@ -100,13 +113,16 @@ export function SuperAdminLoginForm() {
               <Lock className="w-4 h-4" />
             </span>
             <input
+              id="admin-password"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               placeholder="••••••••••••"
-              className="w-full pl-10 pr-4 py-2.5 bg-surface border border-outline/30 rounded-xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm transition-all"
+              aria-invalid={!!passwordError}
+              {...formik.getFieldProps('password')}
+              className={`${inputClass} ${borderClass(!!passwordError)}`}
             />
           </div>
+          {passwordError && <p className="mt-1 text-xs text-error">{passwordError}</p>}
         </div>
 
         <button

@@ -1,5 +1,6 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { superAdminApi } from '@/api/superAdminApi';
+import { getApiErrorMessage } from '@/api/errors';
 import type { OrganizationCreatePayload } from '@/types/organization';
 
 export const fetchDashboardStats = createAsyncThunk(
@@ -8,8 +9,8 @@ export const fetchDashboardStats = createAsyncThunk(
     try {
       const response = await superAdminApi.get('/api/v1/superadmin/organizations/stats');
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to load dashboard stats');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to load dashboard stats'));
     }
   },
 );
@@ -20,8 +21,8 @@ export const fetchOrganizations = createAsyncThunk(
     try {
       const response = await superAdminApi.get('/api/v1/superadmin/organizations');
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to load organizations');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to load organizations'));
     }
   },
 );
@@ -32,8 +33,8 @@ export const fetchOrganization = createAsyncThunk(
     try {
       const response = await superAdminApi.get(`/api/v1/superadmin/organizations/${id}`);
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to load organization');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to load organization'));
     }
   },
 );
@@ -48,8 +49,8 @@ export const createOrganization = createAsyncThunk(
         sessionStorage.setItem(`org_admin_password_${data.id}`, data.admin_password);
       }
       return data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to create organization');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to create organization'));
     }
   },
 );
@@ -60,8 +61,8 @@ export const updateOrganizationStatus = createAsyncThunk(
     try {
       const response = await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/status`, { subscription_status: status });
       return response.data; 
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to update organization status');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to update organization status'));
     }
   }
 );

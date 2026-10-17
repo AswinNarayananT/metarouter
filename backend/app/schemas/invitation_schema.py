@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from app.schemas.auth_schema import check_password_strength
 from datetime import datetime
 from typing import List, Literal, Optional
 
@@ -26,8 +27,21 @@ class SingleInviteRequest(BaseModel):
 
 class AcceptInvitationRequest(BaseModel):
     token: str
-    name: str
-    password: str
+    name: str = Field(..., min_length=2, max_length=120)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Name must be at least 2 characters")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        return check_password_strength(value)
 
 
 # ------------------------------------------------------------------

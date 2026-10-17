@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useFormik } from 'formik';
+import type { FieldInputProps } from 'formik';
+import * as Yup from 'yup';
 import {
   Save,
   Building2,
@@ -21,10 +24,42 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
-import { fetchOrganization, changePassword } from '@/store/workspace/workspaceThunks';
-import { resetChangePasswordState } from '@/store/workspace/workspaceSlice';
+import {
+  fetchOrganization,
+  changePassword,
+  updateCurrentUser,
+  updateOrganization,
+} from '@/store/workspace/workspaceThunks';
+import { resetChangePasswordState, resetSettingsSaveState } from '@/store/workspace/workspaceSlice';
+import {
+  PASSWORD_RULES,
+  confirmPasswordField,
+  fieldError,
+  nameField,
+  strongPasswordField,
+} from '@/validation/schemas';
 
 type SettingsTab = 'workspace' | 'profile' | 'security';
+
+interface DetailsFormValues {
+  workspace_name: string;
+  personal_name: string;
+}
+
+interface PasswordFormValues {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+const passwordSchema = Yup.object({
+  current_password: Yup.string().required('Current password is required'),
+  new_password: strongPasswordField('New password').notOneOf(
+    [Yup.ref('current_password')],
+    'New password must be different from the current password'
+  ),
+  confirm_password: confirmPasswordField('new_password'),
+});
 
 /* ---------- Small reusable pieces ---------- */
 
@@ -101,16 +136,26 @@ function ReadOnlyValue({
 }
 
 const inputClass =
-  'w-full px-4 py-2.5 bg-surface border border-outline/30 rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary transition-colors';
+  'w-full px-4 py-2.5 bg-surface border rounded-xl text-sm text-on-surface focus:outline-none transition-colors';
+
+function borderClass(hasError: boolean) {
+  return hasError ? 'border-error focus:border-error' : 'border-outline/30 focus:border-primary';
+}
+
+function FieldErrorText({ error }: { error?: string }) {
+  return error ? <p className="text-xs text-error mt-1.5">{error}</p> : null;
+}
 
 function PasswordField({
-  value,
-  onChange,
+  id,
+  field,
+  error,
   placeholder,
   autoComplete,
 }: {
-  value: string;
-  onChange: (v: string) => void;
+  id: string;
+  field: FieldInputProps<string>;
+  error?: string;
   placeholder?: string;
   autoComplete?: string;
 }) {
@@ -118,12 +163,13 @@ function PasswordField({
   return (
     <div className="relative">
       <input
+        id={id}
         type={visible ? 'text' : 'password'}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        {...field}
         placeholder={placeholder}
         autoComplete={autoComplete}
-        className={`${inputClass} pr-11`}
+        aria-invalid={!!error}
+        className={`${inputClass} ${borderClass(!!error)} pr-11`}
       />
       <button
         type="button"
@@ -149,65 +195,98 @@ export function WorkspaceSettings() {
     isChangingPassword,
     changePasswordSuccess,
     changePasswordError,
+    settingsSaveSuccess,
+    settingsSaveError,
   } = useAppSelector((state) => state.workspace);
   const isAdmin = user?.role === 'admin';
 
   const [tab, setTab] = useState<SettingsTab | null>(null);
   const [isEditingWorkspace, setIsEditingWorkspace] = useState(false);
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
-  const [workspaceName, setWorkspaceName] = useState('');
-  const [personalName, setPersonalName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
-  // Password change state
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-
-  // Clear password success/error banners when leaving the page
+  // Clear success/error banners when leaving the page
   useEffect(() => {
     return () => {
       dispatch(resetChangePasswordState());
+      dispatch(resetSettingsSaveState());
     };
   }, [dispatch]);
 
   // Fetch organization only once when admin and user info is present
   useEffect(() => {
     if (isAdmin && user?.organization_id && !organization) {
-      dispatch(fetchOrganization(user.organization_id));
+      dispatch(fetchOrganization());
     }
   }, [dispatch, isAdmin, user?.organization_id, organization]);
 
-  // Sync local inputs when store data updates
-  useEffect(() => {
-    if (organization?.name) {
-      setWorkspaceName(organization.name);
-    }
-  }, [organization]);
+  /* ----- Workspace & profile details form ----- */
+  // Only validate the sections that are being edited
+  const detailsSchema = useMemo(
+    () =>
+      Yup.object({
+        workspace_name: isEditingWorkspace ? nameField('Organization name') : Yup.string(),
+        personal_name: isEditingPersonal ? nameField('Full name') : Yup.string(),
+      }),
+    [isEditingWorkspace, isEditingPersonal]
+  );
 
-  useEffect(() => {
-    if (user?.name) {
-      setPersonalName(user.name);
-    }
-  }, [user]);
+  const detailsForm = useFormik<DetailsFormValues>({
+    initialValues: {
+      workspace_name: organization?.name || user?.organization_name || '',
+      personal_name: user?.name || '',
+    },
+    validationSchema: detailsSchema,
+    onSubmit: async (values) => {
+      const workspaceName = values.workspace_name.trim();
+      const personalName = values.personal_name.trim();
+      const currentOrgName = organization?.name || user?.organization_name || '';
 
-  const handleSave = () => {
-    setIsSaving(true);
-    // TODO: Implement save API calls
-    setTimeout(() => {
-      setIsSaving(false);
-      setIsEditingWorkspace(false);
-      setIsEditingPersonal(false);
-    }, 1000);
+      const requests = [];
+      if (isAdmin && isEditingWorkspace && workspaceName !== currentOrgName) {
+        requests.push(dispatch(updateOrganization({ name: workspaceName })));
+      }
+      if (isEditingPersonal && personalName !== user?.name) {
+        requests.push(dispatch(updateCurrentUser({ name: personalName })));
+      }
+
+      const results = await Promise.all(requests);
+      // Stay in edit mode if anything failed so the user can retry
+      if (results.every((r) => r.meta.requestStatus === 'fulfilled')) {
+        setIsEditingWorkspace(false);
+        setIsEditingPersonal(false);
+      }
+    },
+  });
+
+  // Load the latest saved value into the form when a section enters edit mode
+  const startEditing = (section: 'workspace' | 'personal') => {
+    dispatch(resetSettingsSaveState());
+    if (section === 'workspace') {
+      detailsForm.setFieldValue('workspace_name', organization?.name || user?.organization_name || '', false);
+      detailsForm.setFieldTouched('workspace_name', false, false);
+      setIsEditingWorkspace(true);
+    } else {
+      detailsForm.setFieldValue('personal_name', user?.name || '', false);
+      detailsForm.setFieldTouched('personal_name', false, false);
+      setIsEditingPersonal(true);
+    }
   };
 
   const handleCancel = () => {
     setIsEditingWorkspace(false);
     setIsEditingPersonal(false);
-    setWorkspaceName(organization?.name || '');
-    setPersonalName(user?.name || '');
+    detailsForm.resetForm({
+      values: {
+        workspace_name: organization?.name || user?.organization_name || '',
+        personal_name: user?.name || '',
+      },
+    });
+    dispatch(resetSettingsSaveState());
   };
+
+  const workspaceNameError = fieldError(detailsForm, 'workspace_name');
+  const personalNameError = fieldError(detailsForm, 'personal_name');
 
   /* ----- Organization details (from store) ----- */
   const orgLoading = isLoading && !organization;
@@ -220,7 +299,7 @@ export function WorkspaceSettings() {
   })();
 
   const handleRetryOrganization = () => {
-    if (user?.organization_id) dispatch(fetchOrganization(user.organization_id));
+    dispatch(fetchOrganization());
   };
 
   const handleCopyOrgId = async () => {
@@ -234,42 +313,42 @@ export function WorkspaceSettings() {
     }
   };
 
-  /* ----- Password rules ----- */
-  const rules = useMemo(
-    () => [
-      { label: 'At least 8 characters', ok: newPassword.length >= 8 },
-      { label: 'One uppercase letter', ok: /[A-Z]/.test(newPassword) },
-      { label: 'One lowercase letter', ok: /[a-z]/.test(newPassword) },
-      { label: 'One number', ok: /\d/.test(newPassword) },
-    ],
-    [newPassword]
-  );
-  const passedRules = rules.filter((r) => r.ok).length;
+  /* ----- Change password form ----- */
+  const passwordForm = useFormik<PasswordFormValues>({
+    initialValues: { current_password: '', new_password: '', confirm_password: '' },
+    validationSchema: passwordSchema,
+    onSubmit: async (values, { resetForm }) => {
+      const result = await dispatch(
+        changePassword({ current_password: values.current_password, new_password: values.new_password })
+      );
+      if (changePassword.fulfilled.match(result)) {
+        resetForm();
+      }
+    },
+  });
+
+  // Field props that also hide a stale success/error banner once the user types again
+  const passwordFieldProps = (name: keyof PasswordFormValues): FieldInputProps<string> => {
+    const field: FieldInputProps<string> = passwordForm.getFieldProps(name);
+    return {
+      ...field,
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+        field.onChange(e);
+        if (changePasswordSuccess || changePasswordError) {
+          dispatch(resetChangePasswordState());
+        }
+      },
+    };
+  };
+
+  const newPassword = passwordForm.values.new_password;
+  const passedRules = PASSWORD_RULES.filter((r) => r.test(newPassword)).length;
   const strengthLabel = ['Too weak', 'Weak', 'Fair', 'Good', 'Strong'][passedRules];
   const strengthColor =
     passedRules <= 1 ? 'bg-error' : passedRules < 4 ? 'bg-primary/60' : 'bg-primary';
-  const passwordsMatch = newPassword.length > 0 && newPassword === confirmPassword;
-  const canUpdatePassword =
-    currentPassword.length > 0 && passedRules === rules.length && passwordsMatch;
-
-  const handlePasswordUpdate = async () => {
-    if (!canUpdatePassword || isChangingPassword) return;
-    const result = await dispatch(
-      changePassword({ current_password: currentPassword, new_password: newPassword })
-    );
-    if (changePassword.fulfilled.match(result)) {
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    }
-  };
-
-  const handlePasswordInput = (setter: (v: string) => void) => (v: string) => {
-    setter(v);
-    if (changePasswordSuccess || changePasswordError) {
-      dispatch(resetChangePasswordState());
-    }
-  };
+  const currentPasswordError = fieldError(passwordForm, 'current_password');
+  const newPasswordError = fieldError(passwordForm, 'new_password');
+  const confirmPasswordError = fieldError(passwordForm, 'confirm_password');
 
   /* ----- Tabs ----- */
   const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
@@ -339,22 +418,45 @@ export function WorkspaceSettings() {
 
         {/* Section content */}
         <div className="flex-1 min-w-0 space-y-6">
+          {settingsSaveError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error-container/20 border border-error/30 text-sm text-error"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{settingsSaveError}</span>
+            </div>
+          )}
+          {settingsSaveSuccess && !settingsSaveError && (
+            <div
+              role="status"
+              className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-sm text-on-surface"
+            >
+              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+              <span>Changes saved successfully.</span>
+            </div>
+          )}
+
           {/* ---------- Workspace (admin only) ---------- */}
           {activeTab === 'workspace' && isAdmin && (
             <SectionCard
               icon={Building2}
               title="Workspace details"
               description="Settings that apply to everyone in your organization."
-              action={!isEditingWorkspace && editButton(() => setIsEditingWorkspace(true))}
+              action={!isEditingWorkspace && editButton(() => startEditing('workspace'))}
             >
               <Field label="Organization name" hint="Shown to your team members.">
                 {isEditingWorkspace ? (
-                  <input
-                    type="text"
-                    value={workspaceName}
-                    onChange={(e) => setWorkspaceName(e.target.value)}
-                    className={inputClass}
-                  />
+                  <>
+                    <input
+                      id="workspace_name"
+                      type="text"
+                      aria-invalid={!!workspaceNameError}
+                      {...detailsForm.getFieldProps('workspace_name')}
+                      className={`${inputClass} ${borderClass(!!workspaceNameError)}`}
+                    />
+                    <FieldErrorText error={workspaceNameError} />
+                  </>
                 ) : (
                   <ReadOnlyValue>
                     {organization?.name || user?.organization_name || 'N/A'}
@@ -447,7 +549,7 @@ export function WorkspaceSettings() {
               icon={User}
               title="Personal details"
               description="Your personal information within this workspace."
-              action={!isEditingPersonal && editButton(() => setIsEditingPersonal(true))}
+              action={!isEditingPersonal && editButton(() => startEditing('personal'))}
             >
               <div className="flex items-center gap-4 pb-5 border-b border-outline-variant/30">
                 <div className="w-14 h-14 rounded-full bg-surface-container border border-outline-variant/40 flex items-center justify-center text-base font-semibold text-on-surface shrink-0">
@@ -466,12 +568,17 @@ export function WorkspaceSettings() {
 
               <Field label="Full name">
                 {isEditingPersonal ? (
-                  <input
-                    type="text"
-                    value={personalName}
-                    onChange={(e) => setPersonalName(e.target.value)}
-                    className={inputClass}
-                  />
+                  <>
+                    <input
+                      id="personal_name"
+                      type="text"
+                      autoComplete="name"
+                      aria-invalid={!!personalNameError}
+                      {...detailsForm.getFieldProps('personal_name')}
+                      className={`${inputClass} ${borderClass(!!personalNameError)}`}
+                    />
+                    <FieldErrorText error={personalNameError} />
+                  </>
                 ) : (
                   <ReadOnlyValue>{user?.name || 'N/A'}</ReadOnlyValue>
                 )}
@@ -514,86 +621,97 @@ export function WorkspaceSettings() {
                 </div>
               )}
 
-              <Field label="Current password">
-                <PasswordField
-                  value={currentPassword}
-                  onChange={handlePasswordInput(setCurrentPassword)}
-                  autoComplete="current-password"
-                />
-              </Field>
-
-              <Field label="New password">
-                <div className="space-y-3">
+              <form onSubmit={passwordForm.handleSubmit} noValidate className="space-y-5">
+                <Field label="Current password">
                   <PasswordField
-                    value={newPassword}
-                    onChange={handlePasswordInput(setNewPassword)}
+                    id="current_password"
+                    field={passwordFieldProps('current_password')}
+                    error={currentPasswordError}
+                    autoComplete="current-password"
+                  />
+                  <FieldErrorText error={currentPasswordError} />
+                </Field>
+
+                <Field label="New password">
+                  <div className="space-y-3">
+                    <PasswordField
+                      id="new_password"
+                      field={passwordFieldProps('new_password')}
+                      error={newPasswordError}
+                      autoComplete="new-password"
+                    />
+
+                    {newPassword.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 grid grid-cols-4 gap-1.5">
+                            {[1, 2, 3, 4].map((n) => (
+                              <span
+                                key={n}
+                                className={`h-1.5 rounded-full transition-colors ${
+                                  passedRules >= n ? strengthColor : 'bg-surface-container'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs text-on-surface-variant w-16 text-right">
+                            {strengthLabel}
+                          </span>
+                        </div>
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {PASSWORD_RULES.map((r) => {
+                            const ok = r.test(newPassword);
+                            return (
+                              <li
+                                key={r.label}
+                                className={`flex items-center gap-2 text-xs ${
+                                  ok ? 'text-on-surface' : 'text-on-surface-variant'
+                                }`}
+                              >
+                                {ok ? (
+                                  <Check className="w-3.5 h-3.5 text-primary" />
+                                ) : (
+                                  <Circle className="w-3.5 h-3.5" />
+                                )}
+                                {r.label}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </>
+                    )}
+                    {/* The checklist already shows strength rules; only surface other errors here */}
+                    {newPasswordError && (newPassword.length === 0 || passedRules === PASSWORD_RULES.length) && (
+                      <FieldErrorText error={newPasswordError} />
+                    )}
+                  </div>
+                </Field>
+
+                <Field label="Confirm new password">
+                  <PasswordField
+                    id="confirm_password"
+                    field={passwordFieldProps('confirm_password')}
+                    error={confirmPasswordError}
                     autoComplete="new-password"
                   />
+                  <FieldErrorText error={confirmPasswordError} />
+                </Field>
 
-                  {newPassword.length > 0 && (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 grid grid-cols-4 gap-1.5">
-                          {[1, 2, 3, 4].map((n) => (
-                            <span
-                              key={n}
-                              className={`h-1.5 rounded-full transition-colors ${
-                                passedRules >= n ? strengthColor : 'bg-surface-container'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        <span className="text-xs text-on-surface-variant w-16 text-right">
-                          {strengthLabel}
-                        </span>
-                      </div>
-                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        {rules.map((r) => (
-                          <li
-                            key={r.label}
-                            className={`flex items-center gap-2 text-xs ${
-                              r.ok ? 'text-on-surface' : 'text-on-surface-variant'
-                            }`}
-                          >
-                            {r.ok ? (
-                              <Check className="w-3.5 h-3.5 text-primary" />
-                            ) : (
-                              <Circle className="w-3.5 h-3.5" />
-                            )}
-                            {r.label}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
+                <div className="flex items-center justify-between gap-4 pt-5 border-t border-outline-variant/30">
+                  <p className="hidden sm:flex items-center gap-1.5 text-xs text-on-surface-variant">
+                    <Lock className="w-3.5 h-3.5" />
+                    Your password is stored securely and never shown in plain text.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary text-sm font-medium rounded-xl hover:bg-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    <span>{isChangingPassword ? 'Updating...' : 'Update password'}</span>
+                  </button>
                 </div>
-              </Field>
-
-              <Field label="Confirm new password">
-                <PasswordField
-                  value={confirmPassword}
-                  onChange={handlePasswordInput(setConfirmPassword)}
-                  autoComplete="new-password"
-                />
-                {confirmPassword.length > 0 && !passwordsMatch && (
-                  <p className="text-xs text-error mt-1.5">Passwords do not match.</p>
-                )}
-              </Field>
-
-              <div className="flex items-center justify-between gap-4 pt-5 border-t border-outline-variant/30">
-                <p className="hidden sm:flex items-center gap-1.5 text-xs text-on-surface-variant">
-                  <Lock className="w-3.5 h-3.5" />
-                  Your password is stored securely and never shown in plain text.
-                </p>
-                <button
-                  onClick={handlePasswordUpdate}
-                  disabled={!canUpdatePassword || isChangingPassword}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary text-sm font-medium rounded-xl hover:bg-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
-                >
-                  <KeyRound className="w-4 h-4" />
-                  <span>{isChangingPassword ? 'Updating...' : 'Update password'}</span>
-                </button>
-              </div>
+              </form>
             </SectionCard>
           )}
         </div>
@@ -607,20 +725,22 @@ export function WorkspaceSettings() {
               <p className="text-sm text-on-surface-variant">You have unsaved changes.</p>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={handleCancel}
-                  disabled={isSaving}
+                  disabled={detailsForm.isSubmitting}
                   className="flex items-center gap-2 px-5 py-2.5 bg-surface-container text-on-surface text-sm font-medium rounded-xl hover:bg-surface-container-high transition-all disabled:opacity-50 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                   <span>Cancel</span>
                 </button>
                 <button
-                  onClick={handleSave}
-                  disabled={isSaving}
+                  type="button"
+                  onClick={() => detailsForm.handleSubmit()}
+                  disabled={detailsForm.isSubmitting}
                   className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary text-sm font-medium rounded-xl hover:bg-primary/90 transition-all shadow-md disabled:opacity-50 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{isSaving ? 'Saving...' : 'Save changes'}</span>
+                  <span>{detailsForm.isSubmitting ? 'Saving...' : 'Save changes'}</span>
                 </button>
               </div>
             </div>

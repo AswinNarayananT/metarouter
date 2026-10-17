@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_db, get_current_tenant_user
 from app.models.organization_model import Organization, User
 from app.schemas.workspace_schema import TeamMemberResponse
+from app.schemas.auth_schema import UpdateNameRequest
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
@@ -52,3 +53,31 @@ def list_organization_members(
         .order_by(User.created_at.asc())
         .all()
     )
+
+
+@router.patch("/current", response_model=dict)
+def update_current_organization(
+    payload: UpdateNameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_tenant_user)
+):
+    """
+    Rename the current user's organization (admin only).
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only workspace administrators can update the organization")
+
+    organization = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+    if not organization:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    organization.name = payload.name
+    db.commit()
+    db.refresh(organization)
+
+    return {
+        "id": organization.id,
+        "name": organization.name,
+        "slug": organization.slug,
+        "created_at": organization.created_at
+    }

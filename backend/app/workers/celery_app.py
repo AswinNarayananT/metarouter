@@ -5,7 +5,15 @@ from app.config import settings
 celery_app = Celery(
     "metarouter_worker",
     broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL
+    backend=settings.REDIS_URL,
+    # Task modules the worker must import on startup (autodiscover only finds `tasks.py` files)
+    include=[
+        "app.workers.tasks.email_tasks",
+        "app.workers.tasks.chat_tasks",
+        "app.workers.tasks.whatsapp_tasks",
+        "app.workers.tasks.media_tasks",
+        "app.workers.tasks.broadcast_tasks",
+    ],
 )
 
 # Configure Celery options (timezone, JSON serialization, task tracking)
@@ -17,6 +25,3 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
 )
-
-# Optional: Auto-discover tasks in your workers module if you add more later
-celery_app.autodiscover_tasks(["app.workers"])

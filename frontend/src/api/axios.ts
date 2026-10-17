@@ -28,9 +28,11 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    const isRefreshRoute = originalRequest.url?.includes('/auth/refresh-token');
+    // A 401 from login/refresh means bad credentials, not an expired session — let the caller handle it
+    const isAuthRoute =
+      originalRequest.url?.includes('/auth/refresh-token') || originalRequest.url?.includes('/auth/login');
 
-    if (error.response?.status === 401 && !originalRequest._retry && !isRefreshRoute) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       originalRequest._retry = true;
 
       try {

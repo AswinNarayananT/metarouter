@@ -1,8 +1,11 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api } from '@/api/axios';
-import type { LoginCredentials, VerifyInvitationResponse, 
+import { getApiErrorMessage } from '@/api/errors';
+import type { LoginCredentials, VerifyInvitationResponse,
   AcceptInvitationPayload, TeamMember, PaginatedInvitations,
-  FetchInvitationsParams, ChangePasswordPayload } from '@/types/workspaceTypes';
+  FetchInvitationsParams, ChangePasswordPayload, AISettings,
+  SaveAISettingsPayload, InvitePayloadItem, InvitationItemResult,
+  WorkspaceUser, WorkspaceOrganization } from '@/types/workspaceTypes';
 
 // Async Thunk for Tenant / Workspace Login
 export const loginWorkspaceUser = createAsyncThunk(
@@ -11,8 +14,8 @@ export const loginWorkspaceUser = createAsyncThunk(
     try {
       const response = await api.post('/api/v1/auth/login', credentials);
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Invalid login credentials');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Invalid login credentials'));
     }
   }
 );
@@ -24,8 +27,21 @@ export const fetchCurrentUser = createAsyncThunk(
     try {
       const response = await api.get('/api/v1/auth/me');
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to fetch user');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch user'));
+    }
+  }
+);
+
+// Async Thunk to update the current user's profile (name)
+export const updateCurrentUser = createAsyncThunk(
+  'workspace/updateCurrentUser',
+  async (payload: { name: string }, { rejectWithValue }) => {
+    try {
+      const response = await api.patch<{ user: WorkspaceUser }>('/api/v1/auth/me', payload);
+      return response.data.user;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to update profile'));
     }
   }
 );
@@ -35,10 +51,23 @@ export const fetchOrganization = createAsyncThunk(
   'workspace/fetchOrganization',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/api/v1/organizations/current');
+      const response = await api.get<WorkspaceOrganization>('/api/v1/organizations/current');
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to fetch organization');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch organization'));
+    }
+  }
+);
+
+// Async Thunk to rename the current organization (admin only)
+export const updateOrganization = createAsyncThunk(
+  'workspace/updateOrganization',
+  async (payload: { name: string }, { rejectWithValue }) => {
+    try {
+      const response = await api.patch<WorkspaceOrganization>('/api/v1/organizations/current', payload);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to update organization'));
     }
   }
 );
@@ -50,8 +79,8 @@ export const fetchTeamMembers = createAsyncThunk(
     try {
       const response = await api.get<TeamMember[]>('/api/v1/organizations/members');
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to fetch team members');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch team members'));
     }
   }
 );
@@ -63,8 +92,8 @@ export const fetchInvitations = createAsyncThunk(
     try {
       const response = await api.get<PaginatedInvitations>('/api/v1/invitations', { params });
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to fetch invitations');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch invitations'));
     }
   }
 );
@@ -76,25 +105,62 @@ export const changePassword = createAsyncThunk(
     try {
       const response = await api.post('/api/v1/auth/change-password', payload);
       return response.data; // Returns { message: "Password updated successfully" }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      // FastAPI validation errors (422) return detail as an array
-      if (Array.isArray(detail)) {
-        return rejectWithValue(detail[0]?.msg?.replace(/^Value error, /, '') || 'Invalid password');
-      }
-      return rejectWithValue(detail || 'Failed to update password');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to update password'));
+    }
+  }
+);
+
+// Async Thunk to fetch the organization's AI assistant settings (admin only)
+export const fetchAISettings = createAsyncThunk(
+  'workspace/fetchAISettings',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get<AISettings>('/api/v1/ai-settings/');
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to load AI settings'));
+    }
+  }
+);
+
+// Async Thunk to save AI assistant settings and optionally upload a knowledge base PDF
+export const saveAISettings = createAsyncThunk(
+  'workspace/saveAISettings',
+  async (payload: SaveAISettingsPayload, { rejectWithValue }) => {
+    const formData = new FormData();
+    formData.append('bot_name', payload.bot_name);
+    formData.append('system_instructions', payload.system_instructions);
+    formData.append('allowed_roles_for_handover', payload.allowed_roles_for_handover.join(','));
+    if (payload.file) {
+      formData.append('file', payload.file);
+    }
+
+    try {
+      // Override the instance's JSON default so axios sends multipart with a boundary
+      const response = await api.post<{ message: string; settings: AISettings }>(
+        '/api/v1/ai-settings/',
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return response.data.settings;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to save AI settings'));
     }
   }
 );
 
 export const generateWorkspaceInvitations = createAsyncThunk(
   'workspace/generateInvitations',
-  async (members: { name: string; email: string; role: string }[], { rejectWithValue }) => {
+  async (members: InvitePayloadItem[], { rejectWithValue }) => {
     try {
-      const response = await api.post('/api/v1/invitations/generate', { members });
+      const response = await api.post<{ invitations: InvitationItemResult[] }>(
+        '/api/v1/invitations/generate',
+        { members }
+      );
       return response.data.invitations; // Returns array of generated invite links
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to generate invitation links');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to generate invitation links'));
     }
   }
 );
@@ -105,8 +171,8 @@ export const verifyInvitationToken = createAsyncThunk(
     try {
       const response = await api.get<VerifyInvitationResponse>(`/api/v1/invitations/verify/${token}`);
       return response.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Invalid or expired invitation token');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Invalid or expired invitation token'));
     }
   }
 );
@@ -118,8 +184,8 @@ export const acceptWorkspaceInvitation = createAsyncThunk(
     try {
       const response = await api.post('/api/v1/invitations/accept', payload);
       return response.data; // Returns { message: "Account created successfully..." }
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to complete registration');
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to complete registration'));
     }
   }
 );

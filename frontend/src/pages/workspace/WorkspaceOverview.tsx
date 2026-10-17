@@ -1,4 +1,3 @@
-import React, { useEffect } from 'react';
 import { Users, MessageSquare, Send } from 'lucide-react';
 import { useAppSelector } from '@/store';
 

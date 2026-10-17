@@ -20,10 +20,14 @@ import { SuperAdminSettings } from '@/pages/admin/SuperAdminSettings';
 import { TenantLayout } from '@/pages/workspace/TenantLayout';
 import { WorkspaceOverview } from '@/pages/workspace/WorkspaceOverview';
 import { CustomerChats } from '@/pages/workspace/CustomerChats';
-import { Broadcast } from '@/pages/workspace/Broadcast';
+import { Broadcasts } from '@/pages/workspace/Broadcasts';
+import { NewBroadcast } from '@/pages/workspace/NewBroadcast';
+import { BroadcastDetail } from '@/pages/workspace/BroadcastDetail';
 import { TeamMembers } from '@/pages/workspace/TeamMembers';
 import { InviteMembers } from '@/pages/workspace/InviteMembers';
 import { WorkspaceSettings } from '@/pages/workspace/WorkspaceSettings';
+import AISettingsPage from '@/pages/workspace/AISettingsPage';
+import { Channels } from '@/pages/workspace/Channels';
 
 // Route Guards
 import { ProtectedWorkspaceRoute } from '@/components/routes/protectedRoute';
@@ -97,13 +101,52 @@ function App() {
         >
           <Route index element={<WorkspaceOverview />} />
           <Route path="chats" element={<CustomerChats />} />
-          <Route path="broadcast" element={<Broadcast />} />
+          <Route
+            path="broadcast"
+            element={
+              <AdminOnlyRoute>
+                <Broadcasts />
+              </AdminOnlyRoute>
+            }
+          />
+          <Route
+            path="broadcast/new"
+            element={
+              <AdminOnlyRoute>
+                <NewBroadcast />
+              </AdminOnlyRoute>
+            }
+          />
+          <Route
+            path="broadcast/:id"
+            element={
+              <AdminOnlyRoute>
+                <BroadcastDetail />
+              </AdminOnlyRoute>
+            }
+          />
+          <Route
+            path="channels"
+            element={
+              <AdminOnlyRoute>
+                <Channels />
+              </AdminOnlyRoute>
+            }
+          />
           <Route path="members" element={<TeamMembers />} />
           <Route
             path="invite"
             element={
               <AdminOnlyRoute>
                 <InviteMembers />
+              </AdminOnlyRoute>
+            }
+          />
+          <Route
+            path="ai-settings"
+            element={
+              <AdminOnlyRoute>
+                <AISettingsPage />
               </AdminOnlyRoute>
             }
           />

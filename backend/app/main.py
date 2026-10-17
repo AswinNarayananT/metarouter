@@ -9,6 +9,11 @@ from app.api.v1.super_admin_organizations import router as super_admin_organizat
 from app.api.v1.auth import router as auth_router
 from app.api.v1.organization import router as organization_router
 from app.api.v1.invitations import router as invitations_router
+from app.api.v1.webhooks import router as webhook_router
+from app.api.v1.ai_settings import router as ai_settings_router
+from app.api.v1.attachments import router as attachments_router
+from app.api.v1.broadcasts import router as broadcasts_router
+from app.api.v1.channels import router as channels_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +51,11 @@ app.include_router(super_admin_organizations_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(organization_router, prefix="/api/v1")
 app.include_router(invitations_router, prefix="/api/v1")
+app.include_router(webhook_router, prefix="/api/v1")
+app.include_router(ai_settings_router, prefix="/api/v1")
+app.include_router(attachments_router, prefix="/api/v1")
+app.include_router(broadcasts_router, prefix="/api/v1")
+app.include_router(channels_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():

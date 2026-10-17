@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   MessageSquare,
   Send,
   Users,
   UserPlus,
+  Bot,
+  Cable,
   Settings,
   LogOut,
   LayoutDashboard,
@@ -42,12 +44,16 @@ export function TenantLayout() {
 
   const navItems = [
     { label: 'Overview', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare },
-    { label: 'Broadcast', path: '/dashboard/broadcast', icon: Send },
-    { label: 'Team Members', path: '/dashboard/members', icon: Users },
     ...(isAdmin
-      ? [{ label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus }]
+      ? [
+          { label: 'Channels', path: '/dashboard/channels', icon: Cable },
+          { label: 'AI Assistant', path: '/dashboard/ai-settings', icon: Bot },
+        ]
       : []),
+    { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare },
+    ...(isAdmin ? [{ label: 'Broadcast', path: '/dashboard/broadcast', icon: Send }] : []),
+    { label: 'Team Members', path: '/dashboard/members', icon: Users },
+    ...(isAdmin ? [{ label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus }] : []),
     { label: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
@@ -59,11 +65,7 @@ export function TenantLayout() {
   const currentPage = navItems.find((i) => isItemActive(i.path))?.label ?? 'Overview';
 
   const orgName: string = user?.organization_name || 'Workspace';
-  const userName: string =
-    user?.name ||
-    user?.full_name ||
-    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
-    '';
+  const userName: string = user?.name || '';
   const initials = (userName || orgName)
     .split(' ')
     .map((w: string) => w[0])

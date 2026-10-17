@@ -1,12 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, Building2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { useFormik } from 'formik';
 import * as Yup from 'yup';
+import { AlertCircle, Building2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { Card, Container } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { createOrganization } from '@/store/superAdmin/organizationThunks';
 import { clearOrganizationError } from '@/store/superAdmin/organizationSlice';
+import { emailField, fieldError, nameField } from '@/validation/schemas';
 
 function toSlug(value: string): string {
   return value
@@ -18,51 +20,89 @@ function toSlug(value: string): string {
     .slice(0, 80);
 }
 
+interface CreateOrganizationValues {
+  name: string;
+  slug: string;
+  support_email: string;
+  support_phone: string;
+  admin_name: string;
+  admin_email: string;
+  admin_password: string;
+}
+
+// Mirrors the backend OrganizationCreateRequest constraints
 const schema = Yup.object({
-  name: Yup.string().min(2, 'Organization name is required').required(),
-  support_email: Yup.string().email('Enter a valid support email').required('Support email is required'),
-  support_phone: Yup.string().min(6, 'Enter a valid support phone').required(),
-  admin_name: Yup.string().min(2, 'Admin name is required').required(),
-  admin_email: Yup.string().email('Enter a valid admin email').required('Admin email is required'),
-  admin_password: Yup.string().min(8, 'Password must be at least 8 characters').required(),
+  name: nameField('Organization name'),
+  slug: Yup.string()
+    .trim()
+    .test('slug-length', 'Slug must be between 2 and 80 characters', (value) => {
+      if (!value) return true; // optional — derived from the name when empty
+      const slug = toSlug(value);
+      return slug.length >= 2 && slug.length <= 80;
+    }),
+  support_email: emailField('Support email'),
+  support_phone: Yup.string()
+    .trim()
+    .required('Support phone is required')
+    .matches(/^\+?[\d\s()-]+$/, 'Phone can only contain digits, spaces, +, - and ()')
+    .min(6, 'Phone must be at least 6 characters')
+    .max(32, 'Phone must be 32 characters or less'),
+  admin_name: nameField('Admin name'),
+  admin_email: emailField('Admin email'),
+  admin_password: Yup.string()
+    .required('Admin password is required')
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password must be 128 characters or less'),
 });
 
 const inputClass =
-  'w-full px-4 py-2.5 bg-surface border border-outline/30 rounded-xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm transition-all';
+  'w-full px-4 py-2.5 bg-surface border rounded-xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 text-sm transition-all';
+
+function borderClass(hasError: boolean) {
+  return hasError
+    ? 'border-error focus:border-error focus:ring-error'
+    : 'border-outline/30 focus:border-primary focus:ring-primary';
+}
+
+const labelClass = 'block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5';
+
+function FieldMessage({ error }: { error?: string }) {
+  return error ? <p className="mt-1 text-xs text-error">{error}</p> : null;
+}
 
 export function CreateOrganizationPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { isSaving, error } = useAppSelector((state) => state.organizations);
-  const [validationError, setValidationError] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    slug: '',
-    support_email: '',
-    support_phone: '',
-    admin_name: '',
-    admin_email: '',
-    admin_password: '',
-  });
 
-  const previewSlug = form.slug.trim() ? toSlug(form.slug) : toSlug(form.name);
-
-  function update(field: keyof typeof form, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setValidationError('');
+  useEffect(() => {
     dispatch(clearOrganizationError());
+  }, [dispatch]);
 
-    try {
-      await schema.validate(form, { abortEarly: false });
+  const formik = useFormik<CreateOrganizationValues>({
+    initialValues: {
+      name: '',
+      slug: '',
+      support_email: '',
+      support_phone: '',
+      admin_name: '',
+      admin_email: '',
+      admin_password: '',
+    },
+    validationSchema: schema,
+    onSubmit: async (values) => {
+      dispatch(clearOrganizationError());
+      const slug = values.slug.trim() ? toSlug(values.slug) : toSlug(values.name);
       const result = await dispatch(
         createOrganization({
-          ...form,
-          slug: previewSlug || undefined,
+          name: values.name.trim(),
+          slug: slug || undefined,
+          support_email: values.support_email.trim(),
+          support_phone: values.support_phone.trim(),
+          admin_name: values.admin_name.trim(),
+          admin_email: values.admin_email.trim(),
+          admin_password: values.admin_password,
         }),
       );
 
@@ -71,14 +111,22 @@ export function CreateOrganizationPage() {
           state: { adminPassword: result.payload.admin_password, justCreated: true },
         });
       }
-    } catch (err: unknown) {
-      if (err instanceof Yup.ValidationError) {
-        setValidationError(err.errors[0]);
-      }
-    }
-  }
+    },
+  });
 
-  const displayError = validationError || error;
+  const { values } = formik;
+  const previewSlug = values.slug.trim() ? toSlug(values.slug) : toSlug(values.name);
+  const err = (name: keyof CreateOrganizationValues) => fieldError(formik, name);
+
+  const generatePassword = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*';
+    const generated = Array.from(crypto.getRandomValues(new Uint8Array(12)))
+      .map((n) => alphabet[n % alphabet.length])
+      .join('');
+    formik.setFieldValue('admin_password', generated);
+    formik.setFieldTouched('admin_password', true, false);
+    setPasswordVisible(true);
+  };
 
   return (
     <Container size="md">
@@ -94,67 +142,71 @@ export function CreateOrganizationPage() {
       </div>
 
       <Card variant="form" className="p-6 sm:p-8">
-        {displayError && (
+        {error && (
           <div className="mb-5 p-3 rounded-lg bg-error-container text-on-error-container text-sm flex items-center gap-2">
             <AlertCircle className="size-4 shrink-0" />
-            <span>{displayError}</span>
+            <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <form onSubmit={formik.handleSubmit} noValidate className="space-y-8">
           <section className="space-y-4">
             <div className="flex items-center gap-2 mb-1">
               <Building2 className="size-4 text-primary" />
               <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface">Organization</h2>
             </div>
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Organization name
-              </label>
+              <label htmlFor="name" className={labelClass}>Organization name</label>
               <input
-                value={form.name}
-                onChange={(e) => update('name', e.target.value)}
+                id="name"
                 placeholder="Neurosta Labs"
-                className={inputClass}
+                aria-invalid={!!err('name')}
+                {...formik.getFieldProps('name')}
+                className={`${inputClass} ${borderClass(!!err('name'))}`}
               />
+              <FieldMessage error={err('name')} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Workspace slug
-              </label>
+              <label htmlFor="slug" className={labelClass}>Workspace slug</label>
               <input
-                value={form.slug}
-                onChange={(e) => update('slug', e.target.value)}
+                id="slug"
                 placeholder={previewSlug || 'neurosta-labs'}
-                className={inputClass + ' font-mono'}
+                aria-invalid={!!err('slug')}
+                {...formik.getFieldProps('slug')}
+                className={`${inputClass} ${borderClass(!!err('slug'))} font-mono`}
               />
-              <p className="mt-1.5 text-[11px] text-on-surface-variant">
-                Login workspace: <span className="font-mono font-semibold text-primary">{previewSlug || '—'}</span>
-              </p>
+              {err('slug') ? (
+                <FieldMessage error={err('slug')} />
+              ) : (
+                <p className="mt-1.5 text-[11px] text-on-surface-variant">
+                  Login workspace: <span className="font-mono font-semibold text-primary">{previewSlug || '—'}</span>
+                </p>
+              )}
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                  Support email
-                </label>
+                <label htmlFor="support_email" className={labelClass}>Support email</label>
                 <input
+                  id="support_email"
                   type="email"
-                  value={form.support_email}
-                  onChange={(e) => update('support_email', e.target.value)}
                   placeholder="support@client.com"
-                  className={inputClass}
+                  aria-invalid={!!err('support_email')}
+                  {...formik.getFieldProps('support_email')}
+                  className={`${inputClass} ${borderClass(!!err('support_email'))}`}
                 />
+                <FieldMessage error={err('support_email')} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                  Support phone
-                </label>
+                <label htmlFor="support_phone" className={labelClass}>Support phone</label>
                 <input
-                  value={form.support_phone}
-                  onChange={(e) => update('support_phone', e.target.value)}
+                  id="support_phone"
+                  type="tel"
                   placeholder="+91 98765 43210"
-                  className={inputClass}
+                  aria-invalid={!!err('support_phone')}
+                  {...formik.getFieldProps('support_phone')}
+                  className={`${inputClass} ${borderClass(!!err('support_phone'))}`}
                 />
+                <FieldMessage error={err('support_phone')} />
               </div>
             </div>
           </section>
@@ -165,55 +217,50 @@ export function CreateOrganizationPage() {
               <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface">Admin user</h2>
             </div>
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Admin full name
-              </label>
+              <label htmlFor="admin_name" className={labelClass}>Admin full name</label>
               <input
-                value={form.admin_name}
-                onChange={(e) => update('admin_name', e.target.value)}
+                id="admin_name"
                 placeholder="Priya Kumar"
-                className={inputClass}
+                aria-invalid={!!err('admin_name')}
+                {...formik.getFieldProps('admin_name')}
+                className={`${inputClass} ${borderClass(!!err('admin_name'))}`}
               />
+              <FieldMessage error={err('admin_name')} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Admin email
-              </label>
+              <label htmlFor="admin_email" className={labelClass}>Admin email</label>
               <input
+                id="admin_email"
                 type="email"
-                value={form.admin_email}
-                onChange={(e) => update('admin_email', e.target.value)}
                 placeholder="priya@client.com"
-                className={inputClass}
+                aria-invalid={!!err('admin_email')}
+                {...formik.getFieldProps('admin_email')}
+                className={`${inputClass} ${borderClass(!!err('admin_email'))}`}
               />
+              <FieldMessage error={err('admin_email')} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider mb-1.5">
-                Admin password
-              </label>
-              <div className="flex justify-end mb-1.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="admin_password" className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider">
+                  Admin password
+                </label>
                 <button
                   type="button"
                   className="text-[11px] font-semibold text-primary hover:underline"
-                  onClick={() => {
-                    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*';
-                    const generated = Array.from(crypto.getRandomValues(new Uint8Array(12)))
-                      .map((n) => alphabet[n % alphabet.length])
-                      .join('');
-                    update('admin_password', generated);
-                    setPasswordVisible(true);
-                  }}
+                  onClick={generatePassword}
                 >
                   Generate password
                 </button>
               </div>
               <div className="relative">
                 <input
+                  id="admin_password"
                   type={passwordVisible ? 'text' : 'password'}
-                  value={form.admin_password}
-                  onChange={(e) => update('admin_password', e.target.value)}
+                  autoComplete="new-password"
                   placeholder="Minimum 8 characters"
-                  className={inputClass + ' pr-12'}
+                  aria-invalid={!!err('admin_password')}
+                  {...formik.getFieldProps('admin_password')}
+                  className={`${inputClass} ${borderClass(!!err('admin_password'))} pr-12`}
                 />
                 <button
                   type="button"
@@ -224,6 +271,7 @@ export function CreateOrganizationPage() {
                   {passwordVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
+              <FieldMessage error={err('admin_password')} />
             </div>
           </section>
 

@@ -19,7 +19,7 @@ from app.schemas.invitation_schema import (
 from app.core.security import  get_password_hash
 from app.core.deps import get_current_tenant_user
 from app.config import settings
-from app.workers.email_tasks import send_invitation_email_task
+from app.workers.tasks.email_tasks import send_invitation_email_task
 
 router = APIRouter(prefix="/invitations", tags=["Workspace Invitations"])
 

@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useFormik } from 'formik';
+import * as Yup from 'yup';
 import { Check, Copy, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchInvitations, generateWorkspaceInvitations } from '@/store/workspace/workspaceThunks';
 import { resetInviteState, clearWorkspaceError } from '@/store/workspace/workspaceSlice';
 import type { InvitationStatus } from '@/types/workspaceTypes';
+import { emailField, nameField } from '@/validation/schemas';
 
 const INVITATIONS_PAGE_SIZE = 10;
 
@@ -25,10 +28,43 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+type MemberRole = 'service' | 'manager' | 'admin';
+
 interface MemberInput {
   name: string;
   email: string;
-  role: string;
+  role: MemberRole;
+}
+
+interface InviteFormValues {
+  members: MemberInput[];
+}
+
+const emptyMember = (): MemberInput => ({ name: '', email: '', role: 'service' });
+
+const inviteSchema = Yup.object({
+  members: Yup.array()
+    .of(
+      Yup.object({
+        name: nameField(),
+        email: emailField(),
+        role: Yup.mixed<MemberRole>()
+          .oneOf(['service', 'manager', 'admin'], 'Select a valid role')
+          .required('Role is required'),
+      })
+    )
+    .min(1, 'Add at least one member')
+    .test('unique-emails', 'Each email can only be invited once', (members) => {
+      const emails = (members ?? []).map((m) => m?.email?.trim().toLowerCase()).filter(Boolean);
+      return new Set(emails).size === emails.length;
+    }),
+});
+
+const inputClass =
+  'w-full px-3 py-2 rounded-lg border bg-surface text-on-surface text-xs focus:outline-none focus:ring-2';
+
+function borderClass(hasError: boolean) {
+  return hasError ? 'border-error focus:ring-error/40' : 'border-outline-variant/50 focus:ring-primary/50';
 }
 
 export function InviteMembers() {
@@ -36,29 +72,53 @@ export function InviteMembers() {
   const { isInviting, inviteSuccess, lastInvitations, error, user } = useAppSelector((state) => state.workspace);
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [members, setMembers] = useState<MemberInput[]>([
-    { name: '', email: '', role: 'service' }
-  ]);
+  const [submittedCount, setSubmittedCount] = useState(0);
+
+  // Start fresh when entering the page
+  useEffect(() => {
+    dispatch(resetInviteState());
+    dispatch(clearWorkspaceError());
+  }, [dispatch]);
+
+  const formik = useFormik<InviteFormValues>({
+    initialValues: { members: [emptyMember()] },
+    validationSchema: inviteSchema,
+    onSubmit: async (values) => {
+      dispatch(clearWorkspaceError());
+      const members = values.members.map((m) => ({
+        name: m.name.trim(),
+        email: m.email.trim().toLowerCase(),
+        role: m.role,
+      }));
+      setSubmittedCount(members.length);
+      await dispatch(generateWorkspaceInvitations(members));
+    },
+  });
+
+  const { values, setFieldValue } = formik;
 
   const handleAddRow = () => {
-    setMembers([...members, { name: '', email: '', role: 'service' }]);
+    setFieldValue('members', [...values.members, emptyMember()]);
   };
 
   const handleRemoveRow = (index: number) => {
-    if (members.length === 1) return;
-    setMembers(members.filter((_, i) => i !== index));
+    if (values.members.length === 1) return;
+    setFieldValue('members', values.members.filter((_, i) => i !== index));
+    // Drop the removed row's touched state so errors don't shift onto the next row
+    const touchedMembers = Array.isArray(formik.touched.members) ? formik.touched.members : [];
+    formik.setTouched({ ...formik.touched, members: touchedMembers.filter((_, i) => i !== index) }, false);
   };
 
-  const handleMemberChange = (index: number, field: keyof MemberInput, value: string) => {
-    const updated = [...members];
-    updated[index][field] = value;
-    setMembers(updated);
+  const memberError = (index: number, field: keyof MemberInput): string | undefined => {
+    const rowErrors = Array.isArray(formik.errors.members) ? formik.errors.members[index] : undefined;
+    const rowTouched = Array.isArray(formik.touched.members) ? formik.touched.members[index] : undefined;
+    if (!rowErrors || typeof rowErrors === 'string' || !rowTouched?.[field]) return undefined;
+    return rowErrors[field];
   };
 
-  const handleGenerateInvitations = (e: React.FormEvent) => {
-    e.preventDefault();
-    dispatch(generateWorkspaceInvitations(members));
-  };
+  // Array-level error (e.g. duplicate emails), shown after a submit attempt
+  const listError =
+    formik.submitCount > 0 && typeof formik.errors.members === 'string' ? formik.errors.members : undefined;
 
   const handleCopyLink = (link: string, index: number) => {
     navigator.clipboard.writeText(link);
@@ -69,9 +129,11 @@ export function InviteMembers() {
   const handleReset = () => {
     dispatch(resetInviteState());
     dispatch(clearWorkspaceError());
-    setMembers([{ name: '', email: '', role: 'service' }]);
+    formik.resetForm();
     setCopiedIndex(null);
   };
+
+  const skippedCount = Math.max(0, submittedCount - lastInvitations.length);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -81,66 +143,94 @@ export function InviteMembers() {
       </div>
 
       <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-xl p-6 space-y-6">
-        {error && (
-          <div className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
+        {(error || listError) && (
+          <div role="alert" className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{typeof error === 'string' ? error : 'An error occurred'}</span>
+            <span>{listError || error}</span>
           </div>
         )}
 
         {!inviteSuccess ? (
-          <form onSubmit={handleGenerateInvitations} className="space-y-4">
+          <form onSubmit={formik.handleSubmit} noValidate className="space-y-4">
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-              {members.map((member, index) => (
-                <div key={index} className="flex items-center gap-2 p-3 bg-surface-container/50 border border-outline-variant/30 rounded-xl">
-                  <div className="flex-1 space-y-1">
-                    <label className="block text-[10px] font-medium text-on-surface-variant">Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={member.name}
-                      onChange={(e) => handleMemberChange(index, 'name', e.target.value)}
-                      placeholder="e.g. Jane Doe"
-                      className="w-full px-3 py-2 rounded-lg border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    />
-                  </div>
+              {values.members.map((_, index) => {
+                const nameErr = memberError(index, 'name');
+                const emailErr = memberError(index, 'email');
+                const roleErr = memberError(index, 'role');
+                return (
+                  <div
+                    key={index}
+                    className="flex flex-wrap sm:flex-nowrap items-start gap-2 p-3 bg-surface-container/50 border border-outline-variant/30 rounded-xl"
+                  >
+                    <div className="flex-1 min-w-40 space-y-1">
+                      <label
+                        htmlFor={`members.${index}.name`}
+                        className="block text-[10px] font-medium text-on-surface-variant"
+                      >
+                        Name
+                      </label>
+                      <input
+                        id={`members.${index}.name`}
+                        type="text"
+                        placeholder="e.g. Jane Doe"
+                        aria-invalid={!!nameErr}
+                        {...formik.getFieldProps(`members.${index}.name`)}
+                        className={`${inputClass} ${borderClass(!!nameErr)}`}
+                      />
+                      {nameErr && <p className="text-[10px] text-error">{nameErr}</p>}
+                    </div>
 
-                  <div className="flex-1 space-y-1">
-                    <label className="block text-[10px] font-medium text-on-surface-variant">Email</label>
-                    <input
-                      type="email"
-                      required
-                      value={member.email}
-                      onChange={(e) => handleMemberChange(index, 'email', e.target.value)}
-                      placeholder="jane@company.com"
-                      className="w-full px-3 py-2 rounded-lg border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    />
-                  </div>
+                    <div className="flex-1 min-w-40 space-y-1">
+                      <label
+                        htmlFor={`members.${index}.email`}
+                        className="block text-[10px] font-medium text-on-surface-variant"
+                      >
+                        Email
+                      </label>
+                      <input
+                        id={`members.${index}.email`}
+                        type="email"
+                        placeholder="jane@company.com"
+                        aria-invalid={!!emailErr}
+                        {...formik.getFieldProps(`members.${index}.email`)}
+                        className={`${inputClass} ${borderClass(!!emailErr)}`}
+                      />
+                      {emailErr && <p className="text-[10px] text-error">{emailErr}</p>}
+                    </div>
 
-                  <div className="w-32 space-y-1">
-                    <label className="block text-[10px] font-medium text-on-surface-variant">Role</label>
-                    <select
-                      value={member.role}
-                      onChange={(e) => handleMemberChange(index, 'role', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    >
-                      <option value="service">Service</option>
-                      <option value="manager">Manager</option>
-                      <option value="admin">Administrator</option>
-                    </select>
-                  </div>
+                    <div className="w-32 space-y-1">
+                      <label
+                        htmlFor={`members.${index}.role`}
+                        className="block text-[10px] font-medium text-on-surface-variant"
+                      >
+                        Role
+                      </label>
+                      <select
+                        id={`members.${index}.role`}
+                        aria-invalid={!!roleErr}
+                        {...formik.getFieldProps(`members.${index}.role`)}
+                        className={`${inputClass} ${borderClass(!!roleErr)}`}
+                      >
+                        <option value="service">Service</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Administrator</option>
+                      </select>
+                      {roleErr && <p className="text-[10px] text-error">{roleErr}</p>}
+                    </div>
 
-                  {members.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveRow(index)}
-                      className="mt-5 p-2 text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
+                    {values.members.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRow(index)}
+                        aria-label={`Remove member ${index + 1}`}
+                        className="mt-5 p-2 text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex justify-between items-center pt-2">
@@ -169,7 +259,13 @@ export function InviteMembers() {
               <p className="text-[11px] text-on-surface-variant leading-relaxed">
                 Copy and share each unique link with the respective member. Each link is valid for 3 days and can only be used once.
               </p>
-              
+              {skippedCount > 0 && (
+                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                  {skippedCount} {skippedCount === 1 ? 'person was' : 'people were'} skipped because they
+                  already belong to this workspace.
+                </p>
+              )}
+
               <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                 {lastInvitations.map((invite, index) => (
                   <div key={index} className="p-2.5 bg-surface border border-outline-variant/30 rounded-lg space-y-1">

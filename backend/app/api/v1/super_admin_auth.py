@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin_model import SuperAdmin
 from app.schemas.super_admin_schema import SuperAdminLoginRequest, TokenResponse, SuperAdminResponse
-from app.core.security import verify_password, create_access_token
+from app.schemas.auth_schema import ChangePasswordRequest, UpdateNameRequest
+from app.core.security import verify_password, get_password_hash, create_access_token
+from app.core.deps import get_current_super_admin
 
 router = APIRouter(prefix="/superadmin", tags=["Super Admin Authentication"])
 
@@ -42,3 +44,40 @@ def super_admin_login(payload: SuperAdminLoginRequest, db: Session = Depends(get
         "token_type": "bearer",
         "user": admin_response
     }
+
+
+@router.patch("/profile", response_model=SuperAdminResponse)
+def update_super_admin_profile(
+    payload: UpdateNameRequest,
+    db: Session = Depends(get_db),
+    admin: SuperAdmin = Depends(get_current_super_admin)
+):
+    admin.name = payload.name
+    db.commit()
+    db.refresh(admin)
+    return SuperAdminResponse(
+        id=admin.id,
+        name=admin.name,
+        email=admin.email,
+        role="super_admin",
+        created_at=admin.created_at
+    )
+
+
+@router.post("/change-password")
+def change_super_admin_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    admin: SuperAdmin = Depends(get_current_super_admin)
+):
+    # 400 (not 401) so the client doesn't treat a wrong password as an expired session
+    if not verify_password(payload.current_password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    if verify_password(payload.new_password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="New password must be different from the current password")
+
+    admin.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+
+    return {"message": "Password updated successfully"}

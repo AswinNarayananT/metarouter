@@ -1,8 +1,36 @@
-import React, { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { Shield, Lock, CheckCircle2, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
+import { useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useFormik } from 'formik';
+import * as Yup from 'yup';
+import { Shield, Check, Circle, CheckCircle2, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { verifyInvitationToken, acceptWorkspaceInvitation } from '@/store/workspace/workspaceThunks';
+import {
+  PASSWORD_RULES,
+  confirmPasswordField,
+  fieldError,
+  nameField,
+  strongPasswordField,
+} from '@/validation/schemas';
+
+interface AcceptInvitationValues {
+  name: string;
+  password: string;
+  confirm_password: string;
+}
+
+const acceptSchema = Yup.object({
+  name: nameField('Full name'),
+  password: strongPasswordField(),
+  confirm_password: confirmPasswordField('password'),
+});
+
+const inputClass =
+  'w-full px-3.5 py-2.5 rounded-xl border bg-surface text-on-surface text-xs focus:outline-none focus:ring-2';
+
+function borderClass(hasError: boolean) {
+  return hasError ? 'border-error focus:ring-error/40' : 'border-outline-variant/50 focus:ring-primary/50';
+}
 
 export function AcceptInvitation() {
   const [searchParams] = useSearchParams();
@@ -10,18 +38,13 @@ export function AcceptInvitation() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
 
-  const { 
-    isVerifyingInvite, 
-    verifiedInvite, 
-    isAcceptingInvite, 
-    acceptSuccess, 
-    error 
+  const {
+    isVerifyingInvite,
+    verifiedInvite,
+    isAcceptingInvite,
+    acceptSuccess,
+    error
   } = useAppSelector((state) => state.workspace);
-
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
 
   // 1. Verify token on initial load
   useEffect(() => {
@@ -30,32 +53,22 @@ export function AcceptInvitation() {
     }
   }, [token, dispatch]);
 
-  // Sync pre-filled name from backend verification payload
-  useEffect(() => {
-    if (verifiedInvite?.name) {
-      setName(verifiedInvite.name);
-    }
-  }, [verifiedInvite]);
-
-  // 2. Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError('');
-
-    if (password.length < 8) {
-      setPasswordError('Password must be at least 8 characters long');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setPasswordError('Passwords do not match');
-      return;
-    }
-
-    if (token) {
-      dispatch(acceptWorkspaceInvitation({ token, name, password }));
-    }
-  };
+  // 2. Form state — name is pre-filled from the verified invitation
+  const formik = useFormik<AcceptInvitationValues>({
+    initialValues: {
+      name: verifiedInvite?.name ?? '',
+      password: '',
+      confirm_password: '',
+    },
+    enableReinitialize: true,
+    validationSchema: acceptSchema,
+    onSubmit: async (values) => {
+      if (!token) return;
+      await dispatch(
+        acceptWorkspaceInvitation({ token, name: values.name.trim(), password: values.password })
+      );
+    },
+  });
 
   // Render Token Missing View
   if (!token) {
@@ -130,6 +143,10 @@ export function AcceptInvitation() {
     );
   }
 
+  const nameError = fieldError(formik, 'name');
+  const passwordError = fieldError(formik, 'password');
+  const confirmError = fieldError(formik, 'confirm_password');
+
   // Render Registration Form View
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface p-4">
@@ -144,17 +161,20 @@ export function AcceptInvitation() {
           </p>
         </div>
 
-        {(error || passwordError) && (
-          <div className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
+        {error && (
+          <div role="alert" className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{passwordError || error}</span>
+            <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={formik.handleSubmit} noValidate className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-on-surface mb-1">Email Address</label>
+            <label htmlFor="invite-email" className="block text-xs font-medium text-on-surface mb-1">
+              Email Address
+            </label>
             <input
+              id="invite-email"
               type="email"
               disabled
               value={verifiedInvite?.email || ''}
@@ -163,40 +183,69 @@ export function AcceptInvitation() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-on-surface mb-1">Your Full Name</label>
+            <label htmlFor="name" className="block text-xs font-medium text-on-surface mb-1">
+              Your Full Name
+            </label>
             <input
+              id="name"
               type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
               placeholder="Full Name"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+              aria-invalid={!!nameError}
+              {...formik.getFieldProps('name')}
+              className={`${inputClass} ${borderClass(!!nameError)}`}
             />
+            {nameError && <p className="mt-1 text-[11px] text-error">{nameError}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-on-surface mb-1">Create Password</label>
+            <label htmlFor="password" className="block text-xs font-medium text-on-surface mb-1">
+              Create Password
+            </label>
             <input
+              id="password"
               type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
               placeholder="••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+              aria-invalid={!!passwordError}
+              {...formik.getFieldProps('password')}
+              className={`${inputClass} ${borderClass(!!passwordError)}`}
             />
+            {formik.values.password.length > 0 && (
+              <ul className="grid grid-cols-2 gap-1 mt-2">
+                {PASSWORD_RULES.map((rule) => {
+                  const ok = rule.test(formik.values.password);
+                  return (
+                    <li
+                      key={rule.label}
+                      className={`flex items-center gap-1.5 text-[11px] ${ok ? 'text-on-surface' : 'text-on-surface-variant'}`}
+                    >
+                      {ok ? <Check className="w-3 h-3 text-primary" /> : <Circle className="w-3 h-3" />}
+                      {rule.label}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {passwordError && formik.values.password.length === 0 && (
+              <p className="mt-1 text-[11px] text-error">{passwordError}</p>
+            )}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-on-surface mb-1">Confirm Password</label>
+            <label htmlFor="confirm_password" className="block text-xs font-medium text-on-surface mb-1">
+              Confirm Password
+            </label>
             <input
+              id="confirm_password"
               type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
               placeholder="••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+              aria-invalid={!!confirmError}
+              {...formik.getFieldProps('confirm_password')}
+              className={`${inputClass} ${borderClass(!!confirmError)}`}
             />
+            {confirmError && <p className="mt-1 text-[11px] text-error">{confirmError}</p>}
           </div>
 
           <button

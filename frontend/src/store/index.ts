@@ -4,12 +4,14 @@ import type { TypedUseSelectorHook } from 'react-redux';
 import superAdminReducer from './superAdmin/superAdminSlice';
 import organizationReducer from './superAdmin/organizationSlice';
 import workspaceReducer from './workspace/workspaceSlice';
+import broadcastReducer from './broadcast/broadcastSlice';
 
 export const store = configureStore({
   reducer: {
     superAdmin: superAdminReducer,
     organizations: organizationReducer,
     workspace: workspaceReducer,
+    broadcast: broadcastReducer,
   },
 });
 

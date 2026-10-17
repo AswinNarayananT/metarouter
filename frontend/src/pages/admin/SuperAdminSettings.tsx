@@ -1,71 +1,122 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { useFormik } from 'formik';
+import * as Yup from 'yup';
 import { User, Shield, KeyRound, Save, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Card, Container } from '@/components/Card';
 import { Button } from '@/components/Button';
-import { useAppSelector } from '@/store';
-import { superAdminApi } from '@/api/superAdminApi';
+import { useAppDispatch, useAppSelector } from '@/store';
+import { updateSuperAdminProfile, changeSuperAdminPassword } from '@/store/superAdmin/superAdminThunks';
+import { resetSuperAdminSettingsState } from '@/store/superAdmin/superAdminSlice';
+import {
+  PASSWORD_RULES,
+  confirmPasswordField,
+  fieldError,
+  nameField,
+  strongPasswordField,
+} from '@/validation/schemas';
+
+interface ProfileValues {
+  name: string;
+}
+
+interface PasswordValues {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+const profileSchema = Yup.object({
+  name: nameField('Full name'),
+});
+
+const passwordSchema = Yup.object({
+  current_password: Yup.string().required('Current password is required'),
+  new_password: strongPasswordField('New password').notOneOf(
+    [Yup.ref('current_password')],
+    'New password must be different from the current password'
+  ),
+  confirm_password: confirmPasswordField('new_password'),
+});
+
+const inputClass =
+  'w-full px-4 py-2.5 bg-surface border rounded-xl text-sm text-on-surface focus:outline-none focus:ring-2';
+
+function borderClass(hasError: boolean) {
+  return hasError ? 'border-error focus:ring-error/40' : 'border-outline-variant/50 focus:ring-primary/50';
+}
+
+function Banner({ type, message }: { type: 'success' | 'error'; message: string }) {
+  const isError = type === 'error';
+  return (
+    <div
+      role={isError ? 'alert' : 'status'}
+      className={`p-3 rounded-xl flex items-center gap-2 text-xs font-medium border ${
+        isError ? 'bg-error/10 text-error border-error/20' : 'bg-primary/10 text-primary border-primary/20'
+      }`}
+    >
+      {isError ? <AlertCircle className="size-4 shrink-0" /> : <CheckCircle2 className="size-4 shrink-0" />}
+      <span>{message}</span>
+    </div>
+  );
+}
 
 export function SuperAdminSettings() {
-  const user = useAppSelector((state) => state.superAdmin.user);
+  const dispatch = useAppDispatch();
+  const {
+    user,
+    isSavingProfile,
+    profileSuccess,
+    profileError,
+    isChangingPassword,
+    passwordSuccess,
+    passwordError,
+  } = useAppSelector((state) => state.superAdmin);
 
-  const [name, setName] = useState(user?.name || '');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  // Clear success / error banners when leaving the page
+  useEffect(() => {
+    return () => {
+      dispatch(resetSuperAdminSettingsState());
+    };
+  }, [dispatch]);
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-    setIsSavingProfile(true);
+  const profileForm = useFormik<ProfileValues>({
+    initialValues: { name: user?.name ?? '' },
+    enableReinitialize: true,
+    validationSchema: profileSchema,
+    onSubmit: async (values) => {
+      await dispatch(updateSuperAdminProfile({ name: values.name.trim() }));
+    },
+  });
 
-    try {
-      await superAdminApi.patch('/api/v1/admin/profile', { name });
-      setSuccessMessage('Admin profile updated successfully.');
-    } catch (err: any) {
-      setErrorMessage(err.response?.data?.detail || 'Failed to update profile.');
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
+  const passwordForm = useFormik<PasswordValues>({
+    initialValues: { current_password: '', new_password: '', confirm_password: '' },
+    validationSchema: passwordSchema,
+    onSubmit: async (values, { resetForm }) => {
+      const result = await dispatch(
+        changeSuperAdminPassword({
+          current_password: values.current_password,
+          new_password: values.new_password,
+        })
+      );
+      if (changeSuperAdminPassword.fulfilled.match(result)) {
+        resetForm();
+      }
+    },
+  });
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
+  // Hide a stale result banner once the user starts editing again
+  const clearBannersOnEdit = (handler: (e: React.ChangeEvent<HTMLInputElement>) => void) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      handler(e);
+      if (profileSuccess || profileError || passwordSuccess || passwordError) {
+        dispatch(resetSuperAdminSettingsState());
+      }
+    };
 
-    if (newPassword.length < 8) {
-      setErrorMessage('New password must be at least 8 characters long.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setErrorMessage('New passwords do not match.');
-      return;
-    }
-
-    setIsSavingPassword(true);
-
-    try {
-      await superAdminApi.post('/api/v1/admin/change-password', {
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
-      setSuccessMessage('Password changed successfully.');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err: any) {
-      setErrorMessage(err.response?.data?.detail || 'Failed to update password.');
-    } finally {
-      setIsSavingPassword(false);
-    }
-  };
+  const nameError = fieldError(profileForm, 'name');
+  const currentError = fieldError(passwordForm, 'current_password');
+  const newError = fieldError(passwordForm, 'new_password');
+  const confirmError = fieldError(passwordForm, 'confirm_password');
 
   return (
     <Container size="md">
@@ -73,15 +124,6 @@ export function SuperAdminSettings() {
         <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Super Admin Settings</h1>
         <p className="mt-1 text-sm text-on-surface-variant">Manage your master profile credentials and platform security.</p>
       </div>
-
-      {(errorMessage || successMessage) && (
-        <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 text-xs font-medium border ${
-          errorMessage ? 'bg-error/10 text-error border-error/20' : 'bg-primary/10 text-primary border-primary/20'
-        }`}>
-          {errorMessage ? <AlertCircle className="size-4 shrink-0" /> : <CheckCircle2 className="size-4 shrink-0" />}
-          <span>{errorMessage || successMessage}</span>
-        </div>
-      )}
 
       <div className="grid gap-6">
         {/* Profile Card */}
@@ -91,21 +133,32 @@ export function SuperAdminSettings() {
             <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface">Profile Details</h2>
           </div>
 
-          <form onSubmit={handleUpdateProfile} className="space-y-4">
+          <form onSubmit={profileForm.handleSubmit} noValidate className="space-y-4">
+            {profileSuccess && <Banner type="success" message="Admin profile updated successfully." />}
+            {profileError && <Banner type="error" message={profileError} />}
+
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase mb-1">Full Name</label>
+              <label htmlFor="sa-name" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
+                Full Name
+              </label>
               <input
+                id="sa-name"
                 type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface border border-outline-variant/50 rounded-xl text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
+                autoComplete="name"
+                aria-invalid={!!nameError}
+                {...profileForm.getFieldProps('name')}
+                onChange={clearBannersOnEdit(profileForm.handleChange)}
+                className={`${inputClass} ${borderClass(!!nameError)}`}
               />
+              {nameError && <p className="mt-1 text-xs text-error">{nameError}</p>}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase mb-1">Email Address</label>
+              <label htmlFor="sa-email" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
+                Email Address
+              </label>
               <input
+                id="sa-email"
                 type="email"
                 disabled
                 value={user?.email || ''}
@@ -115,7 +168,7 @@ export function SuperAdminSettings() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase mb-1">Role Privilege</label>
+              <span className="block text-xs font-medium text-on-surface-variant uppercase mb-1">Role Privilege</span>
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
                 <Shield className="size-3.5" />
                 <span>Super Administrator</span>
@@ -123,7 +176,7 @@ export function SuperAdminSettings() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button type="submit" size="sm" disabled={isSavingProfile}>
+              <Button type="submit" size="sm" disabled={isSavingProfile || !profileForm.dirty}>
                 <Save className="size-4" />
                 <span>{isSavingProfile ? 'Saving...' : 'Save Profile'}</span>
               </Button>
@@ -138,48 +191,80 @@ export function SuperAdminSettings() {
             <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface">Security & Password</h2>
           </div>
 
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
+          <form onSubmit={passwordForm.handleSubmit} noValidate className="space-y-4">
+            {passwordSuccess && <Banner type="success" message="Password changed successfully." />}
+            {passwordError && <Banner type="error" message={passwordError} />}
+
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase mb-1">Current Password</label>
+              <label htmlFor="sa-current" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
+                Current Password
+              </label>
               <input
+                id="sa-current"
                 type="password"
-                required
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
                 placeholder="••••••••"
-                className="w-full px-4 py-2.5 bg-surface border border-outline-variant/50 rounded-xl text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
+                aria-invalid={!!currentError}
+                {...passwordForm.getFieldProps('current_password')}
+                onChange={clearBannersOnEdit(passwordForm.handleChange)}
+                className={`${inputClass} ${borderClass(!!currentError)}`}
               />
+              {currentError && <p className="mt-1 text-xs text-error">{currentError}</p>}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase mb-1">New Password</label>
+              <label htmlFor="sa-new" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
+                New Password
+              </label>
               <input
+                id="sa-new"
                 type="password"
-                required
-                minLength={8}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
                 placeholder="••••••••"
-                className="w-full px-4 py-2.5 bg-surface border border-outline-variant/50 rounded-xl text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
+                aria-invalid={!!newError}
+                {...passwordForm.getFieldProps('new_password')}
+                onChange={clearBannersOnEdit(passwordForm.handleChange)}
+                className={`${inputClass} ${borderClass(!!newError)}`}
               />
+              {passwordForm.values.new_password.length > 0 && (
+                <ul className="grid grid-cols-2 gap-1 mt-2">
+                  {PASSWORD_RULES.map((rule) => {
+                    const ok = rule.test(passwordForm.values.new_password);
+                    return (
+                      <li
+                        key={rule.label}
+                        className={`text-[11px] ${ok ? 'text-primary' : 'text-on-surface-variant'}`}
+                      >
+                        {ok ? '✓' : '•'} {rule.label}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {newError && <p className="mt-1 text-xs text-error">{newError}</p>}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-on-surface-variant uppercase mb-1">Confirm New Password</label>
+              <label htmlFor="sa-confirm" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
+                Confirm New Password
+              </label>
               <input
+                id="sa-confirm"
                 type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
                 placeholder="••••••••"
-                className="w-full px-4 py-2.5 bg-surface border border-outline-variant/50 rounded-xl text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
+                aria-invalid={!!confirmError}
+                {...passwordForm.getFieldProps('confirm_password')}
+                onChange={clearBannersOnEdit(passwordForm.handleChange)}
+                className={`${inputClass} ${borderClass(!!confirmError)}`}
               />
+              {confirmError && <p className="mt-1 text-xs text-error">{confirmError}</p>}
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button type="submit" size="sm" disabled={isSavingPassword}>
+              <Button type="submit" size="sm" disabled={isChangingPassword}>
                 <Lock className="size-4" />
-                <span>{isSavingPassword ? 'Updating...' : 'Update Password'}</span>
+                <span>{isChangingPassword ? 'Updating...' : 'Update Password'}</span>
               </Button>
             </div>
           </form>
