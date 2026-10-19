@@ -7,7 +7,7 @@ export interface WorkspaceUser {
   organization_name: string;
 }
 
-export interface WorkspaceOrganization {
+export interface CurrentOrganization {
   id: number;
   name: string;
   slug: string;
@@ -78,7 +78,7 @@ export interface AcceptInvitationPayload {
 export interface WorkspaceState {
   user: WorkspaceUser | null;
   token: string | null;
-  organization: WorkspaceOrganization | null;
+  organization: CurrentOrganization | null;
   isLoading: boolean;
   error: string | null;
   // Profile / Workspace settings save

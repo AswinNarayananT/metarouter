@@ -18,7 +18,7 @@ export function WorkspaceOverview() {
           Welcome back, {user?.name || 'Agent'}!
         </h1>
         <p className="text-sm text-on-surface-variant">
-          Here is your workspace activity snapshot for {user?.organization_name || 'your organization'}.
+          Here is your workspace activity snapshot for {user?.organization_name || 'your workspace'}.
         </p>
       </div>
 

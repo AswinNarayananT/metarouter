@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.workers.celery_app import celery_app
 from app.database import SessionLocal
-from app.models.ai_chat import ChatMessage, MessageStatus
+from app.models.conversation_model import ChatMessage, MessageStatus
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import (
     WhatsAppPermanentError,
@@ -21,6 +21,7 @@ from app.models.contact_model import ContactOptOut
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.core.redis_client import redis_client
 from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
+from app.realtime.notify import notify_message_status
 
 SEND_LOCK_SECONDS = 120  # Longer than one Meta request; released as soon as the task finishes
 RETRY_MARKER_GRACE_SECONDS = 120  # Keep the "retry scheduled" marker a bit past the retry time
@@ -39,6 +40,7 @@ def _mark_failed(db: Session, message: ChatMessage, error: str) -> None:
     message.status = MessageStatus.FAILED
     message.error = error
     db.commit()
+    notify_message_status(message)
     print(f"[WHATSAPP SEND FAILED] message={message.id}: {error}")
 
 

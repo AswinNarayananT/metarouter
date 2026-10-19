@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { AlertCircle, Loader2, MinusCircle, Sparkles } from 'lucide-react';
 import type { ParsedDocument } from '@/types/chatTypes';
 
 /** One-line parsing state shown on an attachment card. */
@@ -7,6 +7,13 @@ export function ParseStatus({ parsed }: { parsed: ParsedDocument }) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-on-surface-variant">
         <Loader2 className="w-3 h-3 animate-spin" /> Reading document…
+      </span>
+    );
+  }
+  if (parsed.status === 'skipped') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-on-surface-variant" title={parsed.note}>
+        <MinusCircle className="w-3 h-3" /> Not read automatically
       </span>
     );
   }

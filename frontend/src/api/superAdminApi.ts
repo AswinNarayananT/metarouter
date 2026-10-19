@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { store } from '@/store';
+import { API_BASE_URL } from '@/api/config';
 
 export const superAdminApi = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,7 +29,7 @@ superAdminApi.interceptors.response.use(
   (response) => response,
   (error) => {
     // A 401 from login means bad credentials — don't reload the page and wipe the error
-    const isLoginRoute = error.config?.url?.includes('/superadmin/login');
+    const isLoginRoute = error.config?.url?.includes('/superadmin/login') || error.config?.url?.includes('/superadmin/logout');
     if (error.response?.status === 401 && !isLoginRoute) {
       store.dispatch({ type: 'superAdmin/logoutSuperAdmin' }); // Or equivalent logout action
       window.location.href = '/admin/login';

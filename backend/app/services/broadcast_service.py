@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models.ai_chat import Conversation, ChatMessage, MessageStatus
+from app.models.conversation_model import Conversation, ChatMessage, MessageStatus
 from app.models.contact_model import ContactOptOut
 from app.models.whatsapp_model import WhatsAppNumber
 

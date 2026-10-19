@@ -4,15 +4,15 @@ services:
     image: pgvector/pgvector:pg15
     container_name: metarouter_db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: metarouter_db
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in the root .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the root .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in the root .env}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d metarouter_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -45,7 +45,7 @@ services:
       - ./backend/.env
     # Override the localhost URLs in .env with the compose service hostnames
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/metarouter_db
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       FRONTEND_BASE_URL: http://localhost
     depends_on:
@@ -66,7 +66,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/metarouter_db
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       FRONTEND_BASE_URL: http://localhost
     depends_on:
@@ -92,7 +92,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/metarouter_db
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis:
@@ -103,7 +103,12 @@ services:
       - metarouter_net
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # Vite bakes the API and WebSocket URLs into the build; frontend/.env is not copied into the image
+      args:
+        VITE_API_URL: ${VITE_API_URL:?set VITE_API_URL in the root .env}
+        VITE_WS_URL: ${VITE_WS_URL:?set VITE_WS_URL in the root .env}
     container_name: metarouter_frontend
     ports:
       - "80:80"

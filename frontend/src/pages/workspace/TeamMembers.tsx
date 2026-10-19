@@ -16,7 +16,7 @@ export function TeamMembers() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-on-surface">Team Members</h1>
-        <p className="text-sm text-on-surface-variant">View all team members in your organization.</p>
+        <p className="text-sm text-on-surface-variant">View all team members in your workspace.</p>
       </div>
 
       {/* Team Members List Table */}

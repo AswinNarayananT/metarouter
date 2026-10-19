@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Copy, KeyRound, ShieldCheck, AlertCircle, X } from 'lucide-react';
-import { Card, Container } from '@/components/Card';
-import { Button } from '@/components/Button';
-import { CopyField } from '@/components/superadmin/CopyField';
+import { Card, Container } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { CopyField } from '@/components/superAdmin/CopyField';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchOrganization, updateOrganizationStatus } from '@/store/superAdmin/organizationThunks';
 
@@ -116,7 +116,7 @@ export function OrganizationDetailPage() {
         <div>
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-4 border border-outline-variant/30">
             <ShieldCheck className="size-3.5" />
-            Tenant workspace
+            Organization
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">{current.name}</h1>
           <p className="mt-1 font-mono text-sm text-on-surface-variant">{current.slug}</p>
@@ -204,7 +204,7 @@ export function OrganizationDetailPage() {
             </div>
 
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Are you sure you want to change the status of <strong>{current.name}</strong> to <span className="uppercase font-semibold text-primary">{pendingStatus}</span>? This will immediately affect tenant access.
+              Are you sure you want to change the status of <strong>{current.name}</strong> to <span className="uppercase font-semibold text-primary">{pendingStatus}</span>? This will immediately affect the organization's access.
             </p>
 
             <div className="flex justify-end gap-3 pt-2">

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, LayoutDashboard } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Button } from '@/components/Button';
-import { BrandLogo } from '@/components/BrandLogo';
+import { Button } from '@/components/ui/Button';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 
 interface NavItem {
   label: string;

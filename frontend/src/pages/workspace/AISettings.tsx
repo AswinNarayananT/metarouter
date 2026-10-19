@@ -44,7 +44,7 @@ function fieldBorder(hasError: boolean) {
   return hasError ? 'border-error focus:border-error' : 'border-outline/30 focus:border-primary';
 }
 
-export default function AISettingsPage() {
+export function AISettings() {
   const dispatch = useAppDispatch();
   const {
     aiSettings,

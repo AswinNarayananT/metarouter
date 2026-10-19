@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Camera, MessageCircle, Send } from 'lucide-react';
-import type { WhatsAppNumber } from '@/types/channelTypes';
+import type { WhatsAppNumber, WhatsAppQualityRating } from '@/types/channelTypes';
+import type { WhatsAppNumberSummary } from '@/types/broadcastTypes';
+import { useAppDispatch, useAppSelector } from '@/store';
+import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { ComingSoonChannelCard } from '@/components/channels/ComingSoonChannelCard';
 import { WhatsAppChannelCard } from '@/components/channels/WhatsAppChannelCard';
-import { SAMPLE_WHATSAPP_NUMBERS } from './channelsSampleData';
 
 const COMING_SOON = [
   {
@@ -26,19 +28,36 @@ const COMING_SOON = [
   },
 ];
 
+const QUALITY_RATINGS: WhatsAppQualityRating[] = ['GREEN', 'YELLOW', 'RED'];
+
+// API row -> what the channel card renders
+function toWhatsAppNumber(number: WhatsAppNumberSummary): WhatsAppNumber {
+  const quality = number.quality_rating as WhatsAppQualityRating;
+  return {
+    id: number.id,
+    displayPhoneNumber: number.display_phone_number,
+    qualityRating: QUALITY_RATINGS.includes(quality) ? quality : 'GREEN',
+    messagingTier: number.messaging_tier,
+    status: number.status,
+    connectedAt: number.created_at,
+    disconnectMessage: number.disconnect_message,
+  };
+}
+
 export function Channels() {
-  // UI only for now — replace with channels API data once it exists
-  const [numbers, setNumbers] = useState<WhatsAppNumber[]>(SAMPLE_WHATSAPP_NUMBERS);
+  const dispatch = useAppDispatch();
+  // Same list the layout loads for the disconnected-number banner; refreshed when this page opens
+  const { numbers: apiNumbers, isLoadingNumbers } = useAppSelector((state) => state.broadcast);
+  const numbers = useMemo(() => apiNumbers.map(toWhatsAppNumber), [apiNumbers]);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    dispatch(fetchWhatsAppNumbers());
+  }, [dispatch]);
 
   const handleConnect = () => {
     // TODO: launch Meta Embedded Signup here, then save the number through the API
     setNotice('WhatsApp connection is coming soon. You will be able to connect your number from here.');
-  };
-
-  const handleDisconnect = (id: number) => {
-    // TODO: call the disconnect API; for now this only updates the preview
-    setNumbers((prev) => prev.filter((n) => n.id !== id));
   };
 
   return (
@@ -50,12 +69,8 @@ export function Channels() {
         </p>
       </div>
 
-      <WhatsAppChannelCard
-        numbers={numbers}
-        notice={notice}
-        onConnect={handleConnect}
-        onDisconnect={handleDisconnect}
-      />
+      {/* No disconnect action yet: the backend has no endpoint for removing a number */}
+      <WhatsAppChannelCard numbers={numbers} isLoading={isLoadingNumbers} notice={notice} onConnect={handleConnect} />
 
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-on-surface">More channels</h2>

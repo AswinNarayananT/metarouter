@@ -1,10 +1,10 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Building2, LayoutDashboard, LogOut, Plus, ShieldCheck, Settings } from 'lucide-react';
 import { clsx } from 'clsx';
-import { BrandLogo } from '@/components/BrandLogo';
-import { Button } from '@/components/Button';
+import { BrandLogo } from '@/components/ui/BrandLogo';
+import { Button } from '@/components/ui/Button';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { logoutSuperAdmin } from '@/store/superAdmin/superAdminSlice';
+import { logoutSuperAdminSession } from '@/store/superAdmin/superAdminThunks';
 
 const NAV = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -17,8 +17,8 @@ export function SuperAdminLayout() {
   const navigate = useNavigate();
   const user = useAppSelector((state) => state.superAdmin.user);
 
-  function handleLogout() {
-    dispatch(logoutSuperAdmin());
+  async function handleLogout() {
+    await dispatch(logoutSuperAdminSession());
     navigate('/admin/login');
   }
 
@@ -83,7 +83,7 @@ export function SuperAdminLayout() {
               </div>
               <div className="hidden lg:block">
                 <p className="text-sm font-semibold text-on-surface">Platform control</p>
-                <p className="text-xs text-on-surface-variant">Manage tenant workspaces and admin credentials</p>
+                <p className="text-xs text-on-surface-variant">Manage organizations and admin credentials</p>
               </div>
               <div className="flex items-center gap-2 ml-auto">
                 <Button

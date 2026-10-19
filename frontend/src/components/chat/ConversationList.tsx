@@ -18,6 +18,7 @@ export function ConversationList({
   onFilterChange,
   selectedId,
   onSelect,
+  emptyMessage = 'No conversations found.',
   className = '',
 }: {
   conversations: ChatConversation[];
@@ -28,6 +29,7 @@ export function ConversationList({
   onFilterChange: (tab: ChatFilterTab) => void;
   selectedId: number | null;
   onSelect: (id: number) => void;
+  emptyMessage?: string; // Loading / error text when there's nothing to list
   className?: string;
 }) {
   return (
@@ -82,7 +84,7 @@ export function ConversationList({
 
       <ul className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
-          <li className="p-8 text-center text-sm text-on-surface-variant">No conversations found.</li>
+          <li className="p-8 text-center text-sm text-on-surface-variant">{emptyMessage}</li>
         ) : (
           conversations.map((c) => (
             <li key={c.id}>

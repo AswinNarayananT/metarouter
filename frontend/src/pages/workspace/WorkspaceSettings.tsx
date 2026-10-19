@@ -42,7 +42,7 @@ import {
 type SettingsTab = 'workspace' | 'profile' | 'security';
 
 interface DetailsFormValues {
-  workspace_name: string;
+  organization_name: string;
   personal_name: string;
 }
 
@@ -225,7 +225,7 @@ export function WorkspaceSettings() {
   const detailsSchema = useMemo(
     () =>
       Yup.object({
-        workspace_name: isEditingWorkspace ? nameField('Organization name') : Yup.string(),
+        organization_name: isEditingWorkspace ? nameField('Workspace name') : Yup.string(),
         personal_name: isEditingPersonal ? nameField('Full name') : Yup.string(),
       }),
     [isEditingWorkspace, isEditingPersonal]
@@ -233,18 +233,18 @@ export function WorkspaceSettings() {
 
   const detailsForm = useFormik<DetailsFormValues>({
     initialValues: {
-      workspace_name: organization?.name || user?.organization_name || '',
+      organization_name: organization?.name || user?.organization_name || '',
       personal_name: user?.name || '',
     },
     validationSchema: detailsSchema,
     onSubmit: async (values) => {
-      const workspaceName = values.workspace_name.trim();
+      const organizationName = values.organization_name.trim();
       const personalName = values.personal_name.trim();
       const currentOrgName = organization?.name || user?.organization_name || '';
 
       const requests = [];
-      if (isAdmin && isEditingWorkspace && workspaceName !== currentOrgName) {
-        requests.push(dispatch(updateOrganization({ name: workspaceName })));
+      if (isAdmin && isEditingWorkspace && organizationName !== currentOrgName) {
+        requests.push(dispatch(updateOrganization({ name: organizationName })));
       }
       if (isEditingPersonal && personalName !== user?.name) {
         requests.push(dispatch(updateCurrentUser({ name: personalName })));
@@ -263,8 +263,8 @@ export function WorkspaceSettings() {
   const startEditing = (section: 'workspace' | 'personal') => {
     dispatch(resetSettingsSaveState());
     if (section === 'workspace') {
-      detailsForm.setFieldValue('workspace_name', organization?.name || user?.organization_name || '', false);
-      detailsForm.setFieldTouched('workspace_name', false, false);
+      detailsForm.setFieldValue('organization_name', organization?.name || user?.organization_name || '', false);
+      detailsForm.setFieldTouched('organization_name', false, false);
       setIsEditingWorkspace(true);
     } else {
       detailsForm.setFieldValue('personal_name', user?.name || '', false);
@@ -278,14 +278,14 @@ export function WorkspaceSettings() {
     setIsEditingPersonal(false);
     detailsForm.resetForm({
       values: {
-        workspace_name: organization?.name || user?.organization_name || '',
+        organization_name: organization?.name || user?.organization_name || '',
         personal_name: user?.name || '',
       },
     });
     dispatch(resetSettingsSaveState());
   };
 
-  const workspaceNameError = fieldError(detailsForm, 'workspace_name');
+  const organizationNameError = fieldError(detailsForm, 'organization_name');
   const personalNameError = fieldError(detailsForm, 'personal_name');
 
   /* ----- Organization details (from store) ----- */
@@ -442,20 +442,20 @@ export function WorkspaceSettings() {
             <SectionCard
               icon={Building2}
               title="Workspace details"
-              description="Settings that apply to everyone in your organization."
+              description="Settings that apply to everyone in your workspace."
               action={!isEditingWorkspace && editButton(() => startEditing('workspace'))}
             >
-              <Field label="Organization name" hint="Shown to your team members.">
+              <Field label="Workspace name" hint="Shown to your team members.">
                 {isEditingWorkspace ? (
                   <>
                     <input
-                      id="workspace_name"
+                      id="organization_name"
                       type="text"
-                      aria-invalid={!!workspaceNameError}
-                      {...detailsForm.getFieldProps('workspace_name')}
-                      className={`${inputClass} ${borderClass(!!workspaceNameError)}`}
+                      aria-invalid={!!organizationNameError}
+                      {...detailsForm.getFieldProps('organization_name')}
+                      className={`${inputClass} ${borderClass(!!organizationNameError)}`}
                     />
-                    <FieldErrorText error={workspaceNameError} />
+                    <FieldErrorText error={organizationNameError} />
                   </>
                 ) : (
                   <ReadOnlyValue>
@@ -480,7 +480,7 @@ export function WorkspaceSettings() {
                 >
                   <span className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    Couldn't load organization details.
+                    Couldn't load workspace details.
                   </span>
                   <button
                     onClick={handleRetryOrganization}
@@ -498,7 +498,7 @@ export function WorkspaceSettings() {
                     </div>
                   </Field>
 
-                  <Field label="Organization ID" hint="Use this when contacting support.">
+                  <Field label="Workspace ID" hint="Use this when contacting support.">
                     <div className="flex items-center gap-2.5 px-4 py-2.5 bg-surface/50 border border-outline/30 rounded-xl text-sm text-on-surface-variant">
                       <Hash className="w-4 h-4 shrink-0" />
                       <span className="flex-1 truncate font-mono text-xs">
@@ -507,7 +507,7 @@ export function WorkspaceSettings() {
                       {organization?.id && (
                         <button
                           onClick={handleCopyOrgId}
-                          aria-label="Copy organization ID"
+                          aria-label="Copy workspace ID"
                           className="flex items-center gap-1 text-xs font-medium text-on-surface hover:text-primary transition-colors cursor-pointer"
                         >
                           {copiedId ? (

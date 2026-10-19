@@ -4,7 +4,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
-from app.core.deps import get_current_tenant_user
+from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
 from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import PARSEABLE_TYPES
@@ -12,7 +12,7 @@ from app.workers.tasks.media_tasks import PARSEABLE_TYPES
 router = APIRouter(prefix="/attachments", tags=["Chat Attachments"])
 
 @router.get("/{attachment_id}/file")
-def get_attachment_file(attachment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def get_attachment_file(attachment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Only files that belong to the user's own organization
     attachment = db.query(ChatAttachment).filter(
         ChatAttachment.id == attachment_id,

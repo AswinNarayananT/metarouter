@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 InvitationStatus = Literal["pending", "accepted", "expired"]
+# Only workspace roles can be invited (never "super_admin" or anything else)
+WorkspaceRole = Literal["admin", "manager", "service"]
 
 # ------------------------------------------------------------------
 # Request Schemas
@@ -12,7 +14,7 @@ InvitationStatus = Literal["pending", "accepted", "expired"]
 class InviteItem(BaseModel):
     name: str
     email: EmailStr
-    role: str  # "admin", "manager", "service"
+    role: WorkspaceRole
 
 
 class BulkInviteRequest(BaseModel):
@@ -22,7 +24,7 @@ class BulkInviteRequest(BaseModel):
 class SingleInviteRequest(BaseModel):
     name: str
     email: EmailStr
-    role: str  # "admin", "manager", "service"
+    role: WorkspaceRole
 
 
 class AcceptInvitationRequest(BaseModel):
@@ -58,9 +60,15 @@ class InvitationDetail(BaseModel):
         from_attributes = True
 
 
+class SkippedInvitation(BaseModel):
+    email: str
+    reason: str
+
+
 class BulkInvitationResponse(BaseModel):
     message: str
     invitations: List[InvitationDetail]
+    skipped: List[SkippedInvitation] = []
 
 
 class VerifyInvitationResponse(BaseModel):

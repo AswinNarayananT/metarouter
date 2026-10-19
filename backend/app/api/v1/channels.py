@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.core.deps import get_current_tenant_user
+from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.channel_service import disconnect_explanation
@@ -9,7 +9,7 @@ from app.services.channel_service import disconnect_explanation
 router = APIRouter(prefix="/channels", tags=["Channels"])
 
 @router.get("/whatsapp/numbers")
-def list_whatsapp_numbers(db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def list_whatsapp_numbers(db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # Connected WhatsApp numbers of the user's organization (the access token is never returned)
     numbers = db.query(WhatsAppNumber).filter(
         WhatsAppNumber.organization_id == current_user.organization_id

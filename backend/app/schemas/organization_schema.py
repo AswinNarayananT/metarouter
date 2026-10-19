@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
 
 
@@ -81,7 +81,7 @@ class OrganizationCreateRequest(BaseModel):
     slug: Optional[str] = Field(None, min_length=2, max_length=80)
     support_email: EmailStr
     support_phone: str = Field(..., min_length=6, max_length=32)
-    subscription_status: str = Field(default="active")
+    subscription_status: Literal["active", "inactive"] = Field(default="active")
     admin_name: str = Field(..., min_length=2, max_length=120)
     admin_email: EmailStr
     admin_password: str = Field(..., min_length=8, max_length=128)
@@ -101,4 +101,4 @@ class DashboardStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class UpdateStatusRequest(BaseModel):
-    subscription_status: str  # e.g., "active", "inactive"    
+    subscription_status: Literal["active", "inactive"]  # inactive = suspended: the workspace can't log in or use the API    

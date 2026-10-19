@@ -1,5 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
-import type { DashboardStats, OrganizationDetail, OrganizationListItem } from '@/types/organization';
+import type { DashboardStats, OrganizationDetail, OrganizationListItem } from '@/types/organizationTypes';
 import {
   createOrganization,
   fetchDashboardStats,

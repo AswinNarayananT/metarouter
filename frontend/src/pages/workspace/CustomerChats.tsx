@@ -1,5 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
-import type { ChatConversation, ChatFilterTab, ChatSidePanel } from '@/types/chatTypes';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ChatFilterTab, ChatSidePanel } from '@/types/chatTypes';
+import { useAppDispatch, useAppSelector } from '@/store';
+import { clearChatActionError, selectConversation } from '@/store/chat/chatSlice';
+import { fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from '@/store/chat/chatThunks';
+import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
 import { ContactPanel } from '@/components/chat/ContactPanel';
@@ -9,20 +13,36 @@ import { DocumentViewer } from '@/components/chat/DocumentViewer';
 import { EmptyChatState } from '@/components/chat/EmptyChatState';
 import { MessageList } from '@/components/chat/MessageList';
 import { TakeoverBanner } from '@/components/chat/TakeoverBanner';
-import { SAMPLE_CONVERSATIONS } from './chatSampleData';
 
 export function CustomerChats() {
-  const [conversations, setConversations] = useState<ChatConversation[]>(SAMPLE_CONVERSATIONS);
-  const [selectedId, setSelectedId] = useState<number | null>(SAMPLE_CONVERSATIONS[0]?.id ?? null);
+  const dispatch = useAppDispatch();
+  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, actionError } = useAppSelector((state) => state.chat);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ChatFilterTab>('all');
   const [draft, setDraft] = useState('');
   const [panel, setPanel] = useState<ChatSidePanel>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
-  // On small screens show either the list or the open chat
-  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  // On small screens show either the list or the open chat (a handover alert arrives with a chat selected)
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>(() => (selectedId ? 'chat' : 'list'));
+
+  // 1. Load the chats (live events keep the list current afterwards)
+  useEffect(() => {
+    dispatch(fetchConversations());
+  }, [dispatch]);
+
+  // Leaving the page: no chat is open, so new customer messages count as unread again
+  useEffect(() => () => {
+    dispatch(selectConversation(null));
+  }, [dispatch]);
+
+  // 2. Open chat: load its newest messages (every time, since events stop while it's closed) and follow it live
+  useEffect(() => {
+    if (selectedId !== null) dispatch(fetchMessages({ conversationId: selectedId }));
+  }, [dispatch, selectedId]);
+  useOpenChatRealtimeSync(selectedId);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const thread = selectedId !== null ? threads[selectedId] : undefined;
   const documentMessage =
     panel?.type === 'document' ? selected?.messages.find((m) => m.id === panel.messageId) : undefined;
   const openDocument = documentMessage?.attachment;
@@ -34,7 +54,7 @@ export function CustomerChats() {
       if (filter === 'ai' && c.status !== 'active') return false;
       if (filter === 'human' && c.status !== 'human_takeover') return false;
       if (!q) return true;
-      const last = c.messages[c.messages.length - 1]?.content ?? '';
+      const last = c.lastMessage?.content ?? '';
       return c.name.toLowerCase().includes(q) || c.phone.includes(q) || last.toLowerCase().includes(q);
     });
   }, [conversations, query, filter]);
@@ -49,47 +69,45 @@ export function CustomerChats() {
   );
 
   const openConversation = (id: number) => {
-    setSelectedId(id);
+    dispatch(selectConversation(id));
+    dispatch(clearChatActionError());
     setMobileView('chat');
     setDraft('');
     // Documents belong to a conversation — don't carry one over to another chat
     setPanel((p) => (p?.type === 'document' ? null : p));
     setViewerOpen(false);
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
   };
 
   const toggleTakeover = () => {
     if (!selected) return;
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === selected.id
-          ? { ...c, status: c.status === 'human_takeover' ? 'active' : 'human_takeover' }
-          : c
-      )
+    dispatch(
+      updateConversationStatus({
+        conversationId: selected.id,
+        status: selected.status === 'human_takeover' ? 'active' : 'human_takeover',
+      })
     );
   };
 
-  // UI-only: appends the reply locally until the send API is wired up
+  const loadOlder = () => {
+    if (selected && thread?.nextBeforeId) dispatch(fetchMessages({ conversationId: selected.id, beforeId: thread.nextBeforeId }));
+  };
+
+  // 3. Agent reply: the draft is cleared only once the API accepted it (kept on errors to retry)
   const sendMessage = () => {
     const text = draft.trim();
     if (!text || !selected) return;
-    const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === selected.id
-          ? {
-              ...c,
-              status: 'human_takeover',
-              lastActive: time,
-              messages: [...c.messages, { id: Date.now(), sender: 'human', content: text, time }],
-            }
-          : c
-      )
-    );
-    setDraft('');
+    dispatch(sendAgentMessage({ conversationId: selected.id, content: text }))
+      .unwrap()
+      .then(() => setDraft(''))
+      .catch(() => {});
   };
 
+  // WhatsApp allows free text only within 24 hours of the customer's last message
+  const windowClosed = selected ? !selected.windowOpen : false;
+
   const showDocument = (messageId: number) => setPanel({ type: 'document', messageId });
+
+  const emptyMessage = isLoading && !hasLoaded ? 'Loading conversations…' : loadError ?? 'No conversations found.';
 
   return (
     // Cancel <main>'s padding and fill the viewport below the 64px navbar
@@ -104,6 +122,7 @@ export function CustomerChats() {
         onFilterChange={setFilter}
         selectedId={selectedId}
         onSelect={openConversation}
+        emptyMessage={emptyMessage}
       />
 
       <section
@@ -122,8 +141,10 @@ export function CustomerChats() {
             {selected.status === 'human_takeover' && <TakeoverBanner />}
             <MessageList
               conversation={selected}
+              thread={thread}
               selectedDocumentId={panel?.type === 'document' ? panel.messageId : null}
               onOpenDocument={showDocument}
+              onLoadOlder={loadOlder}
             />
             <Composer
               value={draft}
@@ -134,6 +155,13 @@ export function CustomerChats() {
                   ? 'Type a reply...'
                   : 'Type a reply — sending will take over from the AI'
               }
+              disabledReason={
+                windowClosed
+                  ? "It's been over 24 hours since the customer's last message. WhatsApp only allows a template now, so replying here opens again when they write back."
+                  : null
+              }
+              sending={sendingId === selected.id}
+              error={actionError}
             />
           </>
         ) : (

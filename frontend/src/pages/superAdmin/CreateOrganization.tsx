@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { AlertCircle, Building2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
-import { Card, Container } from '@/components/Card';
-import { Button } from '@/components/Button';
+import { Card, Container } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { createOrganization } from '@/store/superAdmin/organizationThunks';
 import { clearOrganizationError } from '@/store/superAdmin/organizationSlice';
@@ -133,7 +133,7 @@ export function CreateOrganizationPage() {
       <div className="mb-8">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-4 border border-outline-variant/30">
           <Building2 className="size-3.5" />
-          New tenant
+          New organization
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Create organization</h1>
         <p className="mt-2 text-on-surface-variant">

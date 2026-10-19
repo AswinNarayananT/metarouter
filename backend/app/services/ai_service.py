@@ -2,12 +2,16 @@ from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models.ai_chat import OrganizationAISettings, KnowledgeChunk, ChatMessage, Conversation
-from app.services.vector_service import search_tenant_knowledge
+from app.models.ai_settings_model import OrganizationAISettings
+from app.models.knowledge_model import KnowledgeChunk
+from app.models.conversation_model import ChatMessage, Conversation
+from app.services.vector_service import search_organization_knowledge
 
 client = genai.Client(api_key=settings.GOOGLE_API_KEY)
 
-def get_tenant_knowledge_chunks(db: Session, organization_id: int, user_query: str) -> str:
+AI_HISTORY_MESSAGES = 10  # Most recent messages sent to Gemini as conversation context
+
+def get_organization_knowledge_chunks(db: Session, organization_id: int, user_query: str) -> str:
     """
     Retrieves the knowledge base chunks most relevant to the query, strictly filtered by organization_id.
     """
@@ -19,7 +23,7 @@ def get_tenant_knowledge_chunks(db: Session, organization_id: int, user_query: s
         return "No additional company documents provided."
 
     try:
-        return search_tenant_knowledge(db, organization_id, user_query, limit=5)
+        return search_organization_knowledge(db, organization_id, user_query, limit=5)
     except Exception as e:
         # Answer from rules alone rather than failing the whole reply
         print(f"Knowledge search error: {e}")
@@ -27,17 +31,17 @@ def get_tenant_knowledge_chunks(db: Session, organization_id: int, user_query: s
 
 def generate_ai_response(db: Session, conversation: Conversation, new_message: str) -> str:
     """
-    Generates a tenant-isolated response using Gemini.
+    Generates an organization-isolated response using Gemini.
     """
     org_id = conversation.organization_id
 
-    # 1. Fetch Tenant System Instructions
+    # 1. Fetch the Organization System Instructions
     ai_settings = db.query(OrganizationAISettings).filter_by(organization_id=org_id).first()
     bot_name = ai_settings.bot_name if ai_settings else "Support Bot"
     custom_rules = ai_settings.system_instructions if ai_settings and ai_settings.system_instructions else "Be polite and helpful."
 
-    # 2. Retrieve Tenant Knowledge Base Chunks
-    knowledge_context = get_tenant_knowledge_chunks(db, org_id, new_message)
+    # 2. Retrieve the Organization Knowledge Base Chunks
+    knowledge_context = get_organization_knowledge_chunks(db, org_id, new_message)
 
     # 3. Construct Strict Guardrails & Handover Rules
     system_instruction = f"""
@@ -60,10 +64,9 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
     Example: "[ESCALATE_TO_HUMAN] I am connecting you with a support representative who will assist you shortly."
     """
 
-    # 4. Fetch Chat History (Last 10 Messages)
-    past_messages = db.query(ChatMessage).filter_by(
-        conversation_id=conversation.id
-    ).order_by(ChatMessage.created_at.asc()).limit(10).all()
+    # 4. Fetch Chat History: the most recent messages, oldest first
+    recent_messages = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation.id).order_by(ChatMessage.id.desc()).limit(AI_HISTORY_MESSAGES).all()
+    past_messages = list(reversed(recent_messages))
 
     contents = []
     for msg in past_messages:
@@ -74,14 +77,17 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
                 parts=[types.Part.from_text(text=msg.content)]
             )
         )
-    
-    # Append the new incoming message
-    contents.append(
-        types.Content(
-            role="user",
-            parts=[types.Part.from_text(text=new_message)]
+
+    # Append the new message, unless it's already the last saved one (incoming chats are saved before this runs;
+    # document summaries are not saved as messages, so they are added here)
+    last = past_messages[-1] if past_messages else None
+    if not (last and last.sender == "user" and last.content == new_message):
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=new_message)]
+            )
         )
-    )
 
     # 5. Call Gemini
     try:

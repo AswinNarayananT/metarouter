@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Phone } from 'lucide-react';
+import { AlertTriangle, Gauge, Phone } from 'lucide-react';
 import type { WhatsAppNumber, WhatsAppQualityRating } from '@/types/channelTypes';
 
 const QUALITY_STYLES: Record<WhatsAppQualityRating, { label: string; className: string }> = {
@@ -8,6 +8,14 @@ const QUALITY_STYLES: Record<WhatsAppQualityRating, { label: string; className: 
   RED: { label: 'Low quality', className: 'bg-error/10 text-error' },
 };
 
+// TIER_250 -> "250", TIER_1K -> "1,000", TIER_UNLIMITED -> "Unlimited"
+function tierLabel(tier: string) {
+  const value = tier.replace('TIER_', '');
+  if (value === 'UNLIMITED') return 'Unlimited customers a day';
+  const count = Number(value.replace('K', '')) * (value.endsWith('K') ? 1000 : 1);
+  return isNaN(count) ? tier : `Up to ${count.toLocaleString()} customers a day`;
+}
+
 function formatDate(iso: string) {
   const d = new Date(iso);
   return isNaN(d.getTime())
@@ -15,16 +23,17 @@ function formatDate(iso: string) {
     : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-/** A connected WhatsApp number with an inline disconnect confirmation. */
+/** A connected WhatsApp number with an inline disconnect confirmation (when disconnecting is available). */
 export function ConnectedNumberRow({
   number,
   onDisconnect,
 }: {
   number: WhatsAppNumber;
-  onDisconnect: (id: number) => void;
+  onDisconnect?: (id: number) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const quality = QUALITY_STYLES[number.qualityRating];
+  const disconnected = number.status === 'disconnected';
 
   return (
     <li className="flex flex-wrap items-center gap-3 p-4 rounded-xl bg-surface border border-outline-variant/30">
@@ -33,22 +42,39 @@ export function ConnectedNumberRow({
       </span>
       <div className="flex-1 min-w-48">
         <p className="text-sm font-semibold text-on-surface">{number.displayPhoneNumber}</p>
-        <p className="flex items-center gap-1 text-xs text-on-surface-variant">
-          <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="truncate">{number.verifiedName}</span>
-          <span aria-hidden="true">·</span>
-          <span className="shrink-0">Connected {formatDate(number.connectedAt)}</span>
-        </p>
+        {disconnected ? (
+          <p className="flex items-start gap-1 text-xs text-error">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+            <span>{number.disconnectMessage ?? 'The connection to WhatsApp stopped working. Reconnect this number.'}</span>
+          </p>
+        ) : (
+          <p className="flex items-center gap-1 text-xs text-on-surface-variant">
+            <Gauge className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="truncate" title="Meta's messaging limit: new customers you can start chats with in 24 hours">
+              {tierLabel(number.messagingTier)}
+            </span>
+            {number.connectedAt && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="shrink-0">Connected {formatDate(number.connectedAt)}</span>
+              </>
+            )}
+          </p>
+        )}
       </div>
 
-      <span
-        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${quality.className}`}
-        title="Meta's quality rating for this number, based on recent customer feedback"
-      >
-        {quality.label}
-      </span>
+      {disconnected ? (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-error/10 text-error">Disconnected</span>
+      ) : (
+        <span
+          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${quality.className}`}
+          title="Meta's quality rating for this number, based on recent customer feedback"
+        >
+          {quality.label}
+        </span>
+      )}
 
-      {confirming ? (
+      {!onDisconnect ? null : confirming ? (
         <div className="flex items-center gap-2" role="group" aria-label="Confirm disconnect">
           <span className="text-xs text-on-surface-variant">Disconnect this number?</span>
           <button

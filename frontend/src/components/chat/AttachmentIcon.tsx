@@ -1,4 +1,4 @@
-import { FileText, Image as ImageIcon } from 'lucide-react';
+import { File, FileText, Image as ImageIcon } from 'lucide-react';
 import type { ChatAttachment } from '@/types/chatTypes';
 
 export function AttachmentIcon({
@@ -8,5 +8,7 @@ export function AttachmentIcon({
   kind: ChatAttachment['kind'];
   className?: string;
 }) {
-  return kind === 'pdf' ? <FileText className={className} /> : <ImageIcon className={className} />;
+  if (kind === 'pdf') return <FileText className={className} />;
+  if (kind === 'file') return <File className={className} />;
+  return <ImageIcon className={className} />;
 }

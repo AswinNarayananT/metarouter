@@ -1,10 +1,13 @@
 import { useEffect } from 'react';
-import { X } from 'lucide-react';
+import { Download, X } from 'lucide-react';
 import type { ChatAttachment } from '@/types/chatTypes';
+import { useAttachmentUrl } from '@/hooks/useAttachmentUrl';
 import { AttachmentIcon } from './AttachmentIcon';
 
 /** Full-size document overlay. Closes on the X button, a click outside, or Escape. */
 export function DocumentViewer({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
+  const { url, failed } = useAttachmentUrl(attachment);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -40,34 +43,50 @@ export function DocumentViewer({ attachment, onClose }: { attachment: ChatAttach
 
       {/* Clicks on the document itself don't close the viewer */}
       <div className="flex-1 min-h-0 flex items-center justify-center p-4 sm:p-8 pt-0 sm:pt-0">
-        {attachment.url ? (
+        {url && attachment.kind !== 'file' ? (
           attachment.kind === 'image' ? (
             <img
-              src={attachment.url}
+              src={url}
               alt={attachment.fileName}
               onClick={(e) => e.stopPropagation()}
               className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
             />
           ) : (
             <iframe
-              src={attachment.url}
+              src={url}
               title={attachment.fileName}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-4xl h-full rounded-lg bg-white shadow-2xl"
             />
           )
         ) : (
+          // Other file types can't be previewed safely in the browser: offer a download instead
           <div
             onClick={(e) => e.stopPropagation()}
             className="flex flex-col items-center gap-3 p-10 rounded-2xl bg-surface text-center max-w-sm"
           >
-            <span className="w-16 h-16 rounded-2xl bg-error/10 text-error flex items-center justify-center">
+            <span className="w-16 h-16 rounded-2xl bg-surface-container text-on-surface-variant flex items-center justify-center">
               <AttachmentIcon kind={attachment.kind} className="w-8 h-8" />
             </span>
-            <p className="text-sm font-semibold text-on-surface">{attachment.fileName}</p>
+            <p className="text-sm font-semibold text-on-surface break-all">{attachment.fileName}</p>
             <p className="text-xs text-on-surface-variant">
-              Preview isn't available for this sample file. Real uploads will open here.
+              {failed
+                ? "This file couldn't be downloaded from WhatsApp."
+                : attachment.downloadStatus === 'pending'
+                  ? 'Still downloading from WhatsApp…'
+                  : attachment.kind === 'file'
+                    ? "This file type can't be previewed here."
+                    : 'Loading preview…'}
             </p>
+            {url && attachment.kind === 'file' && (
+              <a
+                href={url}
+                download={attachment.fileName}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                <Download className="w-4 h-4" /> Download {attachment.extension}
+              </a>
+            )}
           </div>
         )}
       </div>

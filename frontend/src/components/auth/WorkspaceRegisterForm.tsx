@@ -12,7 +12,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Button } from '@/components/Button';
+import { Button } from '@/components/ui/Button';
 
 function toSlug(value: string): string {
   return value

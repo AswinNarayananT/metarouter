@@ -7,9 +7,10 @@ import uuid
 from datetime import datetime, timezone
 from app.database import get_db
 from app.config import settings
-from app.core.deps import get_current_tenant_user
+from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
-from app.models.ai_chat import OrganizationAISettings, KnowledgeDocument
+from app.models.ai_settings_model import OrganizationAISettings
+from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task
 
 router = APIRouter(prefix="/ai-settings", tags=["AI Settings & Knowledge"])
@@ -37,7 +38,7 @@ def _serialize(settings_obj: Optional[OrganizationAISettings]) -> dict:
 @router.get("/")
 def get_ai_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     _require_admin(current_user)
     settings_obj = db.query(OrganizationAISettings).filter_by(organization_id=current_user.organization_id).first()
@@ -50,7 +51,7 @@ async def save_ai_settings(
     system_instructions: str = Form(""),
     allowed_roles_for_handover: str = Form(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     _require_admin(current_user)
     organization_id = current_user.organization_id
@@ -89,7 +90,7 @@ async def save_ai_settings(
 
 
 @router.get("/knowledge")
-def list_knowledge_documents(db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def list_knowledge_documents(db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     _require_admin(current_user)
 
     documents = db.query(KnowledgeDocument).filter(KnowledgeDocument.organization_id == current_user.organization_id).order_by(KnowledgeDocument.created_at.desc(), KnowledgeDocument.id.desc()).all()
@@ -98,7 +99,7 @@ def list_knowledge_documents(db: Session = Depends(get_db), current_user: User =
 
 
 @router.post("/knowledge", status_code=202)
-def upload_knowledge_document(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def upload_knowledge_document(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     _require_admin(current_user)
     organization_id = current_user.organization_id
 
@@ -151,7 +152,7 @@ def upload_knowledge_document(file: UploadFile = File(...), db: Session = Depend
 
 
 @router.post("/knowledge/{document_id}/retry")
-def retry_knowledge_document(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def retry_knowledge_document(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     _require_admin(current_user)
 
     document = _get_document(db, current_user.organization_id, document_id)
@@ -171,7 +172,7 @@ def retry_knowledge_document(document_id: int, db: Session = Depends(get_db), cu
 
 
 @router.delete("/knowledge/{document_id}")
-def delete_knowledge_document(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def delete_knowledge_document(document_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     _require_admin(current_user)
 
     document = _get_document(db, current_user.organization_id, document_id)

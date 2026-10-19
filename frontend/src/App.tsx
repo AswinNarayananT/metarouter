@@ -8,16 +8,16 @@ import { AcceptInvitation } from '@/pages/workspace/AcceptInvitation';
 
 // Super Admin Pages & Components
 import { SuperAdminLogin } from '@/pages/SuperAdminLogin';
-import { ProtectedSuperAdminRoute } from '@/components/superadmin/ProtectedSuperAdminRoute';
-import { SuperAdminLayout } from '@/components/superadmin/SuperAdminLayout';
-import { SuperAdminDashboard } from '@/pages/admin/Dashboard';
-import { OrganizationListPage } from '@/pages/admin/Organizations';
-import { CreateOrganizationPage } from '@/pages/admin/CreateOrganization';
-import { OrganizationDetailPage } from '@/pages/admin/OrganizationDetail';
-import { SuperAdminSettings } from '@/pages/admin/SuperAdminSettings';
+import { ProtectedSuperAdminRoute } from '@/components/superAdmin/ProtectedSuperAdminRoute';
+import { SuperAdminLayout } from '@/components/superAdmin/SuperAdminLayout';
+import { SuperAdminDashboard } from '@/pages/superAdmin/Dashboard';
+import { OrganizationListPage } from '@/pages/superAdmin/Organizations';
+import { CreateOrganizationPage } from '@/pages/superAdmin/CreateOrganization';
+import { OrganizationDetailPage } from '@/pages/superAdmin/OrganizationDetail';
+import { SuperAdminSettings } from '@/pages/superAdmin/SuperAdminSettings';
 
-// Tenant Workspace Pages & Layout
-import { TenantLayout } from '@/pages/workspace/TenantLayout';
+// Workspace Pages & Layout
+import { WorkspaceLayout } from '@/pages/workspace/WorkspaceLayout';
 import { WorkspaceOverview } from '@/pages/workspace/WorkspaceOverview';
 import { CustomerChats } from '@/pages/workspace/CustomerChats';
 import { Broadcasts } from '@/pages/workspace/Broadcasts';
@@ -26,13 +26,13 @@ import { BroadcastDetail } from '@/pages/workspace/BroadcastDetail';
 import { TeamMembers } from '@/pages/workspace/TeamMembers';
 import { InviteMembers } from '@/pages/workspace/InviteMembers';
 import { WorkspaceSettings } from '@/pages/workspace/WorkspaceSettings';
-import AISettingsPage from '@/pages/workspace/AISettingsPage';
+import { AISettings } from '@/pages/workspace/AISettings';
 import { Channels } from '@/pages/workspace/Channels';
 
 // Route Guards
-import { ProtectedWorkspaceRoute } from '@/components/routes/protectedRoute';
-import { PublicOnlyRoute } from '@/components/routes/publicRoute';
-import { AdminOnlyRoute } from '@/components/routes/adminOnlyRoute';
+import { ProtectedWorkspaceRoute } from '@/components/routes/ProtectedWorkspaceRoute';
+import { PublicOnlyRoute } from '@/components/routes/PublicOnlyRoute';
+import { AdminOnlyRoute } from '@/components/routes/AdminOnlyRoute';
 
 function SuperAdminLoginGate() {
   const user = useAppSelector((state) => state.superAdmin.user);
@@ -89,13 +89,13 @@ function App() {
         </Route>
 
         {/* ========================================== */}
-        {/* Tenant Workspace Dashboard Routes          */}
+        {/* Workspace Dashboard Routes                 */}
         {/* ========================================== */}
         <Route
           path="/dashboard"
           element={
             <ProtectedWorkspaceRoute>
-              <TenantLayout />
+              <WorkspaceLayout />
             </ProtectedWorkspaceRoute>
           }
         >
@@ -146,7 +146,7 @@ function App() {
             path="ai-settings"
             element={
               <AdminOnlyRoute>
-                <AISettingsPage />
+                <AISettings />
               </AdminOnlyRoute>
             }
           />

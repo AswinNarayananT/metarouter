@@ -1,6 +1,10 @@
+import { UserRound } from 'lucide-react';
+
+// Letters of the first two words; none when the "name" is only a phone number
 function initials(name: string) {
   return name
     .split(' ')
+    .filter((w) => /\p{L}/u.test(w[0] ?? ''))
     .map((w) => w[0])
     .join('')
     .slice(0, 2)
@@ -13,7 +17,7 @@ export function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg'
     <div
       className={`${dims} rounded-full bg-primary/10 text-primary font-semibold flex items-center justify-center shrink-0`}
     >
-      {initials(name)}
+      {initials(name) || <UserRound className={size === 'lg' ? 'w-6 h-6' : 'w-4 h-4'} />}
     </div>
   );
 }

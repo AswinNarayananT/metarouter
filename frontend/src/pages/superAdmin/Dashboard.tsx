@@ -1,14 +1,14 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Building2, MessageSquare, Sparkles, Users } from 'lucide-react';
-import { Card, Container } from '@/components/Card';
-import { Button } from '@/components/Button';
+import { Card, Container } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchDashboardStats } from '@/store/superAdmin/organizationThunks';
 
 const STAT_META = [
   { key: 'organization_count' as const, label: 'Organizations', icon: Building2 },
-  { key: 'active_organization_count' as const, label: 'Active tenants', icon: Sparkles },
+  { key: 'active_organization_count' as const, label: 'Active organizations', icon: Sparkles },
   { key: 'user_count' as const, label: 'Workspace users', icon: Users },
   { key: 'whatsapp_count' as const, label: 'WhatsApp numbers', icon: MessageSquare },
 ];
@@ -33,7 +33,7 @@ export function SuperAdminDashboard() {
           Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
         </h1>
         <p className="mt-2 text-on-surface-variant max-w-2xl">
-          Provision client workspaces, issue admin credentials, and keep every tenant isolated on the MetaRouter gateway.
+          Provision client workspaces, issue admin credentials, and keep every organization isolated on the MetaRouter gateway.
         </p>
       </div>
 
@@ -71,10 +71,10 @@ export function SuperAdminDashboard() {
 
       <Card className="overflow-hidden">
         {isLoading && !stats ? (
-          <p className="p-6 text-sm text-on-surface-variant">Loading tenants…</p>
+          <p className="p-6 text-sm text-on-surface-variant">Loading organizations…</p>
         ) : !stats?.recent_organizations.length ? (
           <div className="p-8 text-center">
-            <p className="text-sm text-on-surface-variant mb-4">No organizations yet. Create the first tenant workspace.</p>
+            <p className="text-sm text-on-surface-variant mb-4">No organizations yet. Create the first one.</p>
             <Link to="/admin/organizations/new">
               <Button variant="primary">Create organization</Button>
             </Link>

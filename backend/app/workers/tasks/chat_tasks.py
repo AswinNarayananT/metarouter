@@ -3,12 +3,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.workers.celery_app import celery_app
 from app.database import SessionLocal
-from app.models.ai_chat import Conversation, ChatMessage, ConversationStatus
+from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.contact_model import ContactOptOut
 from app.config import settings
 from app.services.ai_service import generate_ai_response
 from app.services.messaging_service import queue_outgoing_message
+from app.realtime.notify import notify_new_messages, notify_handover
 
 ESCALATION_TAG = "[ESCALATE_TO_HUMAN]"
 HANDOVER_FALLBACK_TEXT = "I'm connecting you with our team. Someone will reply shortly."
@@ -37,12 +38,36 @@ def _get_or_create_conversation(
     return conversation
 
 
+def update_customer_profile(db: Session, conversation: Conversation, customer_name: Optional[str] = None, customer_user_id: Optional[str] = None, referral: Optional[dict] = None):
+    # 1. WhatsApp profile name: always the latest (replaces a broadcast contact list name)
+    changed = False
+    if customer_name and customer_name.strip() and conversation.customer_name != customer_name.strip()[:255]:
+        conversation.customer_name = customer_name.strip()[:255]
+        changed = True
+
+    # 2. Business-scoped user id (BSUID), sent once WhatsApp usernames roll out
+    if customer_user_id and conversation.customer_wa_user_id != customer_user_id:
+        conversation.customer_wa_user_id = customer_user_id[:160]
+        changed = True
+
+    # 3. Ad the customer first came from (later ad clicks don't overwrite it)
+    if referral and not conversation.ad_referral:
+        conversation.ad_referral = referral
+        changed = True
+
+    if changed:
+        db.commit()
+
+
 @celery_app.task(name="process_chat_message_task")
 def process_chat_message_task(
     phone_number_id: str,
     customer_phone: str,
     user_text: str,
     wamid: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    customer_user_id: Optional[str] = None,
+    referral: Optional[dict] = None,
 ):
     db = SessionLocal()
     try:
@@ -59,8 +84,9 @@ def process_chat_message_task(
         # Disconnected number: keep the message (and STOP/START), but nothing can be sent back
         disconnected = number.status == "disconnected"
 
-        # 1. Get or create conversation
+        # 1. Get or create conversation, and keep the customer's name / id / ad up to date
         conversation = _get_or_create_conversation(db, organization_id, phone_number_id, customer_phone)
+        update_customer_profile(db, conversation, customer_name, customer_user_id, referral)
 
         # 2. Save incoming user message (the unique wamid rejects webhooks Meta delivers twice)
         user_msg = ChatMessage(conversation_id=conversation.id, sender="user", content=user_text, wamid=wamid)
@@ -73,6 +99,7 @@ def process_chat_message_task(
                 print(f"[DUPLICATE] Ignoring re-delivered message {wamid}")
                 return
             raise
+        notify_new_messages(db, [user_msg])
 
         # 3. STOP / START keywords: update the opt-out list and confirm, no AI reply
         keyword = user_text.strip().upper()
@@ -129,7 +156,8 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
         clean_reply = ai_raw_reply.replace(ESCALATION_TAG, "").strip() or HANDOVER_FALLBACK_TEXT
         queue_outgoing_message(db, conversation, sender="model", content=clean_reply)
 
-        # TODO: Notify the dashboard (WebSocket) that a human is needed
+        # Alert the team in the dashboard that a human is needed
+        notify_handover(db, conversation)
         print(f"[ALERT] Handover triggered for Org {conversation.organization_id}, Customer: {conversation.customer_phone}")
     else:
         queue_outgoing_message(db, conversation, sender="model", content=ai_raw_reply)

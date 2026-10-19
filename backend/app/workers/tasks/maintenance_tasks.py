@@ -5,14 +5,15 @@ from app.workers.celery_app import celery_app
 from app.database import SessionLocal
 from app.config import settings
 from app.core.redis_client import redis_client
-from app.models.ai_chat import ChatMessage, MessageStatus
+from app.realtime.notify import notify_attachment_updated
+from app.models.conversation_model import ChatMessage, MessageStatus
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import get_phone_number_status, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task, pause_number_broadcasts, retry_marker_key
 from app.workers.tasks.broadcast_tasks import process_broadcast_task
-from app.models.ai_chat import KnowledgeDocument
+from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task, knowledge_retry_marker_key
 from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import download_whatsapp_media_task, parse_document_task, media_retry_marker_key
@@ -123,6 +124,7 @@ def sweep_stuck_messages_task():
                     attachment.parse_status = "failed"
                 attachment.error = "Processing didn't finish in time"
                 db.commit()
+                notify_attachment_updated(attachment)
                 print(f"[SWEEP] gave up on stuck attachment {attachment.id}")
                 continue
 

@@ -17,11 +17,15 @@ import {
   Route,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { logoutWorkspace } from '@/store/workspace/workspaceSlice';
+import { logoutWorkspaceSession } from '@/store/workspace/workspaceThunks';
 import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { DisconnectedNumberBanner } from '@/components/channels/DisconnectedNumberBanner';
+import { LiveStatus } from '@/components/realtime/LiveStatus';
+import { HandoverAlerts } from '@/components/realtime/HandoverAlerts';
+import { useRealtimeConnection } from '@/hooks/useRealtime';
+import { useChatListRealtimeSync } from '@/hooks/useChatRealtime';
 
-export function TenantLayout() {
+export function WorkspaceLayout() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,6 +40,10 @@ export function TenantLayout() {
     dispatch(fetchWhatsAppNumbers());
   }, [dispatch]);
 
+  // One live-updates socket for every workspace page (closed on logout), keeping the chat list current
+  useRealtimeConnection();
+  useChatListRealtimeSync();
+
   // Desktop: collapse to icon rail. Mobile: slide-over drawer.
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -45,8 +53,8 @@ export function TenantLayout() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  const handleLogout = () => {
-    dispatch(logoutWorkspace());
+  const handleLogout = async () => {
+    await dispatch(logoutWorkspaceSession());
     navigate('/login');
   };
 
@@ -172,6 +180,7 @@ export function TenantLayout() {
 
         {/* Workspace / user info */}
         <div className="flex items-center gap-3 min-w-0">
+          <LiveStatus />
           <div className="hidden sm:block text-right min-w-0">
             <p className="text-sm font-semibold text-on-surface truncate max-w-[220px]">
               {userName || orgName}
@@ -228,6 +237,7 @@ export function TenantLayout() {
         <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-surface">
           <DisconnectedNumberBanner numbers={numbers} isAdmin={isAdmin} />
           <Outlet />
+          <HandoverAlerts />
         </main>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { superAdminApi } from '@/api/superAdminApi';
 import { getApiErrorMessage } from '@/api/errors';
-import type { OrganizationCreatePayload } from '@/types/organization';
+import type { OrganizationCreatePayload } from '@/types/organizationTypes';
 
 export const fetchDashboardStats = createAsyncThunk(
   'organizations/fetchStats',

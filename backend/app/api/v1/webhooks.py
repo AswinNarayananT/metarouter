@@ -97,7 +97,23 @@ async def receive_whatsapp_webhook(request: Request):
             value = change.get("value", {})
             phone_number_id = value.get("metadata", {}).get("phone_number_id")
 
+            # Who sent the messages: WhatsApp profile name and business-scoped user id, by number
+            profiles = {
+                contact.get("wa_id"): {
+                    "name": (contact.get("profile") or {}).get("name"),
+                    "user_id": contact.get("user_id")
+                }
+                for contact in value.get("contacts", [])
+            }
+
             for message in value.get("messages", []):
+                profile = profiles.get(message.get("from")) or {}
+                customer = {
+                    "customer_name": profile.get("name"),
+                    "customer_user_id": profile.get("user_id") or message.get("user_id"),
+                    "referral": message.get("referral")  # Only on a first message from a Click-to-WhatsApp ad
+                }
+
                 # Images and documents (bills, invoices) are downloaded and parsed
                 media_type = message.get("type")
                 media = message.get(media_type) if media_type in ("image", "document") else None
@@ -113,7 +129,8 @@ async def receive_whatsapp_webhook(request: Request):
                             "sha256": media.get("sha256"),
                             "filename": media.get("filename"),
                             "caption": media.get("caption")
-                        }
+                        },
+                        **customer
                     )
                     continue
 
@@ -122,6 +139,7 @@ async def receive_whatsapp_webhook(request: Request):
                     customer_phone=message.get("from"),
                     user_text=_message_text(message),
                     wamid=message.get("id"),
+                    **customer
                 )
 
             for status in value.get("statuses", []):

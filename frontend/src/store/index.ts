@@ -6,6 +6,7 @@ import organizationReducer from './superAdmin/organizationSlice';
 import workspaceReducer from './workspace/workspaceSlice';
 import broadcastReducer from './broadcast/broadcastSlice';
 import knowledgeReducer from './knowledge/knowledgeSlice';
+import chatReducer from './chat/chatSlice';
 
 export const store = configureStore({
   reducer: {
@@ -14,6 +15,7 @@ export const store = configureStore({
     workspace: workspaceReducer,
     broadcast: broadcastReducer,
     knowledge: knowledgeReducer,
+    chat: chatReducer,
   },
 });
 

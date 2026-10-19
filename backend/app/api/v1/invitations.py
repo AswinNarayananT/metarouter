@@ -5,7 +5,9 @@ import math
 import secrets
 from typing import List, Optional
 
+from sqlalchemy import func
 from app.database import get_db
+from app.models.admin_model import SuperAdmin
 from app.models.organization_model import Organization, User
 from app.models.invitation_model import Invitation
 from app.schemas.invitation_schema import (
@@ -17,7 +19,7 @@ from app.schemas.invitation_schema import (
     PaginatedInvitationsResponse
 )
 from app.core.security import  get_password_hash
-from app.core.deps import get_current_tenant_user
+from app.core.deps import get_current_workspace_user
 from app.config import settings
 from app.workers.tasks.email_tasks import send_invitation_email_task
 
@@ -39,7 +41,7 @@ def list_invitations(
     page_size: int = Query(10, ge=1, le=100),
     status_filter: Optional[InvitationStatus] = Query(None, alias="status"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can view invitations")
@@ -85,21 +87,20 @@ def list_invitations(
 def generate_invitations(
     payload: BulkInviteRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can invite members")
 
     org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
     created_invitations = []
+    skipped = []
 
     for item in payload.members:
-        # Check if user already exists
-        existing_user = db.query(User).filter(
-            User.email == item.email.lower(),
-            User.organization_id == current_user.organization_id
-        ).first()
-        if existing_user:
+        # Emails are unique across all workspaces, and platform admin emails can never join a workspace
+        reason = _email_unavailable_reason(db, item.email, current_user.organization_id)
+        if reason:
+            skipped.append({"email": item.email, "reason": reason})
             continue
 
         token = secrets.token_urlsafe(32)
@@ -135,8 +136,20 @@ def generate_invitations(
 
     return {
         "message": "Invitations generated and email tasks queued successfully",
-        "invitations": created_invitations
+        "invitations": created_invitations,
+        "skipped": skipped
     }
+
+
+def _email_unavailable_reason(db: Session, email: str, organization_id: int) -> Optional[str]:
+    email = email.lower()
+    if db.query(SuperAdmin.id).filter(func.lower(SuperAdmin.email) == email).first():
+        return "This email can't be invited"
+
+    existing_user = db.query(User).filter(func.lower(User.email) == email).first()
+    if existing_user:
+        return "Already a member of this workspace" if existing_user.organization_id == organization_id else "This email is already used by another workspace"
+    return None
 # (Keep your verify and accept endpoints as they are)
 
 
@@ -173,7 +186,11 @@ def accept_invitation(payload: AcceptInvitationRequest, db: Session = Depends(ge
     if not invitation or invitation.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Invalid or expired invitation token")
 
-    # Create the new tenant user tied strictly to the organization
+    # The email may have been taken since the invitation was sent
+    if _email_unavailable_reason(db, invitation.email, invitation.organization_id):
+        raise HTTPException(status_code=400, detail="An account with this email already exists. Log in instead.")
+
+    # Create the new workspace user tied strictly to the organization
     hashed_password = get_password_hash(payload.password)
     new_user = User(
         organization_id=invitation.organization_id,

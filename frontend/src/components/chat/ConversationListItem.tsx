@@ -12,7 +12,7 @@ export function ConversationListItem({
   active: boolean;
   onSelect: () => void;
 }) {
-  const last = conversation.messages[conversation.messages.length - 1];
+  const last = conversation.lastMessage;
 
   return (
     <button

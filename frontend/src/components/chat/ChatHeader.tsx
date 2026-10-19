@@ -32,7 +32,10 @@ export function ChatHeader({
       <Avatar name={conversation.name} />
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold text-on-surface truncate">{conversation.name}</h2>
-        <p className="text-xs text-on-surface-variant truncate">{conversation.phone}</p>
+        <p className="text-xs text-on-surface-variant truncate">
+          {conversation.hasName ? conversation.phone : 'WhatsApp customer'}
+          {conversation.adReferral && ' · From an ad'}
+        </p>
       </div>
 
       <div className="hidden sm:block">

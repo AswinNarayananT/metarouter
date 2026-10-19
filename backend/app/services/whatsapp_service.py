@@ -2,7 +2,8 @@ from typing import Optional
 import requests
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models.ai_chat import ChatMessage, MessageStatus
+from app.models.conversation_model import ChatMessage, MessageStatus
+from app.realtime.notify import notify_message_status
 
 # Delivery states only move forward; FAILED can replace any of them
 _STATUS_ORDER = {
@@ -233,6 +234,9 @@ def apply_status_update(
     message.status = status
     message.error = error if status == MessageStatus.FAILED else None
     db.commit()
+
+    # Move the delivery tick in the dashboard
+    notify_message_status(message)
     return True
 
 

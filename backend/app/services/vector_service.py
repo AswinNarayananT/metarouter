@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
 from app.config import settings
-from app.models.ai_chat import KnowledgeChunk
+from app.models.knowledge_model import KnowledgeChunk
 
 client = genai.Client(api_key=settings.GOOGLE_API_KEY)
 
@@ -100,9 +100,9 @@ def embed_documents(texts: List[str]) -> List[List[float]]:
     return embeddings
 
 
-def search_tenant_knowledge(db: Session, organization_id: int, query_text: str, limit: int = 3) -> str:
+def search_organization_knowledge(db: Session, organization_id: int, query_text: str, limit: int = 3) -> str:
     """
-    Performs lightning-fast vector similarity search strictly scoped to the tenant using pgvector.
+    Performs lightning-fast vector similarity search strictly scoped to the organization using pgvector.
     """
     # 1. Embed incoming user question
     query_vector = _embed([query_text], task_type="RETRIEVAL_QUERY")[0]

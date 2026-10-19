@@ -1,7 +1,7 @@
 import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-class TenantLoginRequest(BaseModel):
+class WorkspaceLoginRequest(BaseModel):
     email: EmailStr
     password: str
     org_slug: str  # Extracted from subdomain or input context
@@ -13,7 +13,7 @@ class WorkspaceUserResponse(BaseModel):
     role: str
     organization_name: str
 
-class TenantLoginResponse(BaseModel):
+class WorkspaceLoginResponse(BaseModel):
     access_token: str
     token_type: str
     user: WorkspaceUserResponse

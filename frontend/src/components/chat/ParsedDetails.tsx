@@ -1,4 +1,4 @@
-import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { AlertCircle, Loader2, MinusCircle, Sparkles } from 'lucide-react';
 import type { ParsedDocument } from '@/types/chatTypes';
 
 /** Fields, line items and totals the parser extracted from a document. */
@@ -25,6 +25,15 @@ export function ParsedDetails({ parsed }: { parsed: ParsedDocument }) {
         <div className="flex items-center gap-2 p-4 rounded-xl bg-surface-container text-sm text-on-surface-variant">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" />
           Reading the document. Details will appear here shortly.
+        </div>
+      )}
+
+      {parsed.status === 'skipped' && (
+        <div className="flex items-start gap-2 p-4 rounded-xl bg-surface-container text-sm text-on-surface-variant">
+          <MinusCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            {parsed.note ?? "This file type isn't read automatically."} Open it to review manually.
+          </span>
         </div>
       )}
 

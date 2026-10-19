@@ -1,10 +1,12 @@
 /* Customer chat types — mirror the backend Conversation / ChatMessage shapes */
 
 export type ConversationStatus = 'active' | 'human_takeover';
-export type Sender = 'user' | 'model' | 'human';
+export type Sender = 'user' | 'model' | 'human' | 'broadcast';
+export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface ParsedDocument {
-  status: 'parsed' | 'processing' | 'failed';
+  status: 'parsed' | 'processing' | 'failed' | 'skipped'; // skipped = file type / size isn't read automatically
+  note?: string; // Why it was skipped or failed
   documentType?: string;
   confidence?: number; // 0–1
   fields?: { label: string; value: string }[];
@@ -13,10 +15,13 @@ export interface ParsedDocument {
 }
 
 export interface ChatAttachment {
-  kind: 'image' | 'pdf';
+  id: number;
+  kind: 'image' | 'pdf' | 'file'; // file = anything else (shown as a download, never previewed)
   fileName: string;
+  extension: string; // Badge on the card: PDF, JPG, MD ...
+  mimeType: string | null;
   size: string;
-  url?: string;
+  downloadStatus: 'pending' | 'done' | 'failed'; // The file is fetched (with the login token) once it's 'done'
   parsed: ParsedDocument;
 }
 
@@ -25,18 +30,55 @@ export interface ChatMessage {
   sender: Sender;
   content: string;
   time: string;
+  createdAt: string; // ISO, for date separators
   read?: boolean;
   attachment?: ChatAttachment;
+  status?: DeliveryStatus | null; // Outgoing messages only
+  error?: string | null;          // Why sending failed
+}
+
+export interface ChatAdReferral {
+  headline: string | null;
+  body: string | null;
+  sourceType: string | null;
+  sourceUrl: string | null;
 }
 
 export interface ChatConversation {
   id: number;
-  name: string;
+  name: string;                    // WhatsApp profile name, or the number when we don't know it
+  hasName: boolean;                // false = `name` is just the number
   phone: string;
+  adReferral: ChatAdReferral | null; // Click-to-WhatsApp ad the customer came from
   status: ConversationStatus;
   unread: number;
   lastActive: string;
-  messages: ChatMessage[];
+  lastActivityAt: string | null;   // ISO time of the last message, for sorting
+  lastMessage: ChatMessage | null; // Chat list preview
+  businessNumber: string | null;   // Which of the workspace's WhatsApp numbers the chat is on
+  windowOpen: boolean;             // Free-text replies allowed (24 hours since the customer's last message)
+  windowExpiresAt: string | null;
+  messages: ChatMessage[];         // Loaded when the chat is opened
+}
+
+// Paging / loading state of one chat's messages (exists once the chat has been opened)
+export interface ChatThread {
+  isLoading: boolean;
+  loadError: string | null;
+  hasMore: boolean;
+  nextBeforeId: number | null;
+}
+
+export interface ChatState {
+  conversations: ChatConversation[];
+  threads: Record<number, ChatThread>;
+  sendingId: number | null; // Chat whose reply is being sent
+  selectedId: number | null;
+  hasLoaded: boolean;
+  isLoading: boolean;
+  loadError: string | null;
+  updatingStatusId: number | null; // Chat whose takeover switch is saving
+  actionError: string | null;
 }
 
 export type ChatFilterTab = 'all' | 'ai' | 'human';

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Paperclip, Send, Smile } from 'lucide-react';
+import { Loader2, Paperclip, Send, Smile } from 'lucide-react';
 
 const MAX_HEIGHT_PX = 160;
 
@@ -9,12 +9,21 @@ export function Composer({
   onChange,
   onSend,
   placeholder,
+  disabledReason = null,
+  sending = false,
+  error = null,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
   placeholder: string;
+  disabledReason?: string | null; // Why replying isn't possible right now (shown instead of the hint)
+  sending?: boolean;
+  error?: string | null;
 }) {
+  const disabled = Boolean(disabledReason);
+  const canSend = !disabled && !sending && Boolean(value.trim());
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -27,7 +36,7 @@ export function Composer({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSend();
+      if (canSend) onSend();
     }
   };
 
@@ -48,7 +57,8 @@ export function Composer({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={disabled ? 'Replying is unavailable' : placeholder}
+            disabled={disabled}
             aria-label="Message"
             className="flex-1 resize-none bg-transparent py-3 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none"
           />
@@ -63,16 +73,22 @@ export function Composer({
         <button
           type="button"
           onClick={onSend}
-          disabled={!value.trim()}
+          disabled={!canSend}
           aria-label="Send message"
           className="h-12 w-12 shrink-0 rounded-2xl bg-primary text-on-primary flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
-          <Send className="w-5 h-5" />
+          {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
         </button>
       </div>
-      <p className="max-w-3xl mx-auto mt-1.5 px-1 text-[10px] text-on-surface-variant hidden sm:block">
-        Enter to send · Shift + Enter for a new line
-      </p>
+      {error || disabledReason ? (
+        <p className={`max-w-3xl mx-auto mt-1.5 px-1 text-[11px] ${error ? 'text-error' : 'text-on-surface-variant'}`}>
+          {error ?? disabledReason}
+        </p>
+      ) : (
+        <p className="max-w-3xl mx-auto mt-1.5 px-1 text-[10px] text-on-surface-variant hidden sm:block">
+          Enter to send · Shift + Enter for a new line
+        </p>
+      )}
     </div>
   );
 }

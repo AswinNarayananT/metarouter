@@ -5,12 +5,13 @@ from typing import Optional
 from app.workers.celery_app import celery_app
 from app.database import SessionLocal
 from app.config import settings
-from app.models.ai_chat import ChatMessage, MessageStatus
+from app.models.conversation_model import ChatMessage, MessageStatus
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.broadcast_service import render_body, check_number_quality, tier_capacity
 from app.workers.tasks.chat_tasks import _get_or_create_conversation
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
+from app.realtime.notify import notify_conversations_changed
 
 NEXT_BATCH_BUFFER_SECONDS = 5
 
@@ -105,6 +106,9 @@ def process_broadcast_task(broadcast_id: int, dispatch_token: Optional[str] = No
         for recipient in recipients:
             # Every recipient gets a conversation so replies and delivery ticks land in the chat
             conversation = _get_or_create_conversation(db, broadcast.organization_id, broadcast.phone_number_id, recipient.customer_phone)
+            # Name from the contact list until the customer replies with their WhatsApp profile name
+            if recipient.name and not conversation.customer_name:
+                conversation.customer_name = recipient.name[:255]
 
             # {{1}} = the contact's name when chosen, then the admin's values
             parameters = list(broadcast.variables or [])
@@ -143,6 +147,10 @@ def process_broadcast_task(broadcast_id: int, dispatch_token: Optional[str] = No
         if has_more:
             wait_seconds = math.ceil(len(message_ids) / settings.BROADCAST_MESSAGES_PER_SECOND) + NEXT_BATCH_BUFFER_SECONDS
             process_broadcast_task.apply_async(kwargs={"broadcast_id": broadcast.id, "dispatch_token": token}, countdown=wait_seconds)
+
+        # One refresh for the whole batch instead of an event per recipient
+        if message_ids:
+            notify_conversations_changed(broadcast.organization_id, "broadcast")
 
         print(f"[BROADCAST] {broadcast.id}: released {len(message_ids)} messages, {pending_count - len(message_ids)} left")
 

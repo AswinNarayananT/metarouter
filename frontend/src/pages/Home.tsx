@@ -13,11 +13,11 @@ import {
   Zap,
   Users,
 } from 'lucide-react';
-import { Navbar } from '@/components/Navbar';
-import { Button } from '@/components/Button';
-import { Card, Container } from '@/components/Card';
-import { BrandLogo } from '@/components/BrandLogo';
-import { TrustMarkers } from '@/components/TrustMarkers';
+import { Navbar } from '@/components/home/Navbar';
+import { Button } from '@/components/ui/Button';
+import { Card, Container } from '@/components/ui/Card';
+import { BrandLogo } from '@/components/ui/BrandLogo';
+import { TrustMarkers } from '@/components/ui/TrustMarkers';
 
 // ─── Feature data ────────────────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ const FEATURES = [
     icon: LayoutGrid,
     title: 'Multi-Number Workspaces',
     description:
-      'Manage unlimited WhatsApp Business numbers across isolated tenant workspaces with role-based access control.',
+      'Manage unlimited WhatsApp Business numbers across isolated workspaces with role-based access control.',
     badge: 'Multi-Tenant',
   },
   {

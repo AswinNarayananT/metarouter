@@ -342,7 +342,7 @@ function InvitationsList() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-on-surface">Invitations</h2>
-          <p className="text-sm text-on-surface-variant">Track invitations sent to your organization.</p>
+          <p className="text-sm text-on-surface-variant">Track invitations sent to your workspace.</p>
         </div>
         <div className="flex gap-1 p-1 rounded-full bg-surface-container-low border border-outline-variant/30">
           {STATUS_FILTERS.map((filter) => (

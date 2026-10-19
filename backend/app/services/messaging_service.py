@@ -1,6 +1,7 @@
 from celery import chain
 from sqlalchemy.orm import Session
-from app.models.ai_chat import ChatMessage, Conversation, MessageStatus
+from app.models.conversation_model import ChatMessage, Conversation, MessageStatus
+from app.realtime.notify import notify_new_messages
 
 # Meta rejects text messages longer than this
 WHATSAPP_TEXT_MAX_CHARS = 4096
@@ -43,6 +44,9 @@ def queue_outgoing_message(db: Session, conversation: Conversation, sender: str,
 
     # Commit before queueing so the worker can always find the rows
     db.commit()
+
+    # Show them in the dashboard right away as pending (ticks follow as Meta reports delivery)
+    notify_new_messages(db, messages)
 
     # 3. One part: send now; several: a chain so they arrive in order
     if len(messages) == 1:

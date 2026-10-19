@@ -7,17 +7,17 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
-from app.core.deps import get_current_tenant_user
+from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
 from app.models.whatsapp_model import WhatsAppNumber
-from app.models.ai_chat import ChatMessage
+from app.models.conversation_model import ChatMessage
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.services.whatsapp_service import get_message_templates, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.services.broadcast_service import parse_contacts_csv, build_audience, summarize_template, render_body, check_number_quality, tier_capacity
 from app.workers.tasks.broadcast_tasks import process_broadcast_task
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
-from app.models.ai_chat import MessageStatus
+from app.models.conversation_model import MessageStatus
 
 router = APIRouter(prefix="/broadcasts", tags=["Broadcasts"])
 
@@ -25,7 +25,7 @@ DELIVERY_STATUSES = ["pending", "sent", "delivered", "read", "failed"]
 
 
 @router.get("/templates")
-def list_templates(phone_number_id: str = Query(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def list_templates(phone_number_id: str = Query(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
 
@@ -52,7 +52,7 @@ def preview_broadcast(
     consent_confirmed: bool = Form(False),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
@@ -98,7 +98,7 @@ def create_broadcast(
     consent_confirmed: bool = Form(False),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
@@ -155,7 +155,7 @@ def list_broadcasts(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
@@ -181,7 +181,7 @@ def get_broadcast(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_tenant_user)
+    current_user: User = Depends(get_current_workspace_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
@@ -223,7 +223,7 @@ def get_broadcast(
 
 
 @router.post("/{broadcast_id}/resume")
-def resume_broadcast(broadcast_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+def resume_broadcast(broadcast_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
 

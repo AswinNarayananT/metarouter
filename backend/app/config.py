@@ -8,7 +8,16 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Workspace access token; renewed silently with the refresh-token cookie
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_ROTATION_GRACE_SECONDS: int = 30  # A just-rotated refresh token still works this long (parallel tabs / requests refreshing together)
+    SUPER_ADMIN_TOKEN_EXPIRE_MINUTES: int = 1440  # Super admin has no refresh token yet, so one longer token
+    COOKIE_SECURE: bool = False  # True in production (HTTPS): the refresh-token cookie is then only sent over HTTPS
+
+    # Login protection: failed attempts allowed per email + IP and per IP, then locked for LOGIN_LOCKOUT_MINUTES
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_MAX_ATTEMPTS_PER_IP: int = 30
+    LOGIN_LOCKOUT_MINUTES: int = 15
     META_API_VERSION: str = "v20.0"
     META_GRAPH_API_URL: str = "https://graph.facebook.com"
     WHATSAPP_REQUEST_TIMEOUT_SECONDS: int = 15
@@ -54,7 +63,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    EMAILS_FROM_EMAIL: str = "opticoasis0@gmail.com"
+    EMAILS_FROM_EMAIL: str = ""
     FRONTEND_BASE_URL: str = "http://localhost:5173"
 
     GOOGLE_API_KEY: str = ""

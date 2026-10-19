@@ -19,16 +19,19 @@ const SIGNUP_STEPS = [
 /** WhatsApp connection card: setup guide when nothing is connected, number list once connected. */
 export function WhatsAppChannelCard({
   numbers,
+  isLoading = false,
   notice,
   onConnect,
   onDisconnect,
 }: {
   numbers: WhatsAppNumber[];
+  isLoading?: boolean;
   notice?: string | null;
   onConnect: () => void;
-  onDisconnect: (id: number) => void;
+  onDisconnect?: (id: number) => void;
 }) {
   const connected = numbers.length > 0;
+  const allDisconnected = connected && numbers.every((n) => n.status === 'disconnected');
 
   return (
     <ChannelCard
@@ -37,7 +40,16 @@ export function WhatsAppChannelCard({
       name="WhatsApp"
       description="Connect your WhatsApp Business number to chat with customers on WhatsApp."
       status={
-        connected ? (
+        isLoading && !connected ? (
+          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-container text-on-surface-variant">
+            Checking…
+          </span>
+        ) : allDisconnected ? (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-error/10 text-error">
+            <span className="w-1.5 h-1.5 rounded-full bg-error" />
+            Disconnected
+          </span>
+        ) : connected ? (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-500/10 text-green-700">
             <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
             Connected

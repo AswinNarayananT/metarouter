@@ -5,9 +5,9 @@ import type { LoginCredentials, VerifyInvitationResponse,
   AcceptInvitationPayload, TeamMember, PaginatedInvitations,
   FetchInvitationsParams, ChangePasswordPayload, AISettings,
   SaveAISettingsPayload, InvitePayloadItem, InvitationItemResult,
-  WorkspaceUser, WorkspaceOrganization } from '@/types/workspaceTypes';
+  WorkspaceUser, CurrentOrganization } from '@/types/workspaceTypes';
 
-// Async Thunk for Tenant / Workspace Login
+// Async Thunk for Workspace Login
 export const loginWorkspaceUser = createAsyncThunk(
   'workspace/login',
   async (credentials: LoginCredentials, { rejectWithValue }) => {
@@ -17,6 +17,19 @@ export const loginWorkspaceUser = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Invalid login credentials'));
     }
+  }
+);
+
+// Revokes the tokens on the server and clears the refresh cookie, then signs out locally (even if the call fails)
+export const logoutWorkspaceSession = createAsyncThunk(
+  'workspace/logoutSession',
+  async (_, { dispatch }) => {
+    try {
+      await api.post('/api/v1/auth/logout');
+    } catch {
+      // Offline or already expired: the local sign-out below still happens
+    }
+    dispatch({ type: 'workspace/logoutWorkspace' });
   }
 );
 
@@ -51,7 +64,7 @@ export const fetchOrganization = createAsyncThunk(
   'workspace/fetchOrganization',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get<WorkspaceOrganization>('/api/v1/organizations/current');
+      const response = await api.get<CurrentOrganization>('/api/v1/organizations/current');
       return response.data;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch organization'));
@@ -64,7 +77,7 @@ export const updateOrganization = createAsyncThunk(
   'workspace/updateOrganization',
   async (payload: { name: string }, { rejectWithValue }) => {
     try {
-      const response = await api.patch<WorkspaceOrganization>('/api/v1/organizations/current', payload);
+      const response = await api.patch<CurrentOrganization>('/api/v1/organizations/current', payload);
       return response.data;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to update organization'));
@@ -101,10 +114,16 @@ export const fetchInvitations = createAsyncThunk(
 // Async Thunk to change the current user's password
 export const changePassword = createAsyncThunk(
   'workspace/changePassword',
-  async (payload: ChangePasswordPayload, { rejectWithValue }) => {
+  async (payload: ChangePasswordPayload, { rejectWithValue, dispatch, getState }) => {
     try {
-      const response = await api.post('/api/v1/auth/change-password', payload);
-      return response.data; // Returns { message: "Password updated successfully" }
+      const response = await api.post<{ message: string; access_token: string }>('/api/v1/auth/change-password', payload);
+
+      // Older sessions are signed out on the server; keep this one with the new token
+      const { workspace } = getState() as { workspace: { user: unknown } };
+      dispatch({ type: 'workspace/setCredentials', payload: { access_token: response.data.access_token, user: workspace.user } });
+      localStorage.setItem('workspace_token', response.data.access_token);
+
+      return response.data;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to update password'));
     }

@@ -2,20 +2,22 @@ import base64
 import hashlib
 import os
 import uuid
+from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.workers.celery_app import celery_app
 from app.database import SessionLocal
 from app.config import settings
-from app.models.ai_chat import ChatMessage, ConversationStatus
+from app.models.conversation_model import ChatMessage, ConversationStatus
 from app.models.attachment_model import ChatAttachment
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected, number_is_disconnected, NUMBER_DISCONNECTED_ERROR
-from app.services.document_parser import parse_document, DocumentParseError
-from app.workers.tasks.chat_tasks import _get_or_create_conversation, reply_with_ai
+from app.services.document_parser_service import parse_document, DocumentParseError
+from app.workers.tasks.chat_tasks import _get_or_create_conversation, reply_with_ai, update_customer_profile
 from app.core.redis_client import redis_client
+from app.realtime.notify import notify_new_messages, notify_attachment_updated
 
 RETRY_BASE_SECONDS = 30
 MEDIA_LOCK_SECONDS = 300  # Longer than a 25 MB download / one Gemini parse; released as soon as the task finishes
@@ -35,7 +37,7 @@ PARSEABLE_TYPES = {
 
 
 @celery_app.task(name="process_media_message_task")
-def process_media_message_task(phone_number_id: str, customer_phone: str, wamid: str, kind: str, media: dict):
+def process_media_message_task(phone_number_id: str, customer_phone: str, wamid: str, kind: str, media: dict, customer_name: Optional[str] = None, customer_user_id: Optional[str] = None, referral: Optional[dict] = None):
     db = SessionLocal()
     try:
         # 0. Which organization owns the business number the customer wrote to
@@ -44,16 +46,18 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
             print(f"[WEBHOOK] Media for unknown phone_number_id {phone_number_id}; ignoring")
             return
 
-        # 1. Get or create conversation
+        # 1. Get or create conversation, and keep the customer's name / id / ad up to date
         conversation = _get_or_create_conversation(db, number.organization_id, phone_number_id, customer_phone)
+        update_customer_profile(db, conversation, customer_name, customer_user_id, referral)
 
         # 2. Save the message and its attachment (the unique wamid rejects webhooks Meta delivers twice)
         # Content is never empty so the AI chat history always has text for this message
-        file_label = media.get("filename") or kind
+        # Photos have no file name: "[Sent an image]" instead of "[Sent image: image]"
+        file_label = f"[Sent {kind}: {media.get('filename')}]" if media.get("filename") else f"[Sent {'an image' if kind == 'image' else 'a document'}]"
         message = ChatMessage(
             conversation_id=conversation.id,
             sender="user",
-            content=media.get("caption") or f"[Sent {kind}: {file_label}]",
+            content=media.get("caption") or file_label,
             wamid=wamid
         )
         message.attachment = ChatAttachment(
@@ -73,6 +77,7 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
                 print(f"[DUPLICATE] Ignoring re-delivered media message {wamid}")
                 return
             raise
+        notify_new_messages(db, [message])
 
         # 3. Download the file in the background
         download_whatsapp_media_task.delay(message.attachment.id)
@@ -162,11 +167,13 @@ def download_whatsapp_media_task(self, attachment_id: int):
         # 5. Parse supported documents, skip everything else
         if mime_type in PARSEABLE_TYPES and len(content) <= settings.MEDIA_MAX_PARSE_BYTES:
             db.commit()
+            notify_attachment_updated(attachment)
             parse_document_task.delay(attachment.id)
         else:
             attachment.parse_status = "skipped"
             attachment.error = "File type is not supported for reading" if mime_type not in PARSEABLE_TYPES else "File is too large to read automatically"
             db.commit()
+            notify_attachment_updated(attachment)
             _acknowledge_document(db, attachment, f"[Document received] The customer sent a {attachment.kind} ({mime_type}) that can't be read automatically.")
 
     finally:
@@ -209,6 +216,7 @@ def parse_document_task(self, attachment_id: int):
             attachment.parse_status = "failed"
             attachment.error = str(exc)
             db.commit()
+            notify_attachment_updated(attachment)
             print(f"[PARSE FAILED] attachment={attachment.id}: {exc}")
             _acknowledge_document(db, attachment, f"[Document received] The customer sent a {attachment.kind} that could not be read automatically.")
             return
@@ -225,6 +233,7 @@ def parse_document_task(self, attachment_id: int):
         attachment.parsed_at = datetime.now(timezone.utc)
         attachment.error = None
         db.commit()
+        notify_attachment_updated(attachment)
 
         # 5. Let the AI acknowledge what it read
         details = [f"{f['label']}: {f['value']}" for f in parsed["fields"]] + [f"{t['label']}: {t['value']}" for t in parsed["totals"]]
@@ -242,6 +251,7 @@ def _mark_download_failed(db: Session, attachment: ChatAttachment, error: str):
     attachment.parse_status = "skipped"
     attachment.error = error
     db.commit()
+    notify_attachment_updated(attachment)
     print(f"[MEDIA DOWNLOAD FAILED] attachment={attachment.id}: {error}")
     _acknowledge_document(db, attachment, f"[Document received] The customer sent a {attachment.kind} that could not be downloaded.")
 

@@ -6,7 +6,7 @@ from app.workers.celery_app import celery_app
 from app.database import SessionLocal
 from app.config import settings
 from app.core.redis_client import redis_client
-from app.models.ai_chat import KnowledgeDocument, KnowledgeChunk
+from app.models.knowledge_model import KnowledgeDocument, KnowledgeChunk
 from app.services.vector_service import extract_pdf_pages, chunk_pages, embed_documents, KnowledgeDocumentError
 
 RETRY_BASE_SECONDS = 30

@@ -1,4 +1,4 @@
-import { BrandLogo } from '@/components/BrandLogo';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 
 export function AuthHeader() {
   return (

@@ -1,6 +1,14 @@
 import type { ChatAttachment } from '@/types/chatTypes';
+import { useAttachmentUrl } from '@/hooks/useAttachmentUrl';
 import { AttachmentIcon } from './AttachmentIcon';
 import { ParseStatus } from './ParseStatus';
+
+// Badge colours: PDF red, image primary, other files neutral
+const KIND_STYLES: Record<ChatAttachment['kind'], string> = {
+  pdf: 'bg-error/10 text-error',
+  image: 'bg-primary/10 text-primary',
+  file: 'bg-surface-container-high text-on-surface-variant',
+};
 
 /** Clickable document card shown inside a message and in the contact panel. */
 export function AttachmentCard({
@@ -12,6 +20,9 @@ export function AttachmentCard({
   selected: boolean;
   onOpen: () => void;
 }) {
+  // Only images show a thumbnail; other files are fetched when opened
+  const { url } = useAttachmentUrl(attachment, attachment.kind === 'image');
+
   return (
     <button
       type="button"
@@ -23,20 +34,18 @@ export function AttachmentCard({
           : 'border-outline-variant/40 bg-surface hover:border-primary/50 hover:bg-surface-container'
       }`}
     >
-      {attachment.kind === 'image' && attachment.url ? (
+      {attachment.kind === 'image' && url ? (
         <img
-          src={attachment.url}
+          src={url}
           alt=""
           className="w-12 h-12 rounded-lg object-cover object-top border border-outline-variant/30 shrink-0"
         />
       ) : (
         <span
-          className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0 ${
-            attachment.kind === 'pdf' ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary'
-          }`}
+          className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0 ${KIND_STYLES[attachment.kind]}`}
         >
           <AttachmentIcon kind={attachment.kind} />
-          <span className="text-[9px] font-bold uppercase mt-0.5">{attachment.kind}</span>
+          <span className="text-[9px] font-bold uppercase mt-0.5">{attachment.extension}</span>
         </span>
       )}
       <span className="min-w-0 flex-1">

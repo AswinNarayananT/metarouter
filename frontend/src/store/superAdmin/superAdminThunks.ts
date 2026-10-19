@@ -21,6 +21,19 @@ export const loginSuperAdmin = createAsyncThunk(
   }
 );
 
+// Revokes the token on the server, then signs out locally (even if the call fails)
+export const logoutSuperAdminSession = createAsyncThunk(
+  'superAdmin/logoutSession',
+  async (_, { dispatch }) => {
+    try {
+      await superAdminApi.post('/api/v1/superadmin/logout');
+    } catch {
+      // Offline or already expired: the local sign-out below still happens
+    }
+    dispatch({ type: 'superAdmin/logoutSuperAdmin' });
+  }
+);
+
 // Async Thunk to update the super admin's profile (name)
 export const updateSuperAdminProfile = createAsyncThunk(
   'superAdmin/updateProfile',

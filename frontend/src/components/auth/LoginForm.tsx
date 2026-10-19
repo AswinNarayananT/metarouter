@@ -63,7 +63,7 @@ export function LoginForm() {
     <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-8 shadow-xl relative z-10">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-on-surface">Sign in to your workspace</h2>
-        <p className="text-sm text-on-surface-variant mt-1">Enter your organization credentials below</p>
+        <p className="text-sm text-on-surface-variant mt-1">Enter your workspace credentials below</p>
       </div>
 
       {error && (

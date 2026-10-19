@@ -1,5 +1,6 @@
 import { Maximize2 } from 'lucide-react';
 import type { ChatAttachment } from '@/types/chatTypes';
+import { useAttachmentUrl } from '@/hooks/useAttachmentUrl';
 import { AttachmentIcon } from './AttachmentIcon';
 import { ParsedDetails } from './ParsedDetails';
 import { SidePanel } from './SidePanel';
@@ -16,6 +17,8 @@ export function DocumentPanel({
   onClose: () => void;
   onViewFull: () => void;
 }) {
+  const { url } = useAttachmentUrl(attachment, attachment.kind === 'image');
+
   return (
     <SidePanel title="Document" closeLabel="Close document details" width="w-88" onClose={onClose}>
       {/* Preview — click to open full size */}
@@ -26,12 +29,16 @@ export function DocumentPanel({
           aria-label={`View ${attachment.fileName} full size`}
           className="group relative w-full h-44 rounded-xl border border-outline-variant/40 overflow-hidden bg-surface-container cursor-zoom-in"
         >
-          {attachment.kind === 'image' && attachment.url ? (
-            <img src={attachment.url} alt="" className="w-full h-full object-cover object-top" />
+          {attachment.kind === 'image' && url ? (
+            <img src={url} alt="" className="w-full h-full object-cover object-top" />
           ) : (
-            <span className="w-full h-full flex flex-col items-center justify-center gap-2 bg-error/5 text-error">
+            <span
+              className={`w-full h-full flex flex-col items-center justify-center gap-2 ${
+                attachment.kind === 'pdf' ? 'bg-error/5 text-error' : 'bg-surface-container text-on-surface-variant'
+              }`}
+            >
               <AttachmentIcon kind={attachment.kind} className="w-12 h-12" />
-              <span className="text-xs font-bold uppercase tracking-wider">{attachment.kind}</span>
+              <span className="text-xs font-bold uppercase tracking-wider">{attachment.extension}</span>
             </span>
           )}
           <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 group-focus-visible:bg-black/40 transition-colors">

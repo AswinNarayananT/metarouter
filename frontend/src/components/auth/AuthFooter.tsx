@@ -1,4 +1,4 @@
-import { TrustMarkers } from '@/components/TrustMarkers';
+import { TrustMarkers } from '@/components/ui/TrustMarkers';
 
 export function AuthFooter() {
   return (
