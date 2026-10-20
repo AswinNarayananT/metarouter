@@ -10,6 +10,8 @@ from app.config import settings
 from app.services.ai_service import generate_ai_response
 from app.services.messaging_service import queue_outgoing_message
 from app.realtime.notify import notify_new_messages, notify_handover
+from app.services.conversation_service import record_activity
+from app.services.notification_service import notify_team_of_handover
 
 ESCALATION_TAG = "[ESCALATE_TO_HUMAN]"
 HANDOVER_FALLBACK_TEXT = "I'm connecting you with our team. Someone will reply shortly."
@@ -157,6 +159,8 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
         queue_outgoing_message(db, conversation, sender="model", content=clean_reply)
 
         # Alert the team in the dashboard that a human is needed
+        record_activity(db, conversation, "The AI handed this chat to the team")
+        notify_team_of_handover(db, conversation, user_text)
         notify_handover(db, conversation)
         print(f"[ALERT] Handover triggered for Org {conversation.organization_id}, Customer: {conversation.customer_phone}")
     else:

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Literal
+from typing import Literal, Optional
 
 ConversationStatusValue = Literal["active", "human_takeover"]
 
@@ -22,3 +22,8 @@ class SendMessageRequest(BaseModel):
 
 class UpdateConversationRequest(BaseModel):
     status: ConversationStatusValue
+
+
+class AssignConversationRequest(BaseModel):
+    # Team member to assign, or null to put the chat back in the unassigned queue
+    user_id: Optional[int] = None

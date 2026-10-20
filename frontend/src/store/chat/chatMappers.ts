@@ -85,6 +85,7 @@ export function mapMessage(message: ApiChatMessage): ChatMessage {
     attachment: message.attachment ? mapAttachment(message.attachment) : undefined,
     status: message.status,
     error: message.error,
+    sentBy: message.sent_by,
   };
 }
 
@@ -103,6 +104,7 @@ export function mapConversation(conversation: ApiConversation, existing?: ChatCo
       ? { headline: referral.headline, body: referral.body, sourceType: referral.source_type, sourceUrl: referral.source_url }
       : null,
     status: conversation.status,
+    assignedTo: conversation.assigned_to,
     unread: existing?.unread ?? 0,
     lastActive: formatListTime(lastActivityAt),
     lastActivityAt,

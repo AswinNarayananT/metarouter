@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ChatFilterTab, ChatSidePanel } from '@/types/chatTypes';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { clearChatActionError, selectConversation } from '@/store/chat/chatSlice';
-import { fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from '@/store/chat/chatThunks';
+import { assignConversation, fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from '@/store/chat/chatThunks';
+import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
+import { markNotificationsRead } from '@/store/notifications/notificationThunks';
 import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
+import { AssignMenu } from '@/components/chat/AssignMenu';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
 import { ContactPanel } from '@/components/chat/ContactPanel';
@@ -16,7 +19,13 @@ import { TakeoverBanner } from '@/components/chat/TakeoverBanner';
 
 export function CustomerChats() {
   const dispatch = useAppDispatch();
-  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, actionError } = useAppSelector((state) => state.chat);
+  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, actionError, updatingAssignmentId } = useAppSelector((state) => state.chat);
+  const currentUser = useAppSelector((state) => state.workspace.user);
+  const teamMembers = useAppSelector((state) => state.workspace.teamMembers);
+  const notifications = useAppSelector((state) => state.notifications.items);
+  const currentUserId = currentUser?.id ?? null;
+  // Admins and managers supervise: they assign anyone and can reply to any chat
+  const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'manager';
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ChatFilterTab>('all');
   const [draft, setDraft] = useState('');
@@ -25,10 +34,13 @@ export function CustomerChats() {
   // On small screens show either the list or the open chat (a handover alert arrives with a chat selected)
   const [mobileView, setMobileView] = useState<'list' | 'chat'>(() => (selectedId ? 'chat' : 'list'));
 
-  // 1. Load the chats (live events keep the list current afterwards)
+  // 1. Load the chats (live events keep the list current afterwards) and the members to assign them to
   useEffect(() => {
     dispatch(fetchConversations());
   }, [dispatch]);
+  useEffect(() => {
+    if (isSupervisor && teamMembers.length === 0) dispatch(fetchTeamMembers());
+  }, [dispatch, isSupervisor, teamMembers.length]);
 
   // Leaving the page: no chat is open, so new customer messages count as unread again
   useEffect(() => () => {
@@ -41,6 +53,12 @@ export function CustomerChats() {
   }, [dispatch, selectedId]);
   useOpenChatRealtimeSync(selectedId);
 
+  // Looking at the chat = its notifications are dealt with (also ones that arrive while it's open)
+  const hasUnreadForChat = selectedId !== null && notifications.some((n) => n.conversation_id === selectedId && !n.read_at);
+  useEffect(() => {
+    if (selectedId !== null && hasUnreadForChat) dispatch(markNotificationsRead({ conversationId: selectedId }));
+  }, [dispatch, selectedId, hasUnreadForChat]);
+
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
   const thread = selectedId !== null ? threads[selectedId] : undefined;
   const documentMessage =
@@ -52,20 +70,22 @@ export function CustomerChats() {
     const q = query.trim().toLowerCase();
     return conversations.filter((c) => {
       if (filter === 'ai' && c.status !== 'active') return false;
-      if (filter === 'human' && c.status !== 'human_takeover') return false;
+      if (filter === 'mine' && c.assignedTo?.id !== currentUserId) return false;
+      if (filter === 'unassigned' && (c.status !== 'human_takeover' || c.assignedTo)) return false;
       if (!q) return true;
       const last = c.lastMessage?.content ?? '';
       return c.name.toLowerCase().includes(q) || c.phone.includes(q) || last.toLowerCase().includes(q);
     });
-  }, [conversations, query, filter]);
+  }, [conversations, query, filter, currentUserId]);
 
   const counts = useMemo(
     () => ({
       all: conversations.length,
+      mine: conversations.filter((c) => c.assignedTo?.id === currentUserId).length,
+      unassigned: conversations.filter((c) => c.status === 'human_takeover' && !c.assignedTo).length,
       ai: conversations.filter((c) => c.status === 'active').length,
-      human: conversations.filter((c) => c.status === 'human_takeover').length,
     }),
-    [conversations]
+    [conversations, currentUserId]
   );
 
   const openConversation = (id: number) => {
@@ -102,8 +122,14 @@ export function CustomerChats() {
       .catch(() => {});
   };
 
+  const assign = (userId: number | null) => {
+    if (selected) dispatch(assignConversation({ conversationId: selected.id, userId }));
+  };
+
   // WhatsApp allows free text only within 24 hours of the customer's last message
   const windowClosed = selected ? !selected.windowOpen : false;
+  // Someone else owns the chat: only they (or a supervisor) can reply
+  const ownedByOther = Boolean(selected?.assignedTo && selected.assignedTo.id !== currentUserId && !isSupervisor);
 
   const showDocument = (messageId: number) => setPanel({ type: 'document', messageId });
 
@@ -137,6 +163,16 @@ export function CustomerChats() {
               onBack={() => setMobileView('list')}
               onToggleTakeover={toggleTakeover}
               onToggleContact={() => setPanel((p) => (p?.type === 'contact' ? null : { type: 'contact' }))}
+              assignControl={
+                <AssignMenu
+                  conversation={selected}
+                  members={teamMembers}
+                  currentUserId={currentUserId}
+                  isSupervisor={isSupervisor}
+                  busy={updatingAssignmentId === selected.id}
+                  onAssign={assign}
+                />
+              }
             />
             {selected.status === 'human_takeover' && <TakeoverBanner />}
             <MessageList
@@ -156,7 +192,9 @@ export function CustomerChats() {
                   : 'Type a reply — sending will take over from the AI'
               }
               disabledReason={
-                windowClosed
+                ownedByOther
+                  ? `${selected.assignedTo?.name} is handling this chat. Ask them or a manager to reassign it to you.`
+                  : windowClosed
                   ? "It's been over 24 hours since the customer's last message. WhatsApp only allows a template now, so replying here opens again when they write back."
                   : null
               }

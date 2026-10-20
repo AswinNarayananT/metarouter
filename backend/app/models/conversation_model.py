@@ -35,17 +35,23 @@ class Conversation(Base):
     # Click-to-WhatsApp ad the customer came from (first message only): headline, body, source_url, source_type, ctwa_clid ...
     ad_referral = Column(JSONB, nullable=True)
     status = Column(Enum(ConversationStatus), default=ConversationStatus.ACTIVE)
+    # Team member responsible for the chat (None = unassigned queue); cleared when the chat goes back to the AI
+    assigned_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")
+    assigned_user = relationship("User")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(Integer, primary_key=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
-    sender = Column(String(20), nullable=False) # 'user', 'model', 'human' or 'broadcast'
-    message_type = Column(String(20), default="text", server_default="text", nullable=False)  # text, template
+    sender = Column(String(20), nullable=False) # 'user', 'model', 'human', 'broadcast' or 'system' (activity: assigned, taken over ...)
+    message_type = Column(String(20), default="text", server_default="text", nullable=False)  # text, template, event (system activity)
+    # Team member who wrote an agent reply or caused an activity entry
+    sent_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     template_data = Column(JSONB, nullable=True)  # name, language, body parameters (template messages only)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -58,4 +64,5 @@ class ChatMessage(Base):
     error = Column(Text, nullable=True)
 
     conversation = relationship("Conversation", back_populates="messages")
+    sent_by = relationship("User")
     attachment = relationship("ChatAttachment", back_populates="message", uselist=False, cascade="all, delete-orphan")

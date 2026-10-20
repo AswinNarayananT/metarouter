@@ -54,8 +54,16 @@ export function ConversationListItem({
             </span>
           )}
         </div>
-        <div className="mt-1.5">
+        <div className="mt-1.5 flex items-center gap-2 min-w-0">
           <StatusBadge status={conversation.status} />
+          {conversation.assignedTo ? (
+            <span className="flex items-center gap-1 text-[11px] text-on-surface-variant truncate">
+              <UserRound className="w-3 h-3 shrink-0" />
+              {conversation.assignedTo.name}
+            </span>
+          ) : (
+            conversation.status === 'human_takeover' && <span className="text-[11px] font-medium text-amber-700">Unassigned</span>
+          )}
         </div>
       </div>
     </button>

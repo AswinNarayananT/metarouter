@@ -11,6 +11,7 @@ const AUTO_DISMISS_MS = 15_000;
 
 interface HandoverAlert {
   conversationId: number;
+  title: string;
   phone: string;
   preview: string;
 }
@@ -29,6 +30,18 @@ export function HandoverAlerts() {
 
     const alert = {
       conversationId: conversation.id,
+      title: 'A customer needs a human',
+      phone: conversation.customer_name || formatPhone(conversation.customer_phone),
+      preview: conversation.last_message?.content ?? '',
+    };
+    setAlerts((current) => [alert, ...current.filter((a) => a.conversationId !== conversation.id)].slice(0, MAX_ALERTS));
+  });
+
+  // A supervisor gave you a chat (only the new owner gets this event)
+  useRealtimeEvent('conversation.assigned', (conversation) => {
+    const alert = {
+      conversationId: conversation.id,
+      title: conversation.assigned_by ? `${conversation.assigned_by.name} assigned you a chat` : 'A chat was assigned to you',
       phone: conversation.customer_name || formatPhone(conversation.customer_phone),
       preview: conversation.last_message?.content ?? '',
     };
@@ -64,7 +77,7 @@ export function HandoverAlerts() {
             <UserRound className="w-4 h-4" />
           </span>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-on-surface">A customer needs a human</p>
+            <p className="text-sm font-semibold text-on-surface">{alert.title}</p>
             <p className="text-xs text-on-surface-variant truncate">
               {alert.phone}
               {alert.preview ? ` · ${alert.preview}` : ''}

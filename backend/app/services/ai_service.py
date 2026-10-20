@@ -65,7 +65,8 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
     """
 
     # 4. Fetch Chat History: the most recent messages, oldest first
-    recent_messages = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation.id).order_by(ChatMessage.id.desc()).limit(AI_HISTORY_MESSAGES).all()
+    # Activity entries ("Aromal took this chat") are for the team, not part of the conversation with the customer
+    recent_messages = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender != "system").order_by(ChatMessage.id.desc()).limit(AI_HISTORY_MESSAGES).all()
     past_messages = list(reversed(recent_messages))
 
     contents = []

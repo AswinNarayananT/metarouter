@@ -1,3 +1,4 @@
+from typing import Optional
 from celery import chain
 from sqlalchemy.orm import Session
 from app.models.conversation_model import ChatMessage, Conversation, MessageStatus
@@ -15,7 +16,7 @@ class OutgoingMessageError(ValueError):
     pass
 
 
-def queue_outgoing_message(db: Session, conversation: Conversation, sender: str, content: str) -> list[ChatMessage]:
+def queue_outgoing_message(db: Session, conversation: Conversation, sender: str, content: str, sent_by_user_id: Optional[int] = None) -> list[ChatMessage]:
     """
     Single entry point for every message we send to a customer (AI replies, agent replies,
     handover notices). Saves it as pending, then hands delivery to the send task.
@@ -38,7 +39,7 @@ def queue_outgoing_message(db: Session, conversation: Conversation, sender: str,
 
     messages = []
     for part in parts:
-        message = ChatMessage(conversation_id=conversation.id, sender=sender, content=part, status=MessageStatus.PENDING)
+        message = ChatMessage(conversation_id=conversation.id, sender=sender, content=part, status=MessageStatus.PENDING, sent_by_user_id=sent_by_user_id)
         db.add(message)
         messages.append(message)
 

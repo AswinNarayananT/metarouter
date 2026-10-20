@@ -17,6 +17,7 @@ from app.api.v1.broadcasts import router as broadcasts_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.realtime import router as realtime_router
 from app.api.v1.conversations import router as conversations_router
+from app.api.v1.notifications import router as notifications_router
 from app.realtime.events import listen_for_events
 
 @asynccontextmanager
@@ -68,6 +69,7 @@ app.include_router(broadcasts_router, prefix="/api/v1")
 app.include_router(channels_router, prefix="/api/v1")
 app.include_router(realtime_router, prefix="/api/v1")
 app.include_router(conversations_router, prefix="/api/v1")
+app.include_router(notifications_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():

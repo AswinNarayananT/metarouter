@@ -39,7 +39,7 @@ export function ContactPanel({
           <dt className="flex items-center gap-2 text-on-surface-variant">
             <MessageSquare className="w-4 h-4" /> Messages
           </dt>
-          <dd className="text-on-surface font-medium">{conversation.messages.length}</dd>
+          <dd className="text-on-surface font-medium">{conversation.messages.filter((m) => m.sender !== 'system').length}</dd>
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt className="flex items-center gap-2 text-on-surface-variant">

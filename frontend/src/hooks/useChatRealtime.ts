@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { attachmentReceived, conversationReceived, messageReceived, messageStatusReceived } from '@/store/chat/chatSlice';
 import { fetchConversations, fetchMessages } from '@/store/chat/chatThunks';
+import { notificationReceived, notificationsReadElsewhere } from '@/store/notifications/notificationSlice';
+import { fetchNotifications } from '@/store/notifications/notificationThunks';
 import { useConversationSubscription, useRealtimeEvent, useRealtimeReconnect } from './useRealtime';
 
 const REFETCH_DEBOUNCE_MS = 1000; // A broadcast sends one "changed" per batch; batches can come close together
@@ -15,6 +17,7 @@ export function useChatListRealtimeSync() {
   // 1. One chat changed (new message, takeover on / off, AI handed it over)
   useRealtimeEvent('conversation.updated', (conversation) => dispatch(conversationReceived(conversation)));
   useRealtimeEvent('conversation.handover', (conversation) => dispatch(conversationReceived(conversation)));
+  useRealtimeEvent('conversation.assigned', (conversation) => dispatch(conversationReceived(conversation)));
 
   // 2. Many chats changed, or we were offline and missed events: reload the list (only if it was loaded)
   const refetch = () => {
@@ -52,4 +55,21 @@ export function useOpenChatRealtimeSync(conversationId: number | null) {
   useRealtimeReconnect(() => {
     if (conversationId !== null) dispatch(fetchMessages({ conversationId }));
   });
+}
+
+// Mount once in the workspace layout: the bell's list and unread count, live
+export function useNotificationsRealtimeSync() {
+  const dispatch = useAppDispatch();
+
+  // 1. Load on login / page load (also catches what arrived while logged out)
+  useEffect(() => {
+    dispatch(fetchNotifications());
+  }, [dispatch]);
+
+  // 2. New ones, and ones read in another tab
+  useRealtimeEvent('notification.new', (notification) => dispatch(notificationReceived(notification)));
+  useRealtimeEvent('notifications.read', (update) => dispatch(notificationsReadElsewhere(update)));
+
+  // 3. Back from offline: reload to pick up what was missed
+  useRealtimeReconnect(() => dispatch(fetchNotifications()));
 }

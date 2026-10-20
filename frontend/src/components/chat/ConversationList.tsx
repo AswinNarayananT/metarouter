@@ -4,8 +4,9 @@ import { ConversationListItem } from './ConversationListItem';
 
 const FILTER_TABS: { id: ChatFilterTab; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'ai', label: 'AI handling' },
-  { id: 'human', label: 'Needs human' },
+  { id: 'mine', label: 'Mine' },
+  { id: 'unassigned', label: 'Unassigned' },
+  { id: 'ai', label: 'AI' },
 ];
 
 /** Left column: search, filter tabs and the list of conversations. */
@@ -54,7 +55,7 @@ export function ConversationList({
           />
         </div>
 
-        <div className="flex gap-1" role="tablist" aria-label="Filter conversations">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filter conversations">
           {FILTER_TABS.map((tab) => {
             const active = filter === tab.id;
             return (

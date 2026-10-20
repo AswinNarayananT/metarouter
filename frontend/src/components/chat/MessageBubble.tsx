@@ -7,6 +7,7 @@ const BUBBLE_STYLES: Record<ChatMessage['sender'], string> = {
   model: 'bg-primary text-on-primary rounded-2xl rounded-tr-sm',
   human: 'bg-surface-container-high text-on-surface rounded-2xl rounded-tr-sm',
   broadcast: 'bg-surface-container-high text-on-surface rounded-2xl rounded-tr-sm',
+  system: '',
 };
 
 const SENDER_LABELS = {
@@ -43,8 +44,21 @@ export function MessageBubble({
   documentSelected: boolean;
   onOpenDocument: () => void;
 }) {
+  // Activity line ("Aromal took this chat"): a small centred note, not a bubble
+  if (message.sender === 'system') {
+    return (
+      <div className="flex justify-center">
+        <span className="max-w-[90%] px-3 py-1 rounded-full bg-surface-container text-[11px] text-on-surface-variant text-center">
+          {message.content} · {message.time}
+        </span>
+      </div>
+    );
+  }
+
   const outgoing = message.sender !== 'user';
-  const sender = message.sender === 'user' ? null : SENDER_LABELS[message.sender];
+  const baseLabel = message.sender === 'user' ? null : SENDER_LABELS[message.sender];
+  // Agent replies show who wrote them
+  const sender = baseLabel && message.sender === 'human' && message.sentBy ? { ...baseLabel, label: message.sentBy.name } : baseLabel;
   const failed = message.status === 'failed';
 
   return (

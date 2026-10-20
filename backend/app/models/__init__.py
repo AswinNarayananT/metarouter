@@ -9,3 +9,4 @@ from app.models.conversation_model import Conversation, ChatMessage
 from app.models.attachment_model import ChatAttachment
 from app.models.contact_model import ContactOptOut
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
+from app.models.notification_model import Notification

@@ -127,7 +127,7 @@ def build_audience(db: Session, organization_id: int, contacts: Optional[list] =
         rows = db.query(Conversation.customer_phone).join(ChatMessage, ChatMessage.conversation_id == Conversation.id).filter(
             Conversation.organization_id == organization_id,
             Conversation.customer_phone.in_(chunk),
-            ChatMessage.sender != "user",
+            ChatMessage.sender.notin_(["user", "system"]),
             ChatMessage.created_at >= since
         ).distinct().all()
         recently_messaged.update(r.customer_phone for r in rows)

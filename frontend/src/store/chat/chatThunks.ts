@@ -1,7 +1,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api } from '@/api/axios';
 import { getApiErrorMessage } from '@/api/errors';
-import type { ApiChatMessage, ApiConversation, ConversationStatusValue } from '@/types/realtimeTypes';
+import type { ApiChatMessage, ApiConversation, ApiTeamMemberRef, ConversationStatusValue } from '@/types/realtimeTypes';
 
 // Search and the AI / human tabs filter in the browser, so one page of the most recent chats is enough for now
 const CONVERSATIONS_PAGE_SIZE = 100;
@@ -43,7 +43,7 @@ export const sendAgentMessage = createAsyncThunk(
   'chat/sendAgentMessage',
   async ({ conversationId, content }: { conversationId: number; content: string }, { rejectWithValue }) => {
     try {
-      const response = await api.post<{ messages: ApiChatMessage[]; conversation_status: ConversationStatusValue }>(
+      const response = await api.post<{ messages: ApiChatMessage[]; conversation_status: ConversationStatusValue; assigned_to: ApiTeamMemberRef | null }>(
         `/api/v1/conversations/${conversationId}/messages`,
         { content }
       );
@@ -62,6 +62,19 @@ export const updateConversationStatus = createAsyncThunk(
       return response.data;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to update the conversation'));
+    }
+  }
+);
+
+// Give the chat to a team member (userId) or put it back in the unassigned queue (null)
+export const assignConversation = createAsyncThunk(
+  'chat/assignConversation',
+  async ({ conversationId, userId }: { conversationId: number; userId: number | null }, { rejectWithValue }) => {
+    try {
+      const response = await api.patch<ApiConversation>(`/api/v1/conversations/${conversationId}/assign`, { user_id: userId });
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to assign the conversation'));
     }
   }
 );

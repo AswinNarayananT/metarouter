@@ -1,4 +1,5 @@
 import { ArrowLeft, Bot, Hand, Info } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ChatConversation } from '@/types/chatTypes';
 import { Avatar } from './Avatar';
 import { StatusBadge } from './StatusBadge';
@@ -10,12 +11,14 @@ export function ChatHeader({
   onBack,
   onToggleTakeover,
   onToggleContact,
+  assignControl,
 }: {
   conversation: ChatConversation;
   contactOpen: boolean;
   onBack: () => void;
   onToggleTakeover: () => void;
   onToggleContact: () => void;
+  assignControl?: ReactNode; // Owner picker (AssignMenu)
 }) {
   const isHuman = conversation.status === 'human_takeover';
 
@@ -41,6 +44,7 @@ export function ChatHeader({
       <div className="hidden sm:block">
         <StatusBadge status={conversation.status} />
       </div>
+      {assignControl}
       <button
         type="button"
         onClick={onToggleTakeover}

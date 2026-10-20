@@ -7,6 +7,7 @@ import workspaceReducer from './workspace/workspaceSlice';
 import broadcastReducer from './broadcast/broadcastSlice';
 import knowledgeReducer from './knowledge/knowledgeSlice';
 import chatReducer from './chat/chatSlice';
+import notificationReducer from './notifications/notificationSlice';
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     broadcast: broadcastReducer,
     knowledge: knowledgeReducer,
     chat: chatReducer,
+    notifications: notificationReducer,
   },
 });
 

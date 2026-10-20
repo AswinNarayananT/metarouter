@@ -22,8 +22,9 @@ import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { DisconnectedNumberBanner } from '@/components/channels/DisconnectedNumberBanner';
 import { LiveStatus } from '@/components/realtime/LiveStatus';
 import { HandoverAlerts } from '@/components/realtime/HandoverAlerts';
+import { NotificationBell } from '@/components/realtime/NotificationBell';
 import { useRealtimeConnection } from '@/hooks/useRealtime';
-import { useChatListRealtimeSync } from '@/hooks/useChatRealtime';
+import { useChatListRealtimeSync, useNotificationsRealtimeSync } from '@/hooks/useChatRealtime';
 
 export function WorkspaceLayout() {
   const dispatch = useAppDispatch();
@@ -43,6 +44,7 @@ export function WorkspaceLayout() {
   // One live-updates socket for every workspace page (closed on logout), keeping the chat list current
   useRealtimeConnection();
   useChatListRealtimeSync();
+  useNotificationsRealtimeSync();
 
   // Desktop: collapse to icon rail. Mobile: slide-over drawer.
   const [collapsed, setCollapsed] = useState(false);
@@ -181,6 +183,7 @@ export function WorkspaceLayout() {
         {/* Workspace / user info */}
         <div className="flex items-center gap-3 min-w-0">
           <LiveStatus />
+          <NotificationBell />
           <div className="hidden sm:block text-right min-w-0">
             <p className="text-sm font-semibold text-on-surface truncate max-w-[220px]">
               {userName || orgName}

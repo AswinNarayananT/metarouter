@@ -3,7 +3,7 @@ import type { PayloadAction } from '@reduxjs/toolkit';
 import type { ChatConversation, ChatMessage, ChatState, DeliveryStatus } from '@/types/chatTypes';
 import type { ApiAttachment, ApiChatMessage, ApiConversation, RealtimeEventMap } from '@/types/realtimeTypes';
 import { mapAttachment, mapConversation, mapMessage } from './chatMappers';
-import { fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from './chatThunks';
+import { assignConversation, fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from './chatThunks';
 
 const initialState: ChatState = {
   conversations: [],
@@ -14,6 +14,7 @@ const initialState: ChatState = {
   isLoading: false,
   loadError: null,
   updatingStatusId: null,
+  updatingAssignmentId: null,
   actionError: null,
 };
 
@@ -165,9 +166,12 @@ const chatSlice = createSlice({
         const { conversationId } = action.meta.arg;
         state.sendingId = null;
         mergeMessages(state, conversationId, action.payload.messages);
-        // Replying takes the chat over from the AI
+        // Replying takes the chat over from the AI (and makes you the owner if nobody was)
         const conversation = findConversation(state, conversationId);
-        if (conversation) conversation.status = action.payload.conversation_status;
+        if (conversation) {
+          conversation.status = action.payload.conversation_status;
+          conversation.assignedTo = action.payload.assigned_to;
+        }
       })
       .addCase(sendAgentMessage.rejected, (state, action) => {
         state.sendingId = null;
@@ -184,6 +188,19 @@ const chatSlice = createSlice({
       })
       .addCase(updateConversationStatus.rejected, (state, action) => {
         state.updatingStatusId = null;
+        state.actionError = action.payload as string;
+      })
+
+      .addCase(assignConversation.pending, (state, action) => {
+        state.updatingAssignmentId = action.meta.arg.conversationId;
+        state.actionError = null;
+      })
+      .addCase(assignConversation.fulfilled, (state, action) => {
+        state.updatingAssignmentId = null;
+        upsert(state, action.payload);
+      })
+      .addCase(assignConversation.rejected, (state, action) => {
+        state.updatingAssignmentId = null;
         state.actionError = action.payload as string;
       })
 

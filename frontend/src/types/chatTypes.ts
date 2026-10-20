@@ -1,7 +1,7 @@
 /* Customer chat types — mirror the backend Conversation / ChatMessage shapes */
 
 export type ConversationStatus = 'active' | 'human_takeover';
-export type Sender = 'user' | 'model' | 'human' | 'broadcast';
+export type Sender = 'user' | 'model' | 'human' | 'broadcast' | 'system'; // system = activity line
 export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface ParsedDocument {
@@ -35,6 +35,7 @@ export interface ChatMessage {
   attachment?: ChatAttachment;
   status?: DeliveryStatus | null; // Outgoing messages only
   error?: string | null;          // Why sending failed
+  sentBy?: { id: number; name: string } | null; // Team member's first name on agent replies
 }
 
 export interface ChatAdReferral {
@@ -51,6 +52,7 @@ export interface ChatConversation {
   phone: string;
   adReferral: ChatAdReferral | null; // Click-to-WhatsApp ad the customer came from
   status: ConversationStatus;
+  assignedTo: { id: number; name: string } | null; // null = unassigned
   unread: number;
   lastActive: string;
   lastActivityAt: string | null;   // ISO time of the last message, for sorting
@@ -78,10 +80,12 @@ export interface ChatState {
   isLoading: boolean;
   loadError: string | null;
   updatingStatusId: number | null; // Chat whose takeover switch is saving
+  updatingAssignmentId: number | null; // Chat whose owner is being changed
   actionError: string | null;
 }
 
-export type ChatFilterTab = 'all' | 'ai' | 'human';
+// mine = assigned to me; unassigned = needs a human and nobody owns it; ai = the AI is handling it
+export type ChatFilterTab = 'all' | 'mine' | 'unassigned' | 'ai';
 
 export type ChatFilterCounts = Record<ChatFilterTab, number>;
 

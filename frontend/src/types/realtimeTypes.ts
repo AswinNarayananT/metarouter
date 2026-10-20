@@ -1,7 +1,7 @@
 /* Shapes sent by the backend (conversation_service.py serializers): the REST API and the WebSocket events use the same ones */
 
 export type ConversationStatusValue = 'active' | 'human_takeover';
-export type MessageSender = 'user' | 'model' | 'human' | 'broadcast';
+export type MessageSender = 'user' | 'model' | 'human' | 'broadcast' | 'system'; // system = activity line (assigned, taken over ...)
 export type MessageDeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface ApiAttachment {
@@ -22,13 +22,14 @@ export interface ApiChatMessage {
   id: number;
   conversation_id: number;
   sender: MessageSender;
-  message_type: 'text' | 'template';
+  message_type: 'text' | 'template' | 'event';
   content: string;
   template_data: Record<string, unknown> | null;
   status: MessageDeliveryStatus | null; // null for customer messages
   error: string | null;
   created_at: string;
   attachment: ApiAttachment | null;
+  sent_by: ApiTeamMemberRef | null; // Team member who wrote an agent reply / caused an activity line (first name)
 }
 
 export interface ApiAdReferral {
@@ -36,6 +37,11 @@ export interface ApiAdReferral {
   body: string | null;
   source_type: string | null; // 'ad' or 'post'
   source_url: string | null;
+}
+
+export interface ApiTeamMemberRef {
+  id: number;
+  name: string;
 }
 
 export interface ApiConversation {
@@ -47,11 +53,15 @@ export interface ApiConversation {
   phone_number_id: string | null;
   display_phone_number: string | null;
   status: ConversationStatusValue;
+  assigned_to: ApiTeamMemberRef | null; // Team member responsible (null = unassigned queue)
+  assigned_at: string | null;
   updated_at: string | null;
   last_message: ApiChatMessage | null;
   window_open: boolean; // Free text allowed (24 hours since the customer's last message)
   window_expires_at: string | null;
 }
+
+import type { AppNotification } from './notificationTypes';
 
 /* WebSocket events (backend realtime/notify.py) */
 
@@ -61,7 +71,10 @@ export interface RealtimeEventMap {
   'attachment.updated': { message_id: number; conversation_id: number; attachment: ApiAttachment };
   'conversation.updated': ApiConversation;
   'conversation.handover': ApiConversation;
+  'conversation.assigned': ApiConversation & { assigned_by: ApiTeamMemberRef | null }; // Only to the new owner
   'conversations.changed': { reason: string };
+  'notification.new': AppNotification; // Only to the recipient
+  'notifications.read': { ids: number[]; conversation_id: number | null; unread_count: number }; // Read in another tab
   // Replies to what this tab sent
   subscribed: { conversation_id: number };
   unsubscribed: { conversation_id: number };
