@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { ChatConversation, ChatMessage, ChatState, DeliveryStatus } from '@/types/chatTypes';
 import type { ApiAttachment, ApiChatMessage, ApiConversation, RealtimeEventMap } from '@/types/realtimeTypes';
+import type { Ticket } from '@/types/ticketTypes';
 import { mapAttachment, mapConversation, mapMessage } from './chatMappers';
 import { assignConversation, fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from './chatThunks';
 
@@ -106,6 +107,13 @@ const chatSlice = createSlice({
       if (!conversation) return;
       applyAttachment(conversation.messages.find((m) => m.id === message_id), attachment);
       if (conversation.lastMessage?.id === message_id) applyAttachment(conversation.lastMessage, attachment);
+    },
+    // ticket.updated event: the chat's ticket chip / hint follow the ticket
+    ticketChanged: (state, action: PayloadAction<Ticket>) => {
+      const conversation = findConversation(state, action.payload.conversation_id);
+      if (!conversation) return;
+      const { id, number, status } = action.payload;
+      conversation.openTicket = status === 'closed' ? (conversation.openTicket?.id === id ? null : conversation.openTicket) : { id, number, status };
     },
     selectConversation: (state, action: PayloadAction<number | null>) => {
       state.selectedId = action.payload;
@@ -214,6 +222,7 @@ export const {
   messageReceived,
   messageStatusReceived,
   attachmentReceived,
+  ticketChanged,
   selectConversation,
   clearChatActionError,
 } = chatSlice.actions;

@@ -7,6 +7,10 @@ import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
 import { markNotificationsRead } from '@/store/notifications/notificationThunks';
 import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
 import { AssignMenu } from '@/components/chat/AssignMenu';
+import { TicketChip } from '@/components/chat/TicketChip';
+import { TicketHint } from '@/components/chat/TicketHint';
+import { CloseTicketDialog } from '@/components/tickets/CloseTicketDialog';
+import { closeTicket } from '@/store/tickets/ticketThunks';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
 import { ContactPanel } from '@/components/chat/ContactPanel';
@@ -31,6 +35,9 @@ export function CustomerChats() {
   const [draft, setDraft] = useState('');
   const [panel, setPanel] = useState<ChatSidePanel>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [closingTicket, setClosingTicket] = useState(false);
+  const { savingId: savingTicketId, actionError: ticketError } = useAppSelector((state) => state.tickets);
+  const updatingStatusId = useAppSelector((state) => state.chat.updatingStatusId);
   // On small screens show either the list or the open chat (a handover alert arrives with a chat selected)
   const [mobileView, setMobileView] = useState<'list' | 'chat'>(() => (selectedId ? 'chat' : 'list'));
 
@@ -128,6 +135,21 @@ export function CustomerChats() {
 
   // WhatsApp allows free text only within 24 hours of the customer's last message
   const windowClosed = selected ? !selected.windowOpen : false;
+  // After the agent replied in a chat with an open ticket: suggest handing back so the AI closes it
+  const lastRealMessage = selected ? [...selected.messages].reverse().find((m) => m.sender !== 'system') : undefined;
+  const canHandleChat = Boolean(selected && (selected.assignedTo?.id === currentUserId || isSupervisor));
+  const showTicketHint = Boolean(selected?.openTicket && selected.status === 'human_takeover' && lastRealMessage?.sender === 'human' && canHandleChat);
+
+  const handBack = () => {
+    if (selected) dispatch(updateConversationStatus({ conversationId: selected.id, status: 'active' }));
+  };
+
+  const confirmCloseTicket = async (resolution: string, handBackToAi: boolean) => {
+    if (!selected?.openTicket) return;
+    const result = await dispatch(closeTicket({ ticketId: selected.openTicket.id, resolution, handBackToAi }));
+    if (closeTicket.fulfilled.match(result)) setClosingTicket(false);
+  };
+
   // Someone else owns the chat: only they (or a supervisor) can reply
   const ownedByOther = Boolean(selected?.assignedTo && selected.assignedTo.id !== currentUserId && !isSupervisor);
 
@@ -164,6 +186,8 @@ export function CustomerChats() {
               onToggleTakeover={toggleTakeover}
               onToggleContact={() => setPanel((p) => (p?.type === 'contact' ? null : { type: 'contact' }))}
               assignControl={
+                <>
+                {selected.openTicket && <TicketChip ticket={selected.openTicket} />}
                 <AssignMenu
                   conversation={selected}
                   members={teamMembers}
@@ -172,6 +196,7 @@ export function CustomerChats() {
                   busy={updatingAssignmentId === selected.id}
                   onAssign={assign}
                 />
+                </>
               }
             />
             {selected.status === 'human_takeover' && <TakeoverBanner />}
@@ -182,6 +207,14 @@ export function CustomerChats() {
               onOpenDocument={showDocument}
               onLoadOlder={loadOlder}
             />
+            {showTicketHint && selected.openTicket && (
+              <TicketHint
+                ticketNumber={selected.openTicket.number}
+                busy={updatingStatusId === selected.id}
+                onHandBack={handBack}
+                onCloseTicket={() => setClosingTicket(true)}
+              />
+            )}
             <Composer
               value={draft}
               onChange={setDraft}
@@ -221,6 +254,16 @@ export function CustomerChats() {
       )}
 
       {viewerOpen && openDocument && <DocumentViewer attachment={openDocument} onClose={closeViewer} />}
+
+      {closingTicket && selected?.openTicket && (
+        <CloseTicketDialog
+          ticketNumber={selected.openTicket.number}
+          busy={savingTicketId === selected.openTicket.id}
+          error={ticketError}
+          onCancel={() => setClosingTicket(false)}
+          onConfirm={confirmCloseTicket}
+        />
+      )}
     </div>
   );
 }

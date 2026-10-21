@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.conversation_model import Conversation, ChatMessage
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.whatsapp_model import WhatsAppNumber
+from app.models.ticket_model import Ticket
 from app.realtime.connection_manager import conversation_group
 from app.realtime.events import publish_event
 
@@ -88,7 +89,7 @@ def reply_window(last_customer_at: Optional[datetime]) -> dict:
     return {"window_open": bool(expires_at and expires_at > datetime.now(timezone.utc)), "window_expires_at": expires_at}
 
 
-def serialize_conversation(conversation: Conversation, last_message: Optional[ChatMessage], last_customer_at: Optional[datetime], display_phone_number: Optional[str] = None) -> dict:
+def serialize_conversation(conversation: Conversation, last_message: Optional[ChatMessage], last_customer_at: Optional[datetime], display_phone_number: Optional[str] = None, open_ticket: Optional[Ticket] = None) -> dict:
     return {
         "id": conversation.id,
         "customer_phone": conversation.customer_phone,
@@ -102,6 +103,7 @@ def serialize_conversation(conversation: Conversation, last_message: Optional[Ch
         "assigned_at": as_utc(conversation.assigned_at),
         "updated_at": as_utc(conversation.updated_at),
         "last_message": serialize_message(last_message) if last_message else None,
+        "open_ticket": {"id": open_ticket.id, "number": open_ticket.number, "status": open_ticket.status} if open_ticket else None,
         **reply_window(last_customer_at)
     }
 
@@ -111,7 +113,8 @@ def conversation_payload(db: Session, conversation: Conversation) -> dict:
     # Activity entries ("Aromal took this chat") aren't a preview of the conversation
     last_message = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender != "system").order_by(ChatMessage.id.desc()).first()
     display_phone_number = db.query(WhatsAppNumber.display_phone_number).filter(WhatsAppNumber.phone_number_id == conversation.phone_number_id).scalar()
-    return serialize_conversation(conversation, last_message, last_customer_message_at(db, conversation.id), display_phone_number)
+    open_ticket = db.query(Ticket).filter(Ticket.conversation_id == conversation.id, Ticket.status != "closed").first()
+    return serialize_conversation(conversation, last_message, last_customer_message_at(db, conversation.id), display_phone_number, open_ticket)
 
 
 # Admins and managers supervise: they can assign anyone and reply to any chat

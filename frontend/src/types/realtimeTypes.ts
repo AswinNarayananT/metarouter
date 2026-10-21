@@ -57,11 +57,13 @@ export interface ApiConversation {
   assigned_at: string | null;
   updated_at: string | null;
   last_message: ApiChatMessage | null;
+  open_ticket: { id: number; number: number; status: string } | null; // The chat's current support session
   window_open: boolean; // Free text allowed (24 hours since the customer's last message)
   window_expires_at: string | null;
 }
 
 import type { AppNotification } from './notificationTypes';
+import type { Ticket } from './ticketTypes';
 
 /* WebSocket events (backend realtime/notify.py) */
 
@@ -74,6 +76,7 @@ export interface RealtimeEventMap {
   'conversation.assigned': ApiConversation & { assigned_by: ApiTeamMemberRef | null }; // Only to the new owner
   'conversations.changed': { reason: string };
   'notification.new': AppNotification; // Only to the recipient
+  'ticket.updated': Ticket; // A ticket was opened, changed or closed
   'notifications.read': { ids: number[]; conversation_id: number | null; unread_count: number }; // Read in another tab
   // Replies to what this tab sent
   subscribed: { conversation_id: number };

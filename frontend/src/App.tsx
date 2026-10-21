@@ -20,6 +20,7 @@ import { SuperAdminSettings } from '@/pages/superAdmin/SuperAdminSettings';
 import { WorkspaceLayout } from '@/pages/workspace/WorkspaceLayout';
 import { WorkspaceOverview } from '@/pages/workspace/WorkspaceOverview';
 import { CustomerChats } from '@/pages/workspace/CustomerChats';
+import { Tickets } from '@/pages/workspace/Tickets';
 import { Broadcasts } from '@/pages/workspace/Broadcasts';
 import { NewBroadcast } from '@/pages/workspace/NewBroadcast';
 import { BroadcastDetail } from '@/pages/workspace/BroadcastDetail';
@@ -101,6 +102,7 @@ function App() {
         >
           <Route index element={<WorkspaceOverview />} />
           <Route path="chats" element={<CustomerChats />} />
+          <Route path="tickets" element={<Tickets />} />
           <Route
             path="broadcast"
             element={

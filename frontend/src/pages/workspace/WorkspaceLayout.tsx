@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   MessageSquare,
+  Ticket,
   Send,
   Users,
   UserPlus,
@@ -69,6 +70,7 @@ export function WorkspaceLayout() {
         ]
       : []),
     { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare },
+    { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket },
     ...(isAdmin ? [{ label: 'Broadcast', path: '/dashboard/broadcast', icon: Send }] : []),
     { label: 'Team Members', path: '/dashboard/members', icon: Users },
     ...(isAdmin ? [{ label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus }] : []),

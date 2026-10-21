@@ -4,6 +4,7 @@ import { AttachmentCard } from './AttachmentCard';
 import { Avatar } from './Avatar';
 import { SidePanel } from './SidePanel';
 import { StatusBadge } from './StatusBadge';
+import { CustomerTickets } from './CustomerTickets';
 
 /** Right sidebar with the customer's details and every document they've shared. */
 export function ContactPanel({
@@ -50,6 +51,9 @@ export function ContactPanel({
           </dd>
         </div>
       </dl>
+
+      {/* Every support session this customer has had */}
+      <CustomerTickets conversationId={conversation.id} refreshKey={`${conversation.openTicket?.id ?? 'none'}-${conversation.openTicket?.status ?? ''}`} />
 
       {/* Click-to-WhatsApp ad that started this chat */}
       {conversation.adReferral && (

@@ -61,8 +61,8 @@ def notify_team_of_handover(db: Session, conversation: Conversation, preview: Op
     return create_notifications(db, conversation, [r.id for r in recipients], "handover", "A customer needs a human", conversation_summary(conversation, preview))
 
 
-def notify_assignee(db: Session, conversation: Conversation, assignee: User, actor: User, preview: Optional[str]) -> list:
+def notify_assignee(db: Session, conversation: Conversation, assignee: User, actor: User, preview: Optional[str], title: Optional[str] = None) -> list:
     # Only the new owner, and never for assigning yourself
     if assignee.id == actor.id:
         return []
-    return create_notifications(db, conversation, [assignee.id], "assigned", f"{first_name(actor.name)} assigned you a chat", conversation_summary(conversation, preview), actor.id)
+    return create_notifications(db, conversation, [assignee.id], "assigned", title or f"{first_name(actor.name)} assigned you a chat", conversation_summary(conversation, preview), actor.id)

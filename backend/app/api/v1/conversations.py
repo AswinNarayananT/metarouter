@@ -9,14 +9,19 @@ from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
 from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
 from app.models.whatsapp_model import WhatsAppNumber
+from app.models.ticket_model import Ticket
 from app.schemas.conversation_schema import SendMessageRequest, UpdateConversationRequest, AssignConversationRequest
 from app.services.messaging_service import queue_outgoing_message, OutgoingMessageError
-from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, handover_roles, as_utc, conversation_payload, can_reply, SUPERVISOR_ROLES, record_activity, first_name
-from app.realtime.connection_manager import org_group, user_group
+from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, record_activity, first_name
+from app.realtime.connection_manager import org_group
 from app.realtime.events import publish_event
-from app.services.notification_service import notify_assignee
+from app.services.assignment_service import check_assign_permission, assign_owner
+from app.services.ticket_service import get_open_ticket, escalate_ticket, sync_ticket_owner, mark_ticket_in_progress, hand_ticket_back_to_ai
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
+
+# Sent when an agent hands the chat back: the AI closes the ticket once the customer needs nothing else
+ANYTHING_ELSE_TEXT = "Is there anything else I can help you with?"
 
 
 @router.get("/")
@@ -51,6 +56,8 @@ def list_conversations(status: Optional[ConversationStatus] = Query(None), assig
     last_messages = {m.id: m for m in db.query(ChatMessage).options(selectinload(ChatMessage.attachment)).filter(ChatMessage.id.in_(message_ids)).all()} if message_ids else {}
     number_ids = {row.Conversation.phone_number_id for row in rows if row.Conversation.phone_number_id}
     display_numbers = dict(db.query(WhatsAppNumber.phone_number_id, WhatsAppNumber.display_phone_number).filter(WhatsAppNumber.phone_number_id.in_(number_ids)).all()) if number_ids else {}
+    conversation_ids = [row.Conversation.id for row in rows]
+    open_tickets = {t.conversation_id: t for t in db.query(Ticket).filter(Ticket.conversation_id.in_(conversation_ids), Ticket.status != "closed").all()} if conversation_ids else {}
 
     return {
         "conversations": [
@@ -58,7 +65,8 @@ def list_conversations(status: Optional[ConversationStatus] = Query(None), assig
                 row.Conversation,
                 last_messages.get(row.last_id),
                 as_utc(row.last_customer_at),
-                display_numbers.get(row.Conversation.phone_number_id)
+                display_numbers.get(row.Conversation.phone_number_id),
+                open_tickets.get(row.Conversation.id)
             )
             for row in rows
         ],
@@ -153,6 +161,13 @@ def send_agent_message(conversation_id: int, payload: SendMessageRequest, db: Se
     except OutgoingMessageError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # 6. Ticket: a team ticket, owned like the chat, now in progress
+    ticket = get_open_ticket(db, conversation.id)
+    if ticket and ticket.status == "ai_handling":
+        escalate_ticket(db, conversation, current_user)
+    sync_ticket_owner(db, conversation, current_user)
+    mark_ticket_in_progress(db, conversation, current_user)
+
     return {
         "messages": [serialize_message(m) for m in messages],
         "conversation_status": conversation.status.value,
@@ -193,8 +208,16 @@ def update_conversation(conversation_id: int, payload: UpdateConversationRequest
     if conversation.status != previous_status:
         if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
             record_activity(db, conversation, f"{first_name(current_user.name)} took over from the AI", current_user)
+            escalate_ticket(db, conversation, current_user)
+            sync_ticket_owner(db, conversation, current_user)
         else:
             record_activity(db, conversation, f"{first_name(current_user.name)} handed the chat back to the AI", current_user)
+
+            # The AI finishes the ticket: asks "anything else?" and closes it when the customer says no
+            if hand_ticket_back_to_ai(db, conversation, current_user):
+                number_status: Optional[str] = db.query(WhatsAppNumber.status).filter(WhatsAppNumber.phone_number_id == conversation.phone_number_id).scalar()
+                if number_status == "connected":
+                    queue_outgoing_message(db, conversation, sender="model", content=ANYTHING_ELSE_TEXT)
 
     # 3. Every open dashboard updates the chat's badge
     conversation_data = conversation_payload(db, conversation)
@@ -214,63 +237,6 @@ def assign_conversation(conversation_id: int, payload: AssignConversationRequest
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # 2. Supervisors assign anyone (any role: the owner can always reply)
-    #    Everyone else: take an unassigned chat (if their role may pick up chats) or let go of their own
-    is_supervisor = current_user.role in SUPERVISOR_ROLES
-    if not is_supervisor:
-        taking_free_chat = payload.user_id == current_user.id and conversation.assigned_user_id is None
-        releasing_own_chat = payload.user_id is None and conversation.assigned_user_id == current_user.id
-        if taking_free_chat and current_user.role not in handover_roles(db, current_user.organization_id):
-            raise HTTPException(status_code=403, detail="Your role can't pick up chats. Ask an admin or manager to assign this chat to you.")
-        if not taking_free_chat and not releasing_own_chat:
-            raise HTTPException(status_code=403, detail="Only admins and managers can assign chats to other members")
-
-    # 3. The new owner must be an active member of this workspace
-    assignee = None
-    if payload.user_id is not None:
-        assignee = db.query(User).filter(
-            User.id == payload.user_id,
-            User.organization_id == current_user.organization_id
-        ).first()
-
-        if not assignee or not assignee.is_active:
-            raise HTTPException(status_code=404, detail="Team member not found")
-
-
-    # Nothing to change (same owner as now)
-    previous_user_id = conversation.assigned_user_id
-    if (assignee.id if assignee else None) == previous_user_id:
-        return conversation_payload(db, conversation)
-    previous_owner = conversation.assigned_user
-
-    # 4. Assigning hands the chat to a person, so the AI stays silent
-    conversation.assigned_user_id = assignee.id if assignee else None
-    conversation.assigned_at = datetime.now(timezone.utc) if assignee else None
-    if assignee:
-        conversation.status = ConversationStatus.HUMAN_TAKEOVER
-    db.commit()
-    db.refresh(conversation)
-
-    # 5. Activity line: who did it, from whom, to whom
-    actor = first_name(current_user.name)
-    if assignee and assignee.id == current_user.id:
-        text = f"{actor} took this chat from {first_name(previous_owner.name)}" if previous_owner else f"{actor} took this chat"
-    elif assignee and previous_owner and previous_owner.id == current_user.id:
-        text = f"{actor} handed this chat to {first_name(assignee.name)}"
-    elif assignee:
-        text = f"{actor} reassigned this chat from {first_name(previous_owner.name)} to {first_name(assignee.name)}" if previous_owner else f"{actor} assigned this chat to {first_name(assignee.name)}"
-    elif previous_owner and previous_owner.id == current_user.id:
-        text = f"{actor} unassigned themselves"
-    else:
-        text = f"{actor} unassigned {first_name(previous_owner.name)}"
-    record_activity(db, conversation, text, current_user)
-
-    # 6. Every dashboard updates the owner; the new owner gets a personal alert (not when assigning yourself)
-    conversation_data = conversation_payload(db, conversation)
-    publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_data)
-    if assignee and assignee.id != current_user.id and assignee.id != previous_user_id:
-        publish_event(user_group(assignee.id), "conversation.assigned", {**conversation_data, "assigned_by": {"id": current_user.id, "name": current_user.name}})
-        last_customer_text = db.query(ChatMessage.content).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user").order_by(ChatMessage.id.desc()).limit(1).scalar()
-        notify_assignee(db, conversation, assignee, current_user, last_customer_text)
-
-    return conversation_data
+    # 2. Allowed to assign, then give the chat (and its open ticket) to the new owner
+    check_assign_permission(db, current_user, conversation, payload.user_id)
+    return assign_owner(db, conversation, payload.user_id, current_user)

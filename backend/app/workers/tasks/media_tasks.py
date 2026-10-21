@@ -18,6 +18,7 @@ from app.services.document_parser_service import parse_document, DocumentParseEr
 from app.workers.tasks.chat_tasks import _get_or_create_conversation, reply_with_ai, update_customer_profile
 from app.core.redis_client import redis_client
 from app.realtime.notify import notify_new_messages, notify_attachment_updated
+from app.services.ticket_service import start_ticket_session
 
 RETRY_BASE_SECONDS = 30
 MEDIA_LOCK_SECONDS = 300  # Longer than a 25 MB download / one Gemini parse; released as soon as the task finishes
@@ -78,6 +79,7 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
                 return
             raise
         notify_new_messages(db, [message])
+        start_ticket_session(db, conversation, message.id)
 
         # 3. Download the file in the background
         download_whatsapp_media_task.delay(message.attachment.id)

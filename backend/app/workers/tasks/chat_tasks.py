@@ -12,8 +12,10 @@ from app.services.messaging_service import queue_outgoing_message
 from app.realtime.notify import notify_new_messages, notify_handover
 from app.services.conversation_service import record_activity
 from app.services.notification_service import notify_team_of_handover
+from app.services.ticket_service import start_ticket_session, escalate_ticket, get_open_ticket, close_ticket
 
 ESCALATION_TAG = "[ESCALATE_TO_HUMAN]"
+RESOLVED_TAG = "[RESOLVED]"  # The customer needs nothing else: the AI closes the ticket
 HANDOVER_FALLBACK_TEXT = "I'm connecting you with our team. Someone will reply shortly."
 OPT_OUT_CONFIRMATION_TEXT = "You've been unsubscribed and won't receive promotional messages from us. Reply START to subscribe again."
 OPT_IN_CONFIRMATION_TEXT = "You're subscribed again. Reply STOP anytime to unsubscribe."
@@ -126,6 +128,9 @@ def process_chat_message_task(
                 queue_outgoing_message(db, conversation, sender="model", content=OPT_IN_CONFIRMATION_TEXT)
             return
 
+        # Support session: the first customer message opens a ticket, later ones belong to it
+        start_ticket_session(db, conversation, user_msg.id)
+
         # 4. Human takeover: keep the message for the agent, AI stays silent
         if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
             return
@@ -158,10 +163,18 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
         clean_reply = ai_raw_reply.replace(ESCALATION_TAG, "").strip() or HANDOVER_FALLBACK_TEXT
         queue_outgoing_message(db, conversation, sender="model", content=clean_reply)
 
-        # Alert the team in the dashboard that a human is needed
+        # Alert the team in the dashboard that a human is needed; the ticket becomes a team ticket
         record_activity(db, conversation, "The AI handed this chat to the team")
+        escalate_ticket(db, conversation)
         notify_team_of_handover(db, conversation, user_text)
         notify_handover(db, conversation)
         print(f"[ALERT] Handover triggered for Org {conversation.organization_id}, Customer: {conversation.customer_phone}")
+    elif RESOLVED_TAG in ai_raw_reply:
+        # 3. The customer needs nothing else: say goodbye, then file and close the ticket
+        clean_reply = ai_raw_reply.replace(RESOLVED_TAG, "").strip() or "Glad I could help! Have a great day."
+        queue_outgoing_message(db, conversation, sender="model", content=clean_reply)
+        ticket = get_open_ticket(db, conversation.id)
+        if ticket:
+            close_ticket(db, ticket, "resolved_by_ai")
     else:
         queue_outgoing_message(db, conversation, sender="model", content=ai_raw_reply)

@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { attachmentReceived, conversationReceived, messageReceived, messageStatusReceived } from '@/store/chat/chatSlice';
+import { attachmentReceived, conversationReceived, messageReceived, messageStatusReceived, ticketChanged } from '@/store/chat/chatSlice';
 import { fetchConversations, fetchMessages } from '@/store/chat/chatThunks';
 import { notificationReceived, notificationsReadElsewhere } from '@/store/notifications/notificationSlice';
 import { fetchNotifications } from '@/store/notifications/notificationThunks';
+import { ticketReceived } from '@/store/tickets/ticketSlice';
+import { fetchTicketDetail, fetchTickets } from '@/store/tickets/ticketThunks';
 import { useConversationSubscription, useRealtimeEvent, useRealtimeReconnect } from './useRealtime';
 
 const REFETCH_DEBOUNCE_MS = 1000; // A broadcast sends one "changed" per batch; batches can come close together
@@ -18,6 +20,7 @@ export function useChatListRealtimeSync() {
   useRealtimeEvent('conversation.updated', (conversation) => dispatch(conversationReceived(conversation)));
   useRealtimeEvent('conversation.handover', (conversation) => dispatch(conversationReceived(conversation)));
   useRealtimeEvent('conversation.assigned', (conversation) => dispatch(conversationReceived(conversation)));
+  useRealtimeEvent('ticket.updated', (ticket) => dispatch(ticketChanged(ticket)));
 
   // 2. Many chats changed, or we were offline and missed events: reload the list (only if it was loaded)
   const refetch = () => {
@@ -72,4 +75,24 @@ export function useNotificationsRealtimeSync() {
 
   // 3. Back from offline: reload to pick up what was missed
   useRealtimeReconnect(() => dispatch(fetchNotifications()));
+}
+
+// Mount on the Tickets page: rows and the open ticket update live
+export function useTicketsRealtimeSync() {
+  const dispatch = useAppDispatch();
+  const selectedId = useAppSelector((state) => state.tickets.selectedId);
+  const items = useAppSelector((state) => state.tickets.items);
+
+  useRealtimeEvent('ticket.updated', (ticket) => {
+    // A ticket we don't list yet (new session, or it moved into this tab): reload page 1
+    if (!items.some((t) => t.id === ticket.id)) dispatch(fetchTickets({ page: 1 }));
+    else dispatch(ticketReceived(ticket));
+    // The open ticket also gets its new timeline / messages
+    if (ticket.id === selectedId) dispatch(fetchTicketDetail(ticket.id));
+  });
+
+  useRealtimeReconnect(() => {
+    dispatch(fetchTickets({ page: 1 }));
+    if (selectedId !== null) dispatch(fetchTicketDetail(selectedId));
+  });
 }

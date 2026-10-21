@@ -8,6 +8,7 @@ import broadcastReducer from './broadcast/broadcastSlice';
 import knowledgeReducer from './knowledge/knowledgeSlice';
 import chatReducer from './chat/chatSlice';
 import notificationReducer from './notifications/notificationSlice';
+import ticketReducer from './tickets/ticketSlice';
 
 export const store = configureStore({
   reducer: {
@@ -18,6 +19,7 @@ export const store = configureStore({
     knowledge: knowledgeReducer,
     chat: chatReducer,
     notifications: notificationReducer,
+    tickets: ticketReducer,
   },
 });
 

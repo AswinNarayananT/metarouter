@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     STUCK_MESSAGE_MINUTES: int = 10  # A pending message older than this is considered stuck
     STUCK_MEDIA_MAX_AGE_HOURS: int = 24  # Customer media still pending after this is marked failed instead of retried
     BROADCAST_CHECK_INTERVAL_SECONDS: int = 60  # Restart tier-paused broadcasts that are due
+    TICKET_IDLE_CLOSE_HOURS: int = 4  # An AI-handled ticket with no new message for this long is closed (no reply)
+    TICKET_SWEEP_INTERVAL_MINUTES: int = 10  # How often idle tickets are checked
     STALLED_BROADCAST_MINUTES: int = 10  # Sending broadcast with no progress for this long is restarted
 
     SMTP_HOST: str = "smtp.gmail.com"

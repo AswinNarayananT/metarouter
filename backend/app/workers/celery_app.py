@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.workers.tasks.broadcast_tasks",
         "app.workers.tasks.maintenance_tasks",
         "app.workers.tasks.knowledge_tasks",
+        "app.workers.tasks.ticket_tasks",
     ],
 )
 
@@ -42,5 +43,9 @@ celery_app.conf.beat_schedule = {
     "resume-due-broadcasts": {
         "task": "resume_due_broadcasts_task",
         "schedule": timedelta(seconds=settings.BROADCAST_CHECK_INTERVAL_SECONDS),
+    },
+    "close-idle-tickets": {
+        "task": "close_idle_tickets_task",
+        "schedule": timedelta(minutes=settings.TICKET_SWEEP_INTERVAL_MINUTES),
     },
 }

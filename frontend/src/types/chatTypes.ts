@@ -53,6 +53,7 @@ export interface ChatConversation {
   adReferral: ChatAdReferral | null; // Click-to-WhatsApp ad the customer came from
   status: ConversationStatus;
   assignedTo: { id: number; name: string } | null; // null = unassigned
+  openTicket: { id: number; number: number; status: string } | null; // Current support session (ticket)
   unread: number;
   lastActive: string;
   lastActivityAt: string | null;   // ISO time of the last message, for sorting

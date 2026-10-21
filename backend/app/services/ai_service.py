@@ -62,6 +62,14 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
 
     If escalating, write a polite note following the tag:
     Example: "[ESCALATE_TO_HUMAN] I am connecting you with a support representative who will assist you shortly."
+
+    CLOSING PROTOCOL:
+    1. When you have fully answered the customer's question or solved their problem, end that reply by asking
+       if there is anything else you can help with.
+    2. If the customer then says they need nothing else (e.g. "no", "that's all", "no thanks", "ok thank you"),
+       reply with a short friendly goodbye and put the string "[RESOLVED]" at the beginning of your response.
+       Example: "[RESOLVED] Glad I could help! Have a great day."
+    3. Never use "[RESOLVED]" together with "[ESCALATE_TO_HUMAN]", and never while the customer still needs help.
     """
 
     # 4. Fetch Chat History: the most recent messages, oldest first

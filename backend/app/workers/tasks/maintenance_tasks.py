@@ -17,8 +17,11 @@ from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task, knowledge_retry_marker_key
 from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import download_whatsapp_media_task, parse_document_task, media_retry_marker_key
+from app.models.ticket_model import Ticket
+from app.services.ticket_service import close_ticket
 
 STUCK_MESSAGES_PER_SWEEP = 500
+IDLE_TICKETS_PER_SWEEP = 50  # Each close makes one AI labelling call
 
 
 @celery_app.task(name="refresh_whatsapp_numbers_task")
@@ -197,6 +200,35 @@ def resume_due_broadcasts_task():
             db.commit()
             process_broadcast_task.delay(broadcast_id=broadcast.id, dispatch_token=broadcast.dispatch_token)
             print(f"[BROADCAST] {broadcast.id}: restarted ({'tier window freed' if broadcast in due else 'stalled'})")
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="close_idle_tickets_task")
+def close_idle_tickets_task():
+    db = SessionLocal()
+    try:
+        # 1. Tickets the AI is handling whose chat has had no message for a while (customer stopped replying)
+        #    Team tickets (open / in progress / waiting) are never closed automatically
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=settings.TICKET_IDLE_CLOSE_HOURS)
+        last_activity = db.query(ChatMessage.conversation_id, func.max(ChatMessage.created_at).label("last_at")).filter(
+            ChatMessage.sender != "system"
+        ).group_by(ChatMessage.conversation_id).subquery()
+
+        tickets = db.query(Ticket).join(last_activity, last_activity.c.conversation_id == Ticket.conversation_id).filter(
+            Ticket.status == "ai_handling",
+            last_activity.c.last_at < cutoff
+        ).order_by(Ticket.id).limit(IDLE_TICKETS_PER_SWEEP).all()
+
+        # 2. File and close each one (one failing doesn't stop the rest)
+        for ticket in tickets:
+            try:
+                close_ticket(db, ticket, "no_reply")
+                print(f"[TICKETS] closed idle ticket #{ticket.number} (org {ticket.organization_id})")
+            except Exception as e:
+                db.rollback()
+                print(f"[TICKETS] could not close ticket {ticket.id}: {e}")
 
     finally:
         db.close()

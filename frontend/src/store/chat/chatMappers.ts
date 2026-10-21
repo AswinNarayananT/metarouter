@@ -105,6 +105,7 @@ export function mapConversation(conversation: ApiConversation, existing?: ChatCo
       : null,
     status: conversation.status,
     assignedTo: conversation.assigned_to,
+    openTicket: conversation.open_ticket,
     unread: existing?.unread ?? 0,
     lastActive: formatListTime(lastActivityAt),
     lastActivityAt,
