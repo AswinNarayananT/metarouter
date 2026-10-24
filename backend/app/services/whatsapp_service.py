@@ -130,6 +130,50 @@ def send_template(phone_number_id: str, access_token: str, to: str, template_dat
     return _post_message(url, access_token, payload)
 
 
+def upload_media(phone_number_id: str, access_token: str, content: bytes, mime_type: str, file_name: str) -> str:
+    # 1. Files an agent sends are uploaded to Meta first; the message then refers to the returned media id
+    url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{phone_number_id}/media"
+    try:
+        response = requests.post(
+            url,
+            data={"messaging_product": "whatsapp", "type": mime_type},
+            files={"file": (file_name, content, mime_type)},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=settings.WHATSAPP_REQUEST_TIMEOUT_SECONDS * 4  # Uploads take longer than a text send
+        )
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        raise WhatsAppRetryableError(f"Network error: {exc}") from exc
+
+    _raise_for_meta_error(response)
+
+    try:
+        return response.json()["id"]
+    except (ValueError, KeyError) as exc:
+        raise WhatsAppRetryableError(f"Unexpected response from Meta: {response.text[:200]}") from exc
+
+
+def send_media(phone_number_id: str, access_token: str, to: str, kind: str, media_id: str, caption: Optional[str] = None, file_name: Optional[str] = None, callback_data: Optional[str] = None) -> str:
+    # kind = "image" or "document"; documents keep their file name on the customer's phone
+    url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{phone_number_id}/messages"
+    media = {"id": media_id}
+    if caption:
+        media["caption"] = caption
+    if kind == "document" and file_name:
+        media["filename"] = file_name
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": kind,
+        kind: media
+    }
+    if callback_data:
+        payload["biz_opaque_callback_data"] = callback_data
+
+    return _post_message(url, access_token, payload)
+
+
 def _post_message(url: str, access_token: str, payload: dict) -> str:
     try:
         response = requests.post(url, json=payload, headers={"Authorization": f"Bearer {access_token}"}, timeout=settings.WHATSAPP_REQUEST_TIMEOUT_SECONDS)
@@ -283,3 +327,81 @@ def download_media(url: str, access_token: str, max_bytes: int) -> bytes:
         response.close()
 
     return bytes(content)
+
+
+# ------------------------------------------------------------------
+# Embedded Signup: connecting a business's number (server-to-server only; the app secret never leaves here)
+# ------------------------------------------------------------------
+
+def _graph_call(method: str, path: str, access_token: Optional[str] = None, params: Optional[dict] = None, body: Optional[dict] = None) -> dict:
+    url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{path}"
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    try:
+        response = requests.request(method, url, params=params, json=body, headers=headers, timeout=settings.WHATSAPP_REQUEST_TIMEOUT_SECONDS)
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        raise WhatsAppRetryableError(f"Network error: {exc}") from exc
+    _raise_for_meta_error(response)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise WhatsAppRetryableError(f"Unexpected response from Meta: {response.text[:200]}") from exc
+
+
+def exchange_signup_code(code: str) -> str:
+    # The popup's one-time code (valid ~30 seconds) -> the business's long-lived token
+    data = _graph_call("GET", "oauth/access_token", params={"client_id": settings.META_APP_ID, "client_secret": settings.META_APP_SECRET, "code": code})
+    token = data.get("access_token")
+    if not token:
+        raise WhatsAppPermanentError(None, "Meta didn't return an access token")
+    return token
+
+
+def granted_waba_ids(access_token: str, business_id: Optional[str] = None) -> set:
+    # WhatsApp Business Accounts the business actually gave this token (so a tampered request can't claim another one)
+    data = _graph_call("GET", "debug_token", params={"input_token": access_token, "access_token": f"{settings.META_APP_ID}|{settings.META_APP_SECRET}"})
+    info = data.get("data") or {}
+    whatsapp_scopes = [scope for scope in info.get("granular_scopes") or [] if scope.get("scope") in ("whatsapp_business_management", "whatsapp_business_messaging")]
+    print(f"[SIGNUP] debug_token: {info}")
+    targets = {target for scope in whatsapp_scopes for target in (scope.get("target_ids") or [])}
+    if targets or not whatsapp_scopes:
+        return targets
+
+    # A WhatsApp scope with no target list: ask the business the popup reported for its accounts (the token only sees what Meta lets it)
+    if not business_id:
+        return targets
+    for edge in ("owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"):
+        try:
+            data = _graph_call("GET", f"{business_id}/{edge}", access_token, params={"fields": "id", "limit": 100})
+        except WhatsAppPermanentError as exc:
+            print(f"[SIGNUP] {business_id}/{edge} failed: {exc}")
+            continue
+        targets |= {account.get("id") for account in data.get("data") or []}
+    print(f"[SIGNUP] accounts found through business {business_id}: {sorted(targets)}")
+    return targets
+
+
+def waba_phone_number_ids(waba_id: str, access_token: str) -> set:
+    data = _graph_call("GET", f"{waba_id}/phone_numbers", access_token, params={"fields": "id", "limit": 100})
+    return {number.get("id") for number in data.get("data") or []}
+
+
+def phone_number_details(phone_number_id: str, access_token: str) -> dict:
+    return _graph_call("GET", phone_number_id, access_token, params={"fields": "display_phone_number,verified_name,quality_rating,messaging_limit_tier"})
+
+
+def register_phone_number(phone_number_id: str, access_token: str, pin: str) -> None:
+    # Turns the number on for the Cloud API; the PIN becomes its two-step verification PIN
+    _graph_call("POST", f"{phone_number_id}/register", access_token, body={"messaging_product": "whatsapp", "pin": pin})
+
+
+def deregister_phone_number(phone_number_id: str, access_token: str) -> None:
+    _graph_call("POST", f"{phone_number_id}/deregister", access_token)
+
+
+def subscribe_app_to_waba(waba_id: str, access_token: str) -> None:
+    # Customer messages and delivery updates of this account arrive at our webhook
+    _graph_call("POST", f"{waba_id}/subscribed_apps", access_token)
+
+
+def unsubscribe_app_from_waba(waba_id: str, access_token: str) -> None:
+    _graph_call("DELETE", f"{waba_id}/subscribed_apps", access_token)

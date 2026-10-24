@@ -17,25 +17,38 @@ def serialize_notification(notification: Notification) -> dict:
         "title": notification.title,
         "body": notification.body,
         "conversation_id": notification.conversation_id,
+        "ticket": {"id": notification.ticket.id, "number": notification.ticket.number} if notification.ticket else None,
         "actor": {"id": notification.actor.id, "name": first_name(notification.actor.name)} if notification.actor else None,
         "read_at": as_utc(notification.read_at),
         "created_at": as_utc(notification.created_at)
     }
 
 
+def customer_label(conversation: Conversation) -> str:
+    # WhatsApp name, or the number when we don't know it
+    return conversation.customer_name or f"+{conversation.customer_phone}"
+
+
+def short(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    text = text.strip().replace("\n", " ")
+    return f"{text[:PREVIEW_CHARS]}{'…' if len(text) > PREVIEW_CHARS else ''}"
+
+
 def conversation_summary(conversation: Conversation, preview: Optional[str]) -> str:
     # "Aswin_nt · I want to talk to a real person"
-    customer = conversation.customer_name or f"+{conversation.customer_phone}"
+    customer = customer_label(conversation)
     if not preview:
         return customer
     preview = preview.strip().replace("\n", " ")
     return f"{customer} · {preview[:PREVIEW_CHARS]}{'…' if len(preview) > PREVIEW_CHARS else ''}"
 
 
-def create_notifications(db: Session, conversation: Conversation, user_ids: list, type: str, title: str, body: Optional[str], actor_user_id: Optional[int] = None) -> list:
+def create_notifications(db: Session, conversation: Conversation, user_ids: list, type: str, title: str, body: Optional[str], actor_user_id: Optional[int] = None, ticket_id: Optional[int] = None) -> list:
     # 1. One row per recipient, so each person has their own read / unread state
     notifications = [
-        Notification(organization_id=conversation.organization_id, user_id=user_id, type=type, title=title, body=body, conversation_id=conversation.id, actor_user_id=actor_user_id)
+        Notification(organization_id=conversation.organization_id, user_id=user_id, type=type, title=title, body=body, conversation_id=conversation.id, actor_user_id=actor_user_id, ticket_id=ticket_id)
         for user_id in dict.fromkeys(user_ids)
     ]
     if not notifications:
@@ -61,8 +74,16 @@ def notify_team_of_handover(db: Session, conversation: Conversation, preview: Op
     return create_notifications(db, conversation, [r.id for r in recipients], "handover", "A customer needs a human", conversation_summary(conversation, preview))
 
 
-def notify_assignee(db: Session, conversation: Conversation, assignee: User, actor: User, preview: Optional[str], title: Optional[str] = None) -> list:
+def notify_assignee(db: Session, conversation: Conversation, assignee: User, actor: User, preview: Optional[str], ticket=None) -> list:
     # Only the new owner, and never for assigning yourself
     if assignee.id == actor.id:
         return []
-    return create_notifications(db, conversation, [assignee.id], "assigned", title or f"{first_name(actor.name)} assigned you a chat", conversation_summary(conversation, preview), actor.id)
+
+    # Ticket: "Aromal assigned you ticket #12 · John Doe" / the ticket's subject (what the problem is)
+    if ticket:
+        title = f"{first_name(actor.name)} assigned you ticket #{ticket.number} · {customer_label(conversation)}"
+        return create_notifications(db, conversation, [assignee.id], "ticket_assigned", title, short(ticket.subject), actor.id, ticket.id)
+
+    # Chat: "Aromal assigned you a chat · John Doe" / the customer's last message
+    title = f"{first_name(actor.name)} assigned you a chat · {customer_label(conversation)}"
+    return create_notifications(db, conversation, [assignee.id], "assigned", title, short(preview), actor.id)

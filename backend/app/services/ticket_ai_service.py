@@ -1,7 +1,7 @@
 from google.genai import types
 from app.config import settings
 from app.schemas.ticket_schema import TicketLabelResult
-from app.services.ai_service import client
+from app.services.ai_service import generate_with_backup, model_chain
 
 class TicketLabelError(Exception):
     pass
@@ -29,16 +29,17 @@ def label_ticket(transcript: str, existing_groups: list) -> dict:
     prompt = f"EXISTING GROUPS:\n{groups_text}\n\nCONVERSATION:\n{transcript}"
 
     try:
-        response = client.models.generate_content(
-            model=settings.GEMINI_CHAT_MODEL,
-            contents=[prompt],
-            config=types.GenerateContentConfig(
+        response = generate_with_backup(
+            model_chain(settings.GEMINI_CHAT_MODEL, settings.GEMINI_CHAT_BACKUP_MODEL),
+            [prompt],
+            types.GenerateContentConfig(
                 system_instruction=LABEL_INSTRUCTION,
                 temperature=0,  # Same chat -> same labels, so repeated problems group together
                 response_mime_type="application/json",
                 response_schema=TicketLabelResult,
                 thinking_config=types.ThinkingConfig(thinking_level="low")
-            )
+            ),
+            "ticket labelling"
         )
     except Exception as exc:
         raise TicketLabelError(f"Gemini request failed: {exc}") from exc

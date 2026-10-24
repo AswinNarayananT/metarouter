@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { ChatConversation, ChatThread } from '@/types/chatTypes';
 import { MessageBubble } from './MessageBubble';
@@ -70,13 +70,31 @@ export function MessageList({
     previous.current.scrollHeight = el.scrollHeight;
   };
 
+  // Older messages load by themselves when the top of the chat scrolls into view (the button stays as a fallback)
+  const topRef = useRef<HTMLDivElement>(null);
+  const loadOlderRef = useRef(onLoadOlder);
+  useEffect(() => {
+    loadOlderRef.current = onLoadOlder;
+  });
+  const canLoadOlder = Boolean(thread?.hasMore && !thread.isLoading);
+  useEffect(() => {
+    const top = topRef.current;
+    if (!top || !canLoadOlder) return;
+    const observer = new IntersectionObserver((entries) => entries[0]?.isIntersecting && loadOlderRef.current(), {
+      root: scrollRef.current,
+      rootMargin: '150px',
+    });
+    observer.observe(top);
+    return () => observer.disconnect();
+  }, [canLoadOlder, firstId]);
+
   const isFirstLoad = thread?.isLoading && messages.length === 0;
 
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 bg-surface-container-lowest">
       <div className="max-w-3xl mx-auto space-y-3">
         {thread?.hasMore && (
-          <div className="flex justify-center">
+          <div ref={topRef} className="flex justify-center">
             <button
               type="button"
               onClick={onLoadOlder}

@@ -49,6 +49,7 @@ function mapParsed(attachment: ApiAttachment): ParsedDocument {
 
 // Images and PDFs can be previewed; anything else is offered as a download
 function attachmentKind(attachment: ApiAttachment): ChatAttachment['kind'] {
+  if (attachment.kind === 'audio' || attachment.kind === 'video' || attachment.kind === 'sticker') return attachment.kind;
   if (attachment.mime_type?.startsWith('image/') || (!attachment.mime_type && attachment.kind === 'image')) return 'image';
   if (attachment.mime_type === 'application/pdf') return 'pdf';
   return 'file';
@@ -70,6 +71,15 @@ export function mapAttachment(attachment: ApiAttachment): ChatAttachment {
     mimeType: attachment.mime_type,
     size: formatBytes(attachment.file_size),
     downloadStatus: attachment.download_status,
+    // Voice notes: what was said (original language) + English
+    transcript:
+      attachment.kind === 'audio' && attachment.parsed_data
+        ? {
+            text: String(attachment.parsed_data.transcript ?? ''),
+            language: String(attachment.parsed_data.language ?? ''),
+            english: String(attachment.parsed_data.english ?? ''),
+          }
+        : null,
     parsed: mapParsed(attachment),
   };
 }
@@ -86,6 +96,12 @@ export function mapMessage(message: ApiChatMessage): ChatMessage {
     status: message.status,
     error: message.error,
     sentBy: message.sent_by,
+    messageType: message.message_type,
+    reaction: message.reaction,
+    location:
+      message.message_type === 'location' && message.template_data
+        ? (message.template_data as { latitude: number; longitude: number; name: string | null; address: string | null })
+        : null,
   };
 }
 

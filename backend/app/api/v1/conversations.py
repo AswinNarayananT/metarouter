@@ -1,27 +1,52 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from typing import Optional
 from datetime import datetime, timezone
 import math
+import os
+import uuid
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
-from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
+from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus, MessageStatus
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.ticket_model import Ticket
-from app.schemas.conversation_schema import SendMessageRequest, UpdateConversationRequest, AssignConversationRequest
+from app.models.attachment_model import ChatAttachment
+from app.config import settings
+from app.schemas.conversation_schema import SendMessageRequest, UpdateConversationRequest, AssignConversationRequest, SendTemplateRequest
 from app.services.messaging_service import queue_outgoing_message, OutgoingMessageError
 from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, record_activity, first_name
 from app.realtime.connection_manager import org_group
 from app.realtime.events import publish_event
 from app.services.assignment_service import check_assign_permission, assign_owner
 from app.services.ticket_service import get_open_ticket, escalate_ticket, sync_ticket_owner, mark_ticket_in_progress, hand_ticket_back_to_ai
+from app.services.whatsapp_service import get_message_templates, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
+from app.services.broadcast_service import summarize_template, render_body
+from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
+from app.realtime.notify import notify_new_messages
+from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 # Sent when an agent hands the chat back: the AI closes the ticket once the customer needs nothing else
 ANYTHING_ELSE_TEXT = "Is there anything else I can help you with?"
+
+# Files agents can send, with WhatsApp's size limits (images 5 MB; documents capped at our download limit)
+SENDABLE_FILES = {
+    "image/jpeg": ("image", ".jpg"),
+    "image/png": ("image", ".png"),
+    "application/pdf": ("document", ".pdf"),
+    "application/msword": ("document", ".doc"),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ("document", ".docx"),
+    "application/vnd.ms-excel": ("document", ".xls"),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ("document", ".xlsx"),
+    "application/vnd.ms-powerpoint": ("document", ".ppt"),
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ("document", ".pptx"),
+    "text/plain": ("document", ".txt"),
+    "text/csv": ("document", ".csv"),
+}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 @router.get("/")
@@ -77,6 +102,19 @@ def list_conversations(status: Optional[ConversationStatus] = Query(None), assig
     }
 
 
+@router.get("/counts")
+def conversation_counts(db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # Numbers on the chat list tabs (the list itself loads 30 at a time, so it can't count them)
+    base = db.query(Conversation.id).filter(Conversation.organization_id == current_user.organization_id)
+
+    return {
+        "all": base.count(),
+        "mine": base.filter(Conversation.assigned_user_id == current_user.id).count(),
+        "unassigned": base.filter(Conversation.status == ConversationStatus.HUMAN_TAKEOVER, Conversation.assigned_user_id.is_(None)).count(),
+        "ai": base.filter(Conversation.status == ConversationStatus.ACTIVE).count()
+    }
+
+
 @router.get("/{conversation_id}")
 def get_conversation(conversation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # Only chats of the user's own workspace
@@ -119,8 +157,7 @@ def list_messages(conversation_id: int, before_id: Optional[int] = Query(None, g
     }
 
 
-@router.post("/{conversation_id}/messages", status_code=201)
-def send_agent_message(conversation_id: int, payload: SendMessageRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+def _chat_for_reply(db: Session, conversation_id: int, current_user: User, need_window: bool) -> Conversation:
     # 1. Chat of the user's workspace, and allowed to reply (role, and the owner or a supervisor)
     conversation = db.query(Conversation).filter(
         Conversation.id == conversation_id,
@@ -140,28 +177,28 @@ def send_agent_message(conversation_id: int, payload: SendMessageRequest, db: Se
     if number_status != "connected":
         raise HTTPException(status_code=409, detail="This chat's WhatsApp number is disconnected. Reconnect it to reply.")
 
-    # 3. Free text only inside the 24-hour window (the send task checks again before sending)
-    if not reply_window(last_customer_message_at(db, conversation.id))["window_open"]:
+    # 3. Free text and files only inside the 24-hour window (templates work any time; the send task checks again)
+    if need_window and not reply_window(last_customer_message_at(db, conversation.id))["window_open"]:
         raise HTTPException(status_code=422, detail="More than 24 hours since the customer's last message. Only a template message can be sent now.")
 
-    # 4. An agent replying takes the chat over (AI goes silent) and owns it if nobody does yet
-    if conversation.status != ConversationStatus.HUMAN_TAKEOVER or conversation.assigned_user_id is None:
-        was_ai = conversation.status != ConversationStatus.HUMAN_TAKEOVER
-        took_chat = conversation.assigned_user_id is None
-        conversation.status = ConversationStatus.HUMAN_TAKEOVER
-        if took_chat:
-            conversation.assigned_user_id = current_user.id
-            conversation.assigned_at = datetime.now(timezone.utc)
-        db.commit()
-        record_activity(db, conversation, f"{first_name(current_user.name)} took over from the AI" if was_ai else f"{first_name(current_user.name)} took this chat", current_user)
+    return conversation
 
-    # 5. Save as pending and queue delivery (long text is split into several messages)
-    try:
-        messages = queue_outgoing_message(db, conversation, sender="human", content=payload.content, sent_by_user_id=current_user.id)
-    except OutgoingMessageError as e:
-        raise HTTPException(status_code=422, detail=str(e))
 
-    # 6. Ticket: a team ticket, owned like the chat, now in progress
+def _take_chat_for_reply(db: Session, conversation: Conversation, current_user: User):
+    # An agent replying takes the chat over (AI goes silent) and owns it if nobody does yet
+    if conversation.status == ConversationStatus.HUMAN_TAKEOVER and conversation.assigned_user_id is not None:
+        return
+    was_ai = conversation.status != ConversationStatus.HUMAN_TAKEOVER
+    conversation.status = ConversationStatus.HUMAN_TAKEOVER
+    if conversation.assigned_user_id is None:
+        conversation.assigned_user_id = current_user.id
+        conversation.assigned_at = datetime.now(timezone.utc)
+    db.commit()
+    record_activity(db, conversation, f"{first_name(current_user.name)} took over from the AI" if was_ai else f"{first_name(current_user.name)} took this chat", current_user)
+
+
+def _after_reply(db: Session, conversation: Conversation, current_user: User, messages: list) -> dict:
+    # Ticket: a team ticket, owned like the chat, now in progress
     ticket = get_open_ticket(db, conversation.id)
     if ticket and ticket.status == "ai_handling":
         escalate_ticket(db, conversation, current_user)
@@ -173,6 +210,144 @@ def send_agent_message(conversation_id: int, payload: SendMessageRequest, db: Se
         "conversation_status": conversation.status.value,
         "assigned_to": {"id": conversation.assigned_user.id, "name": conversation.assigned_user.name} if conversation.assigned_user else None
     }
+
+
+def _queue_single_message(db: Session, message: ChatMessage) -> ChatMessage:
+    # Files and templates are one message each (text goes through queue_outgoing_message, which splits long text)
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    notify_new_messages(db, [message])
+    send_whatsapp_message_task.delay(message.id)
+    return message
+
+
+@router.post("/{conversation_id}/messages", status_code=201)
+def send_agent_message(conversation_id: int, payload: SendMessageRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. Allowed to reply right now, and the chat becomes the agent's
+    conversation = _chat_for_reply(db, conversation_id, current_user, need_window=True)
+    _take_chat_for_reply(db, conversation, current_user)
+
+    # 2. Save as pending and queue delivery (long text is split into several messages)
+    try:
+        messages = queue_outgoing_message(db, conversation, sender="human", content=payload.content, sent_by_user_id=current_user.id)
+    except OutgoingMessageError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return _after_reply(db, conversation, current_user, messages)
+
+
+@router.post("/{conversation_id}/attachments", status_code=201)
+async def send_agent_attachment(conversation_id: int, file: UploadFile = File(...), caption: Optional[str] = Form(None), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. Allowed to reply right now (files count as free-form messages: 24-hour window)
+    conversation = _chat_for_reply(db, conversation_id, current_user, need_window=True)
+
+    # 2. A type and size WhatsApp accepts
+    mime_type = (file.content_type or "").split(";")[0].strip().lower()
+    if mime_type not in SENDABLE_FILES:
+        raise HTTPException(status_code=422, detail="This file type can't be sent on WhatsApp. Send an image (JPG, PNG) or a document (PDF, Word, Excel, PowerPoint, TXT, CSV).")
+    kind, extension = SENDABLE_FILES[mime_type]
+    content = await file.read(settings.MEDIA_MAX_DOWNLOAD_BYTES + 1)
+    max_bytes = MAX_IMAGE_BYTES if kind == "image" else settings.MEDIA_MAX_DOWNLOAD_BYTES
+    if not content:
+        raise HTTPException(status_code=422, detail="The file is empty")
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=422, detail=f"{'Images' if kind == 'image' else 'Documents'} can be at most {max_bytes // (1024 * 1024)} MB on WhatsApp")
+
+    # 3. Store it like customer files: org_<id>/<yyyy>/<mm>/<random name><ext> (never the uploaded name)
+    now = datetime.now(timezone.utc)
+    relative_path = os.path.join(f"org_{conversation.organization_id}", now.strftime("%Y"), now.strftime("%m"), f"{uuid.uuid4().hex}{extension}")
+    full_path = os.path.join(settings.MEDIA_STORAGE_PATH, relative_path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    with open(full_path + ".part", "wb") as f:
+        f.write(content)
+    os.replace(full_path + ".part", full_path)
+
+    # 4. The chat becomes the agent's; save the message + file and queue the send (uploaded to Meta by the task)
+    _take_chat_for_reply(db, conversation, current_user)
+    file_name = os.path.basename(file.filename or f"file{extension}")[:255]
+    caption = (caption or "").strip()[:1024]
+    message = ChatMessage(
+        conversation_id=conversation.id,
+        sender="human",
+        message_type=kind,
+        content=caption or f"[Sent {'an image' if kind == 'image' else 'a document'}: {file_name}]",
+        status=MessageStatus.PENDING,
+        sent_by_user_id=current_user.id
+    )
+    message.attachment = ChatAttachment(
+        organization_id=conversation.organization_id,
+        media_id="",  # Filled with Meta's id when the send task uploads it
+        kind=kind,
+        mime_type=mime_type,
+        file_name=file_name,
+        file_size=len(content),
+        storage_path=relative_path,
+        download_status="done",
+        parse_status="skipped"
+    )
+    message = _queue_single_message(db, message)
+
+    return _after_reply(db, conversation, current_user, [message])
+
+
+@router.get("/{conversation_id}/templates")
+def list_chat_templates(conversation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. Approved templates of the chat's business number (anyone who can reply may use them)
+    conversation = _chat_for_reply(db, conversation_id, current_user, need_window=False)
+    number = db.query(WhatsAppNumber).filter(WhatsAppNumber.phone_number_id == conversation.phone_number_id).first()
+
+    try:
+        templates = get_message_templates(number.waba_id, number.access_token)
+    except WhatsAppTokenError as exc:
+        mark_number_disconnected(db, number, exc)
+        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
+    except (WhatsAppRetryableError, WhatsAppPermanentError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not load templates from WhatsApp: {exc}")
+
+    return {
+        "templates": [summarize_template(t) for t in templates]
+    }
+
+
+@router.post("/{conversation_id}/template", status_code=201)
+def send_agent_template(conversation_id: int, payload: SendTemplateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. Allowed to reply (templates work outside the 24-hour window)
+    conversation = _chat_for_reply(db, conversation_id, current_user, need_window=False)
+    number = db.query(WhatsAppNumber).filter(WhatsAppNumber.phone_number_id == conversation.phone_number_id).first()
+
+    # 2. The template must exist, be approved and supported, with a value for every variable
+    try:
+        templates = get_message_templates(number.waba_id, number.access_token)
+    except WhatsAppTokenError as exc:
+        mark_number_disconnected(db, number, exc)
+        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
+    except (WhatsAppRetryableError, WhatsAppPermanentError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not load templates from WhatsApp: {exc}")
+
+    template = next((summarize_template(t) for t in templates if t.get("name") == payload.template_name and t.get("language") == payload.language), None)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found or not approved")
+    if not template["supported"]:
+        raise HTTPException(status_code=422, detail=template["unsupported_reason"])
+    parameters = [p.strip() for p in payload.parameters]
+    if len(parameters) != template["variable_count"] or any(not p for p in parameters):
+        raise HTTPException(status_code=422, detail=f"This template needs {template['variable_count']} value(s), one for each {{{{n}}}}")
+
+    # 3. The chat becomes the agent's; save and queue the template (the customer's reply reopens the window)
+    _take_chat_for_reply(db, conversation, current_user)
+    message = ChatMessage(
+        conversation_id=conversation.id,
+        sender="human",
+        message_type="template",
+        content=render_body(template["body_text"], parameters) or f"[Template: {template['name']}]",
+        template_data={"name": template["name"], "language": template["language"], "parameters": parameters},
+        status=MessageStatus.PENDING,
+        sent_by_user_id=current_user.id
+    )
+    message = _queue_single_message(db, message)
+
+    return _after_reply(db, conversation, current_user, [message])
 
 
 @router.patch("/{conversation_id}")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 ConversationStatusValue = Literal["active", "human_takeover"]
 
@@ -27,3 +27,10 @@ class UpdateConversationRequest(BaseModel):
 class AssignConversationRequest(BaseModel):
     # Team member to assign, or null to put the chat back in the unassigned queue
     user_id: Optional[int] = None
+
+
+class SendTemplateRequest(BaseModel):
+    # An approved WhatsApp template: works outside the 24-hour window and reopens the chat
+    template_name: str = Field(..., min_length=1, max_length=512)
+    language: str = Field(..., min_length=2, max_length=20)
+    parameters: List[str] = Field(default_factory=list, max_length=20)  # Values for {{1}}, {{2}} ...

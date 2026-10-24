@@ -72,6 +72,9 @@ def process_chat_message_task(
     customer_name: Optional[str] = None,
     customer_user_id: Optional[str] = None,
     referral: Optional[dict] = None,
+    message_type: str = "text",
+    message_data: Optional[dict] = None,
+    ai_reply: bool = True,
 ):
     db = SessionLocal()
     try:
@@ -93,7 +96,8 @@ def process_chat_message_task(
         update_customer_profile(db, conversation, customer_name, customer_user_id, referral)
 
         # 2. Save incoming user message (the unique wamid rejects webhooks Meta delivers twice)
-        user_msg = ChatMessage(conversation_id=conversation.id, sender="user", content=user_text, wamid=wamid)
+        # message_type / message_data: location (coordinates) and shared contacts keep their details for the bubble
+        user_msg = ChatMessage(conversation_id=conversation.id, sender="user", content=user_text, wamid=wamid, message_type=message_type, template_data=message_data)
         db.add(user_msg)
         try:
             db.commit()
@@ -140,8 +144,9 @@ def process_chat_message_task(
             print(f"[WEBHOOK] {phone_number_id} is disconnected; saved the message without an AI reply")
             return
 
-        # 6. Generate and send the AI reply
-        reply_with_ai(db, conversation, user_text)
+        # 6. Generate and send the AI reply (not for messages with nothing to answer, e.g. an unsupported type)
+        if ai_reply:
+            reply_with_ai(db, conversation, user_text)
 
     finally:
         db.close()
@@ -178,3 +183,24 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
             close_ticket(db, ticket, "resolved_by_ai")
     else:
         queue_outgoing_message(db, conversation, sender="model", content=ai_raw_reply)
+
+
+@celery_app.task(name="process_reaction_task")
+def process_reaction_task(phone_number_id: str, reacted_wamid: str, emoji: Optional[str]):
+    # A customer's emoji reaction: shown on the message it reacts to; no new message, no AI reply
+    db = SessionLocal()
+    try:
+        # 1. The reacted-to message, in a chat of the business number that received the reaction
+        message = db.query(ChatMessage).join(Conversation, Conversation.id == ChatMessage.conversation_id).filter(
+            ChatMessage.wamid == reacted_wamid,
+            Conversation.phone_number_id == phone_number_id
+        ).first()
+        if not message:
+            return
+
+        # 2. An empty emoji means the reaction was removed
+        message.reaction = (emoji or "").strip()[:32] or None
+        db.commit()
+        notify_new_messages(db, [message])
+    finally:
+        db.close()

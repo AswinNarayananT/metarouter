@@ -1,9 +1,11 @@
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.workers.celery_app import celery_app
 from app.database import SessionLocal
+from app.config import settings
 from app.models.conversation_model import ChatMessage, MessageStatus
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import (
@@ -16,6 +18,8 @@ from app.services.whatsapp_service import (
     message_id_from_callback_data,
     send_text,
     send_template,
+    upload_media,
+    send_media,
 )
 from app.models.contact_model import ContactOptOut
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
@@ -134,6 +138,15 @@ def send_whatsapp_message_task(self, message_id: int):
         try:
             if message.message_type == "template":
                 wamid = send_template(number.phone_number_id, number.access_token, conversation.customer_phone, message.template_data, callback_data=callback_data)
+            elif message.message_type in ("image", "document"):
+                # Agent's file: upload once (the media id is kept for retries), then send it
+                attachment = message.attachment
+                if not attachment.media_id:
+                    with open(os.path.join(settings.MEDIA_STORAGE_PATH, attachment.storage_path), "rb") as f:
+                        attachment.media_id = upload_media(number.phone_number_id, number.access_token, f.read(), attachment.mime_type, attachment.file_name or "file")
+                    db.commit()
+                caption = None if message.content.startswith("[Sent ") else message.content
+                wamid = send_media(number.phone_number_id, number.access_token, conversation.customer_phone, message.message_type, attachment.media_id, caption, attachment.file_name, callback_data=callback_data)
             else:
                 wamid = send_text(number.phone_number_id, number.access_token, conversation.customer_phone, message.content, callback_data=callback_data)
         except WhatsAppTokenError as exc:

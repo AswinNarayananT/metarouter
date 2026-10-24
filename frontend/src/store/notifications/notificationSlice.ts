@@ -2,15 +2,16 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { AppNotification, NotificationState } from '@/types/notificationTypes';
 import type { RealtimeEventMap } from '@/types/realtimeTypes';
-import { fetchNotifications, markNotificationRead, markNotificationsRead } from './notificationThunks';
-
-const MAX_ITEMS = 50; // Keep the bell list short; older ones are still in the database
+import { fetchMoreNotifications, fetchNotifications, markNotificationRead, markNotificationsRead } from './notificationThunks';
 
 const initialState: NotificationState = {
   items: [],
+  tab: 'unread', // What still needs attention comes first
+  hasMore: false,
   unreadCount: 0,
   hasLoaded: false,
   isLoading: false,
+  isLoadingMore: false,
   loadError: null,
 };
 
@@ -25,10 +26,10 @@ const notificationSlice = createSlice({
   name: 'notifications',
   initialState,
   reducers: {
-    // notification.new event
+    // notification.new event: new ones are unread, so they belong at the top of both tabs
     notificationReceived: (state, action: PayloadAction<AppNotification>) => {
       if (state.items.some((n) => n.id === action.payload.id)) return;
-      state.items = [action.payload, ...state.items].slice(0, MAX_ITEMS);
+      state.items.unshift(action.payload);
       if (!action.payload.read_at) state.unreadCount += 1;
     },
     // notifications.read event: read in another tab
@@ -40,19 +41,43 @@ const notificationSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchNotifications.pending, (state) => {
+      // Switching tab clears the list straight away (no flash of the other tab's items)
+      .addCase(fetchNotifications.pending, (state, action) => {
+        const tab = action.meta.arg?.tab;
+        if (tab && tab !== state.tab) {
+          state.tab = tab;
+          state.items = [];
+          state.hasMore = false;
+        }
         state.isLoading = true;
         state.loadError = null;
       })
       .addCase(fetchNotifications.fulfilled, (state, action) => {
+        state.unreadCount = action.payload.unread_count;
+        if (action.payload.tab !== state.tab) return;
         state.isLoading = false;
         state.hasLoaded = true;
         state.items = action.payload.notifications;
-        state.unreadCount = action.payload.unread_count;
+        state.hasMore = action.payload.has_more;
       })
       .addCase(fetchNotifications.rejected, (state, action) => {
         state.isLoading = false;
         state.loadError = action.payload as string;
+      })
+
+      .addCase(fetchMoreNotifications.pending, (state) => {
+        state.isLoadingMore = true;
+      })
+      .addCase(fetchMoreNotifications.fulfilled, (state, action) => {
+        state.isLoadingMore = false;
+        state.unreadCount = action.payload.unread_count;
+        if (action.payload.tab !== state.tab) return;
+        const loaded = new Set(state.items.map((n) => n.id));
+        state.items.push(...action.payload.notifications.filter((n) => !loaded.has(n.id)));
+        state.hasMore = action.payload.has_more;
+      })
+      .addCase(fetchMoreNotifications.rejected, (state) => {
+        state.isLoadingMore = false;
       })
 
       // Optimistic: the item looks read immediately; the server count corrects it
@@ -64,8 +89,11 @@ const notificationSlice = createSlice({
       })
 
       .addCase(markNotificationsRead.pending, (state, action) => {
-        const conversationId = action.meta.arg?.conversationId;
-        markRead(state.items, (n) => conversationId === undefined || n.conversation_id === conversationId);
+        const { conversationId, ticketId } = action.meta.arg ?? {};
+        markRead(
+          state.items,
+          (n) => (conversationId === undefined || n.conversation_id === conversationId) && (ticketId === undefined || n.ticket?.id === ticketId)
+        );
       })
       .addCase(markNotificationsRead.fulfilled, (state, action) => {
         state.unreadCount = action.payload.unread_count;

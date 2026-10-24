@@ -19,6 +19,7 @@ from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import download_whatsapp_media_task, parse_document_task, media_retry_marker_key
 from app.models.ticket_model import Ticket
 from app.services.ticket_service import close_ticket
+from app.models.notification_model import Notification
 
 STUCK_MESSAGES_PER_SWEEP = 500
 IDLE_TICKETS_PER_SWEEP = 50  # Each close makes one AI labelling call
@@ -229,6 +230,25 @@ def close_idle_tickets_task():
             except Exception as e:
                 db.rollback()
                 print(f"[TICKETS] could not close ticket {ticket.id}: {e}")
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="clean_old_notifications_task")
+def clean_old_notifications_task():
+    db = SessionLocal()
+    try:
+        # 1. Read notifications older than the retention period (unread ones are never deleted)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.NOTIFICATION_RETENTION_DAYS)
+        deleted = db.query(Notification).filter(
+            Notification.read_at.isnot(None),
+            Notification.created_at < cutoff
+        ).delete(synchronize_session=False)
+        db.commit()
+
+        if deleted:
+            print(f"[NOTIFICATIONS] deleted {deleted} read notifications older than {settings.NOTIFICATION_RETENTION_DAYS} days")
 
     finally:
         db.close()

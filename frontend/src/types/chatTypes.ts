@@ -16,12 +16,13 @@ export interface ParsedDocument {
 
 export interface ChatAttachment {
   id: number;
-  kind: 'image' | 'pdf' | 'file'; // file = anything else (shown as a download, never previewed)
+  kind: 'image' | 'pdf' | 'file' | 'audio' | 'video' | 'sticker'; // file = any other document (download only)
   fileName: string;
   extension: string; // Badge on the card: PDF, JPG, MD ...
   mimeType: string | null;
   size: string;
   downloadStatus: 'pending' | 'done' | 'failed'; // The file is fetched (with the login token) once it's 'done'
+  transcript?: { text: string; language: string; english: string } | null; // Voice notes
   parsed: ParsedDocument;
 }
 
@@ -36,6 +37,9 @@ export interface ChatMessage {
   status?: DeliveryStatus | null; // Outgoing messages only
   error?: string | null;          // Why sending failed
   sentBy?: { id: number; name: string } | null; // Team member's first name on agent replies
+  messageType?: string;           // text, template, image, audio, location ...
+  reaction?: string | null;       // Customer's emoji reaction to this message
+  location?: { latitude: number; longitude: number; name: string | null; address: string | null } | null;
 }
 
 export interface ChatAdReferral {
@@ -74,6 +78,13 @@ export interface ChatThread {
 
 export interface ChatState {
   conversations: ChatConversation[];
+  // Chat list paging: the server filters by tab + search and sends 30 at a time as the agent scrolls
+  listFilter: ChatFilterTab;
+  listSearch: string;
+  listPage: number;
+  hasMoreChats: boolean;
+  isLoadingMore: boolean;
+  tabCounts: ChatFilterCounts | null; // Totals for the tabs (from the server, not the loaded page)
   threads: Record<number, ChatThread>;
   sendingId: number | null; // Chat whose reply is being sent
   selectedId: number | null;

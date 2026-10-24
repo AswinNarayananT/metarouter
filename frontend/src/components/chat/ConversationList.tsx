@@ -1,4 +1,5 @@
-import { Search } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Loader2, Search } from 'lucide-react';
 import type { ChatConversation, ChatFilterCounts, ChatFilterTab } from '@/types/chatTypes';
 import { ConversationListItem } from './ConversationListItem';
 
@@ -20,6 +21,9 @@ export function ConversationList({
   selectedId,
   onSelect,
   emptyMessage = 'No conversations found.',
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
   className = '',
 }: {
   conversations: ChatConversation[];
@@ -31,8 +35,30 @@ export function ConversationList({
   selectedId: number | null;
   onSelect: (id: number) => void;
   emptyMessage?: string; // Loading / error text when there's nothing to list
+  hasMore?: boolean;       // More chats on the server
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void; // Called when the end of the list scrolls into view
   className?: string;
 }) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const endRef = useRef<HTMLLIElement>(null);
+  const loadMoreRef = useRef(onLoadMore);
+  useEffect(() => {
+    loadMoreRef.current = onLoadMore;
+  });
+
+  // Infinite scroll: when the marker after the last chat comes near the bottom, load the next page
+  useEffect(() => {
+    const end = endRef.current;
+    if (!end || !hasMore) return;
+    const observer = new IntersectionObserver((entries) => entries[0]?.isIntersecting && loadMoreRef.current?.(), {
+      root: listRef.current,
+      rootMargin: '200px',
+    });
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [hasMore, conversations.length]);
+
   return (
     <aside
       className={`${className} w-full md:w-80 lg:w-96 shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container-low`}
@@ -83,7 +109,7 @@ export function ConversationList({
         </div>
       </div>
 
-      <ul className="flex-1 overflow-y-auto">
+      <ul ref={listRef} className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           <li className="p-8 text-center text-sm text-on-surface-variant">{emptyMessage}</li>
         ) : (
@@ -96,6 +122,11 @@ export function ConversationList({
               />
             </li>
           ))
+        )}
+        {hasMore && (
+          <li ref={endRef} className="flex justify-center py-4" aria-label="Loading more chats">
+            {isLoadingMore && <Loader2 className="w-4 h-4 animate-spin text-on-surface-variant" />}
+          </li>
         )}
       </ul>
     </aside>

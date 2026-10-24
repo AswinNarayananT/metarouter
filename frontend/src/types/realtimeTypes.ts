@@ -22,7 +22,7 @@ export interface ApiChatMessage {
   id: number;
   conversation_id: number;
   sender: MessageSender;
-  message_type: 'text' | 'template' | 'event';
+  message_type: 'text' | 'template' | 'event' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'location' | 'contacts' | 'unsupported';
   content: string;
   template_data: Record<string, unknown> | null;
   status: MessageDeliveryStatus | null; // null for customer messages
@@ -30,6 +30,7 @@ export interface ApiChatMessage {
   created_at: string;
   attachment: ApiAttachment | null;
   sent_by: ApiTeamMemberRef | null; // Team member who wrote an agent reply / caused an activity line (first name)
+  reaction: string | null; // Emoji the customer reacted to this message with
 }
 
 export interface ApiAdReferral {

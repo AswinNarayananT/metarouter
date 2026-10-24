@@ -21,12 +21,16 @@ export function WhatsAppChannelCard({
   numbers,
   isLoading = false,
   notice,
+  noticeTone = 'info',
+  connectLabel = null,
   onConnect,
   onDisconnect,
 }: {
   numbers: WhatsAppNumber[];
   isLoading?: boolean;
   notice?: string | null;
+  noticeTone?: 'info' | 'success' | 'error';
+  connectLabel?: string | null; // "Opening Meta…" / "Finishing setup…" while connecting (button disabled)
   onConnect: () => void;
   onDisconnect?: (id: number) => void;
 }) {
@@ -64,19 +68,22 @@ export function WhatsAppChannelCard({
         <button
           type="button"
           onClick={onConnect}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-md hover:bg-primary/90 transition-colors cursor-pointer"
+          disabled={Boolean(connectLabel)}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-md hover:bg-primary/90 transition-colors disabled:opacity-70 disabled:cursor-wait cursor-pointer"
         >
           {connected ? <Plus className="w-4 h-4" /> : <WhatsAppIcon className="w-4 h-4" />}
-          {connected ? 'Connect another number' : 'Connect WhatsApp'}
+          {connectLabel ?? (connected ? 'Connect another number' : 'Connect WhatsApp')}
         </button>
       }
     >
       {notice && (
         <div
           role="status"
-          className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-sm text-on-surface"
+          className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm text-on-surface ${
+            noticeTone === 'error' ? 'bg-error/10 border-error/20' : noticeTone === 'success' ? 'bg-green-500/10 border-green-500/20' : 'bg-primary/10 border-primary/20'
+          }`}
         >
-          <Info className="w-4 h-4 text-primary shrink-0" />
+          <Info className={`w-4 h-4 shrink-0 ${noticeTone === 'error' ? 'text-error' : noticeTone === 'success' ? 'text-green-700' : 'text-primary'}`} />
           <span>{notice}</span>
         </div>
       )}

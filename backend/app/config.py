@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     WHATSAPP_REQUEST_TIMEOUT_SECONDS: int = 15
     # Meta app secret: verifies the X-Hub-Signature-256 header on incoming webhooks
     META_APP_SECRET: str = ""
+    META_APP_ID: str = ""  # Public app id: the browser needs it to open Meta's Embedded Signup popup (served by the backend)
+    META_CONFIG_ID: str = ""  # Embedded Signup configuration id (Facebook Login for Business), also public
     # Any random string; must match "Verify token" in the Meta app's WhatsApp webhook settings
     WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = ""
     # Fernet key used to encrypt stored WhatsApp access tokens
@@ -33,6 +35,9 @@ class Settings(BaseSettings):
     MEDIA_MAX_DOWNLOAD_BYTES: int = 26214400  # 25 MB
     MEDIA_MAX_PARSE_BYTES: int = 15728640  # 15 MB (Gemini inline request limit is 20 MB)
     GEMINI_PARSER_MODEL: str = "gemini-3.8-flash"
+    GEMINI_PARSER_BACKUP_MODEL: str = "gemini-flash-latest,gemini-3.6-flash"  # Tried in order when the parser model is overloaded / times out
+    GEMINI_AUDIO_MODEL: str = "gemini-3.5-flash"  # Voice note transcription: fast and spells regional languages correctly
+    GEMINI_AUDIO_BACKUP_MODEL: str = "gemini-3.6-flash,gemini-flash-lite-latest"  # Tried in order when the audio model is overloaded / times out
 
     # Knowledge base PDFs (processed in the background, stored on the media_data volume)
     KNOWLEDGE_STORAGE_PATH: str = "/data/media/knowledge"
@@ -59,6 +64,8 @@ class Settings(BaseSettings):
     BROADCAST_CHECK_INTERVAL_SECONDS: int = 60  # Restart tier-paused broadcasts that are due
     TICKET_IDLE_CLOSE_HOURS: int = 4  # An AI-handled ticket with no new message for this long is closed (no reply)
     TICKET_SWEEP_INTERVAL_MINUTES: int = 10  # How often idle tickets are checked
+    NOTIFICATION_RETENTION_DAYS: int = 60  # Read notifications older than this are deleted (unread ones are kept)
+    NOTIFICATION_CLEANUP_INTERVAL_HOURS: int = 24  # How often old notifications are cleaned up
     STALLED_BROADCAST_MINUTES: int = 10  # Sending broadcast with no progress for this long is restarted
 
     SMTP_HOST: str = "smtp.gmail.com"
@@ -70,6 +77,9 @@ class Settings(BaseSettings):
 
     GOOGLE_API_KEY: str = ""
     GEMINI_CHAT_MODEL: str = "gemini-3.8-flash"
+    GEMINI_CHAT_BACKUP_MODEL: str = "gemini-3.5-flash-lite,gemini-flash-latest"  # Tried in order when the chat model is overloaded / times out
+    GEMINI_TIMEOUT_SECONDS: int = 60  # A Gemini request taking longer is treated as failed (then retried / backup)
+    GEMINI_RETRIES: int = 1  # Extra tries on the same model before switching to the backup
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     # Must match the Vector(...) size of knowledge_chunks.embedding
     EMBEDDING_DIMENSIONS: int = 768

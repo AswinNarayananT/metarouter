@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ChatFilterTab, ChatSidePanel } from '@/types/chatTypes';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatSidePanel } from '@/types/chatTypes';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { clearChatActionError, selectConversation } from '@/store/chat/chatSlice';
-import { assignConversation, fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from '@/store/chat/chatThunks';
+import { clearChatActionError, selectConversation, setChatListQuery } from '@/store/chat/chatSlice';
+import { assignConversation, fetchConversationCounts, fetchConversations, fetchMessages, sendAgentAttachment, sendAgentMessage, sendAgentTemplate, updateConversationStatus } from '@/store/chat/chatThunks';
+import { TemplateDialog } from '@/components/chat/TemplateDialog';
+import type { BroadcastTemplate } from '@/types/broadcastTypes';
 import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
 import { markNotificationsRead } from '@/store/notifications/notificationThunks';
 import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
+import { useRealtimeEvent } from '@/hooks/useRealtime';
 import { AssignMenu } from '@/components/chat/AssignMenu';
 import { TicketChip } from '@/components/chat/TicketChip';
 import { TicketHint } from '@/components/chat/TicketHint';
@@ -21,30 +24,58 @@ import { EmptyChatState } from '@/components/chat/EmptyChatState';
 import { MessageList } from '@/components/chat/MessageList';
 import { TakeoverBanner } from '@/components/chat/TakeoverBanner';
 
+const SEARCH_DEBOUNCE_MS = 300;
+const COUNTS_REFRESH_MS = 1500;
+
 export function CustomerChats() {
   const dispatch = useAppDispatch();
-  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, actionError, updatingAssignmentId } = useAppSelector((state) => state.chat);
+  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, actionError, updatingAssignmentId, listFilter, listSearch, listPage, hasMoreChats, isLoadingMore, tabCounts } = useAppSelector(
+    (state) => state.chat
+  );
   const currentUser = useAppSelector((state) => state.workspace.user);
   const teamMembers = useAppSelector((state) => state.workspace.teamMembers);
   const notifications = useAppSelector((state) => state.notifications.items);
   const currentUserId = currentUser?.id ?? null;
   // Admins and managers supervise: they assign anyone and can reply to any chat
   const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'manager';
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<ChatFilterTab>('all');
+  const [searchText, setSearchText] = useState(listSearch); // Typed text; sent to the server after a pause
   const [draft, setDraft] = useState('');
   const [panel, setPanel] = useState<ChatSidePanel>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [closingTicket, setClosingTicket] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null); // File waiting to be sent (the draft is its caption)
+  const [templateOpen, setTemplateOpen] = useState(false);
   const { savingId: savingTicketId, actionError: ticketError } = useAppSelector((state) => state.tickets);
   const updatingStatusId = useAppSelector((state) => state.chat.updatingStatusId);
   // On small screens show either the list or the open chat (a handover alert arrives with a chat selected)
   const [mobileView, setMobileView] = useState<'list' | 'chat'>(() => (selectedId ? 'chat' : 'list'));
 
-  // 1. Load the chats (live events keep the list current afterwards) and the members to assign them to
+  // 1. First page of chats for the current tab + search (more load as the agent scrolls), the tab counts,
+  //    and the members to assign chats to
   useEffect(() => {
-    dispatch(fetchConversations());
+    dispatch(fetchConversations({ page: 1 }));
+  }, [dispatch, listFilter, listSearch]);
+  useEffect(() => {
+    dispatch(fetchConversationCounts());
   }, [dispatch]);
+
+  // Search on the server once the agent stops typing (it covers every chat, not just the loaded ones)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (searchText.trim() !== listSearch) dispatch(setChatListQuery({ search: searchText.trim() }));
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [dispatch, searchText, listSearch]);
+
+  // Tab counts change as chats are assigned / handed over: refresh them shortly after a change
+  const countsTimer = useRef<number | null>(null);
+  useRealtimeEvent('conversation.updated', () => {
+    if (countsTimer.current !== null) window.clearTimeout(countsTimer.current);
+    countsTimer.current = window.setTimeout(() => dispatch(fetchConversationCounts()), COUNTS_REFRESH_MS);
+  });
+  useEffect(() => () => {
+    if (countsTimer.current !== null) window.clearTimeout(countsTimer.current);
+  }, []);
   useEffect(() => {
     if (isSupervisor && teamMembers.length === 0) dispatch(fetchTeamMembers());
   }, [dispatch, isSupervisor, teamMembers.length]);
@@ -73,33 +104,30 @@ export function CustomerChats() {
   const openDocument = documentMessage?.attachment;
   const closeViewer = useCallback(() => setViewerOpen(false), []);
 
+  // The server already filtered by tab + search; this keeps live updates consistent with them
+  // (e.g. a chat that just got assigned leaves the Unassigned tab without a reload)
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = listSearch.trim().toLowerCase();
     return conversations.filter((c) => {
-      if (filter === 'ai' && c.status !== 'active') return false;
-      if (filter === 'mine' && c.assignedTo?.id !== currentUserId) return false;
-      if (filter === 'unassigned' && (c.status !== 'human_takeover' || c.assignedTo)) return false;
+      if (listFilter === 'ai' && c.status !== 'active') return false;
+      if (listFilter === 'mine' && c.assignedTo?.id !== currentUserId) return false;
+      if (listFilter === 'unassigned' && (c.status !== 'human_takeover' || c.assignedTo)) return false;
       if (!q) return true;
-      const last = c.lastMessage?.content ?? '';
-      return c.name.toLowerCase().includes(q) || c.phone.includes(q) || last.toLowerCase().includes(q);
+      return c.name.toLowerCase().includes(q) || c.phone.replace('+', '').includes(q.replace('+', ''));
     });
-  }, [conversations, query, filter, currentUserId]);
+  }, [conversations, listSearch, listFilter, currentUserId]);
 
-  const counts = useMemo(
-    () => ({
-      all: conversations.length,
-      mine: conversations.filter((c) => c.assignedTo?.id === currentUserId).length,
-      unassigned: conversations.filter((c) => c.status === 'human_takeover' && !c.assignedTo).length,
-      ai: conversations.filter((c) => c.status === 'active').length,
-    }),
-    [conversations, currentUserId]
-  );
+  const counts = tabCounts ?? { all: 0, mine: 0, unassigned: 0, ai: 0 };
+  const loadMoreChats = () => {
+    if (hasMoreChats && !isLoadingMore && !isLoading) dispatch(fetchConversations({ page: listPage + 1 }));
+  };
 
   const openConversation = (id: number) => {
     dispatch(selectConversation(id));
     dispatch(clearChatActionError());
     setMobileView('chat');
     setDraft('');
+    setPendingFile(null);
     // Documents belong to a conversation — don't carry one over to another chat
     setPanel((p) => (p?.type === 'document' ? null : p));
     setViewerOpen(false);
@@ -119,13 +147,28 @@ export function CustomerChats() {
     if (selected && thread?.nextBeforeId) dispatch(fetchMessages({ conversationId: selected.id, beforeId: thread.nextBeforeId }));
   };
 
-  // 3. Agent reply: the draft is cleared only once the API accepted it (kept on errors to retry)
+  // 3. Agent reply (text, or a file with the text as its caption): cleared only once the API accepted it
   const sendMessage = () => {
     const text = draft.trim();
-    if (!text || !selected) return;
-    dispatch(sendAgentMessage({ conversationId: selected.id, content: text }))
+    if (!selected || (!text && !pendingFile)) return;
+    const request = pendingFile
+      ? dispatch(sendAgentAttachment({ conversationId: selected.id, file: pendingFile, caption: text }))
+      : dispatch(sendAgentMessage({ conversationId: selected.id, content: text }));
+    request
       .unwrap()
-      .then(() => setDraft(''))
+      .then(() => {
+        setDraft('');
+        setPendingFile(null);
+      })
+      .catch(() => {});
+  };
+
+  // Approved template: works outside the 24-hour window
+  const sendTemplate = (template: BroadcastTemplate, parameters: string[]) => {
+    if (!selected) return;
+    dispatch(sendAgentTemplate({ conversationId: selected.id, templateName: template.name, language: template.language, parameters }))
+      .unwrap()
+      .then(() => setTemplateOpen(false))
       .catch(() => {});
   };
 
@@ -164,10 +207,13 @@ export function CustomerChats() {
         className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:flex`}
         conversations={filtered}
         counts={counts}
-        query={query}
-        onQueryChange={setQuery}
-        filter={filter}
-        onFilterChange={setFilter}
+        query={searchText}
+        onQueryChange={setSearchText}
+        filter={listFilter}
+        onFilterChange={(tab) => dispatch(setChatListQuery({ filter: tab }))}
+        hasMore={hasMoreChats}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={loadMoreChats}
         selectedId={selectedId}
         onSelect={openConversation}
         emptyMessage={emptyMessage}
@@ -232,7 +278,20 @@ export function CustomerChats() {
                   : null
               }
               sending={sendingId === selected.id}
-              error={actionError}
+              error={templateOpen ? null : actionError}
+              file={pendingFile}
+              onFileChange={(file) => {
+                setPendingFile(file);
+                dispatch(clearChatActionError());
+              }}
+              onOpenTemplates={
+                ownedByOther
+                  ? undefined
+                  : () => {
+                      dispatch(clearChatActionError());
+                      setTemplateOpen(true);
+                    }
+              }
             />
           </>
         ) : (
@@ -254,6 +313,17 @@ export function CustomerChats() {
       )}
 
       {viewerOpen && openDocument && <DocumentViewer attachment={openDocument} onClose={closeViewer} />}
+
+      {templateOpen && selected && (
+        <TemplateDialog
+          conversationId={selected.id}
+          customerName={selected.hasName ? selected.name : null}
+          busy={sendingId === selected.id}
+          error={actionError}
+          onCancel={() => setTemplateOpen(false)}
+          onSend={sendTemplate}
+        />
+      )}
 
       {closingTicket && selected?.openTicket && (
         <CloseTicketDialog

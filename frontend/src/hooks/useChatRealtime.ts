@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { attachmentReceived, conversationReceived, messageReceived, messageStatusReceived, ticketChanged } from '@/store/chat/chatSlice';
-import { fetchConversations, fetchMessages } from '@/store/chat/chatThunks';
+import { fetchConversationCounts, fetchConversations, fetchMessages } from '@/store/chat/chatThunks';
 import { notificationReceived, notificationsReadElsewhere } from '@/store/notifications/notificationSlice';
 import { fetchNotifications } from '@/store/notifications/notificationThunks';
 import { ticketReceived } from '@/store/tickets/ticketSlice';
@@ -28,7 +28,8 @@ export function useChatListRealtimeSync() {
     if (refetchTimer.current !== null) window.clearTimeout(refetchTimer.current);
     refetchTimer.current = window.setTimeout(() => {
       refetchTimer.current = null;
-      dispatch(fetchConversations());
+      dispatch(fetchConversations({ page: 1 }));
+      dispatch(fetchConversationCounts());
     }, REFETCH_DEBOUNCE_MS);
   };
   useRealtimeEvent('conversations.changed', refetch);

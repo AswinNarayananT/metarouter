@@ -62,7 +62,8 @@ def serialize_message(message: ChatMessage) -> dict:
         "error": message.error,
         "created_at": as_utc(message.created_at),
         "attachment": serialize_attachment(message.attachment),
-        "sent_by": {"id": message.sent_by.id, "name": first_name(message.sent_by.name)} if message.sent_by else None
+        "sent_by": {"id": message.sent_by.id, "name": first_name(message.sent_by.name)} if message.sent_by else None,
+        "reaction": message.reaction
     }
 
 

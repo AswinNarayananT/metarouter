@@ -8,6 +8,9 @@ const KIND_STYLES: Record<ChatAttachment['kind'], string> = {
   pdf: 'bg-error/10 text-error',
   image: 'bg-primary/10 text-primary',
   file: 'bg-surface-container-high text-on-surface-variant',
+  audio: 'bg-primary/10 text-primary',
+  video: 'bg-surface-container-high text-on-surface-variant',
+  sticker: 'bg-surface-container-high text-on-surface-variant',
 };
 
 /** Clickable document card shown inside a message and in the contact panel. */

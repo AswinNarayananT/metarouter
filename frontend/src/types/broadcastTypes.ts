@@ -4,6 +4,7 @@ export interface WhatsAppNumberSummary {
   id: number;
   phone_number_id: string;
   display_phone_number: string;
+  verified_name: string | null; // Business name WhatsApp shows customers
   quality_rating: string;
   messaging_tier: string;
   status: NumberConnectionStatus;

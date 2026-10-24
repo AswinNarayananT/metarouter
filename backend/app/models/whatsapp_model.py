@@ -13,6 +13,8 @@ class WhatsAppNumber(Base):
     display_phone_number = Column(String, nullable=False)                    # e.g., +91 98765 43210
     waba_id = Column(String, nullable=False)                                 # WhatsApp Business Account ID
     access_token = Column(EncryptedText, nullable=False)                     # Permanent token from Embedded Signup, encrypted at rest
+    registration_pin = Column(EncryptedText, nullable=True)                  # 6-digit two-step PIN we registered the number with (needed to re-register)
+    verified_name = Column(String, nullable=True)                            # Business name WhatsApp shows customers for this number
     quality_rating = Column(String, default="GREEN")                         # GREEN, YELLOW, RED
     messaging_tier = Column(String, default="TIER_1K")                       # TIER_1K, TIER_10K, etc.
     status = Column(String, nullable=False, default="connected", server_default="connected")  # connected, disconnected (token stopped working)

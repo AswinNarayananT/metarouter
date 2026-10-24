@@ -5,6 +5,7 @@ import { selectTicket, setTicketFilters } from '@/store/tickets/ticketSlice';
 import { fetchTicketDetail, fetchTicketGroups, fetchTickets } from '@/store/tickets/ticketThunks';
 import { formatListTime, formatPhone } from '@/store/chat/chatMappers';
 import { useTicketsRealtimeSync } from '@/hooks/useChatRealtime';
+import { markNotificationsRead } from '@/store/notifications/notificationThunks';
 import { TicketDetailPanel } from '@/components/tickets/TicketDetailPanel';
 import { TicketHandlerBadge, TicketStatusBadge, TicketTypeBadge } from '@/components/tickets/TicketBadges';
 import { TicketInsights } from '@/components/tickets/TicketInsights';
@@ -57,6 +58,13 @@ export function Tickets() {
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [dispatch, searchText, filters.search]);
+
+  // Looking at a ticket = its notifications ("assigned you ticket #12") are dealt with
+  const notifications = useAppSelector((state) => state.notifications.items);
+  const hasUnreadForTicket = selectedId !== null && notifications.some((n) => n.ticket?.id === selectedId && !n.read_at);
+  useEffect(() => {
+    if (selectedId !== null && hasUnreadForTicket) dispatch(markNotificationsRead({ ticketId: selectedId }));
+  }, [dispatch, selectedId, hasUnreadForTicket]);
 
   // 3. Live updates; leaving the page closes the details panel
   useTicketsRealtimeSync();

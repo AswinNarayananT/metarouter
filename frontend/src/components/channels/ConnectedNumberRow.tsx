@@ -41,7 +41,10 @@ export function ConnectedNumberRow({
         <Phone className="w-4 h-4" />
       </span>
       <div className="flex-1 min-w-48">
-        <p className="text-sm font-semibold text-on-surface">{number.displayPhoneNumber}</p>
+        <p className="text-sm font-semibold text-on-surface">
+          {number.displayPhoneNumber}
+          {number.verifiedName && <span className="ml-2 font-normal text-on-surface-variant">· {number.verifiedName}</span>}
+        </p>
         {disconnected ? (
           <p className="flex items-start gap-1 text-xs text-error">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />

@@ -14,7 +14,7 @@ from app.models.attachment_model import ChatAttachment
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected, number_is_disconnected, NUMBER_DISCONNECTED_ERROR
-from app.services.document_parser_service import parse_document, DocumentParseError
+from app.services.document_parser_service import parse_document, transcribe_audio, DocumentParseError
 from app.workers.tasks.chat_tasks import _get_or_create_conversation, reply_with_ai, update_customer_profile
 from app.core.redis_client import redis_client
 from app.realtime.notify import notify_new_messages, notify_attachment_updated
@@ -35,6 +35,20 @@ PARSEABLE_TYPES = {
     "image/png": ".png",
     "image/webp": ".webp"
 }
+# Every type we keep a proper extension for (voice notes, videos, stickers too)
+STORED_EXTENSIONS = {
+    **PARSEABLE_TYPES,
+    "audio/ogg": ".ogg",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/aac": ".aac",
+    "audio/amr": ".amr",
+    "video/mp4": ".mp4",
+    "video/3gpp": ".3gp",
+}
+# What the customer's message says before the file is read (never empty, so the AI history has text)
+MEDIA_LABELS = {"audio": "[Voice note]", "video": "[Sent a video]", "sticker": "[Sticker]"}
+VIDEO_SUMMARY = "[Video received] The customer sent a video. You can't watch videos: kindly ask them to describe the issue in a message or send a photo instead."
 
 
 @celery_app.task(name="process_media_message_task")
@@ -54,10 +68,14 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
         # 2. Save the message and its attachment (the unique wamid rejects webhooks Meta delivers twice)
         # Content is never empty so the AI chat history always has text for this message
         # Photos have no file name: "[Sent an image]" instead of "[Sent image: image]"
-        file_label = f"[Sent {kind}: {media.get('filename')}]" if media.get("filename") else f"[Sent {'an image' if kind == 'image' else 'a document'}]"
+        if kind in MEDIA_LABELS:
+            file_label = MEDIA_LABELS[kind]
+        else:
+            file_label = f"[Sent {kind}: {media.get('filename')}]" if media.get("filename") else f"[Sent {'an image' if kind == 'image' else 'a document'}]"
         message = ChatMessage(
             conversation_id=conversation.id,
             sender="user",
+            message_type=kind,
             content=media.get("caption") or file_label,
             wamid=wamid
         )
@@ -149,9 +167,10 @@ def download_whatsapp_media_task(self, attachment_id: int):
             raise self.retry(exc=exc, countdown=countdown)
 
         # 4. Save as org_<id>/<yyyy>/<mm>/<random name><ext> (never trust the customer's file name)
-        mime_type = info["mime_type"] or attachment.mime_type
+        # Voice notes come as "audio/ogg; codecs=opus": the base type picks the extension
+        mime_type = (info["mime_type"] or attachment.mime_type or "").split(";")[0].strip()
         now = datetime.now(timezone.utc)
-        relative_path = os.path.join(f"org_{attachment.organization_id}", now.strftime("%Y"), now.strftime("%m"), f"{uuid.uuid4().hex}{PARSEABLE_TYPES.get(mime_type, '.bin')}")
+        relative_path = os.path.join(f"org_{attachment.organization_id}", now.strftime("%Y"), now.strftime("%m"), f"{uuid.uuid4().hex}{STORED_EXTENSIONS.get(mime_type, '.bin')}")
         full_path = os.path.join(settings.MEDIA_STORAGE_PATH, relative_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
@@ -166,8 +185,25 @@ def download_whatsapp_media_task(self, attachment_id: int):
         attachment.sha256 = digest.hexdigest()
         attachment.download_status = "done"
 
-        # 5. Parse supported documents, skip everything else
-        if mime_type in PARSEABLE_TYPES and len(content) <= settings.MEDIA_MAX_PARSE_BYTES:
+        # 5. Voice notes: transcribe (same step as parsing, so the stuck-media sweeper retries it too)
+        if attachment.kind == "audio" and len(content) <= settings.MEDIA_MAX_PARSE_BYTES:
+            db.commit()
+            notify_attachment_updated(attachment)
+            parse_document_task.delay(attachment.id)
+        elif attachment.kind == "video":
+            # Videos are shown to the team; the AI asks the customer to describe it instead
+            attachment.parse_status = "skipped"
+            attachment.error = "Videos aren't watched automatically"
+            db.commit()
+            notify_attachment_updated(attachment)
+            _acknowledge_document(db, attachment, VIDEO_SUMMARY)
+        elif attachment.kind == "sticker":
+            # A sticker is like a reaction: shown, but nothing to answer
+            attachment.parse_status = "skipped"
+            db.commit()
+            notify_attachment_updated(attachment)
+        # Parse supported documents, skip everything else
+        elif mime_type in PARSEABLE_TYPES and len(content) <= settings.MEDIA_MAX_PARSE_BYTES:
             db.commit()
             notify_attachment_updated(attachment)
             parse_document_task.delay(attachment.id)
@@ -205,6 +241,11 @@ def parse_document_task(self, attachment_id: int):
         # 2. Read the stored file
         with open(os.path.join(settings.MEDIA_STORAGE_PATH, attachment.storage_path), "rb") as f:
             content = f.read()
+
+        # Voice note: transcribe instead of parsing
+        if attachment.kind == "audio":
+            _transcribe_voice_note(self, db, attachment, content)
+            return
 
         # 3. Extract the details with Gemini
         try:
@@ -248,6 +289,44 @@ def parse_document_task(self, attachment_id: int):
         db.close()
 
 
+def _transcribe_voice_note(task, db: Session, attachment: ChatAttachment, content: bytes):
+    # 1. Speech -> text (original language + English)
+    try:
+        result = transcribe_audio(content, attachment.mime_type)
+    except DocumentParseError as exc:
+        if task.request.retries < task.max_retries:
+            countdown = RETRY_BASE_SECONDS * 2 ** task.request.retries
+            redis_client.set(media_retry_marker_key(attachment.id), 1, ex=countdown + RETRY_MARKER_GRACE_SECONDS)
+            raise task.retry(exc=exc, countdown=countdown)
+        attachment.parse_status = "failed"
+        attachment.error = str(exc)
+        db.commit()
+        notify_attachment_updated(attachment)
+        print(f"[TRANSCRIBE FAILED] attachment={attachment.id}: {exc}")
+        _acknowledge_document(db, attachment, "[Voice note received] The customer sent a voice note that couldn't be understood. Kindly ask them to type their message.")
+        return
+
+    # 2. Keep it on the attachment, and make the transcript the message text (AI history, tickets, chat preview)
+    transcript = (result["transcript"] or "").strip()
+    attachment.document_type = "Voice note"
+    attachment.parsed_data = {"transcript": transcript, "language": result["language"], "english": (result["english"] or "").strip()}
+    attachment.parse_status = "parsed"
+    attachment.parsed_at = datetime.now(timezone.utc)
+    attachment.error = None
+    message = attachment.message
+    if transcript:
+        message.content = transcript
+    db.commit()
+    notify_attachment_updated(attachment)
+    notify_new_messages(db, [message])  # The bubble and chat list show the words instead of "[Voice note]"
+
+    # 3. The AI answers what was said, as if it had been typed
+    if transcript:
+        _acknowledge_document(db, attachment, transcript)
+    else:
+        _acknowledge_document(db, attachment, "[Voice note received] The voice note had no clear speech. Kindly ask the customer to repeat it or type their message.")
+
+
 def _mark_download_failed(db: Session, attachment: ChatAttachment, error: str):
     attachment.download_status = "failed"
     attachment.parse_status = "skipped"
@@ -255,7 +334,10 @@ def _mark_download_failed(db: Session, attachment: ChatAttachment, error: str):
     db.commit()
     notify_attachment_updated(attachment)
     print(f"[MEDIA DOWNLOAD FAILED] attachment={attachment.id}: {error}")
-    _acknowledge_document(db, attachment, f"[Document received] The customer sent a {attachment.kind} that could not be downloaded.")
+    if attachment.kind == "sticker":
+        return  # Nothing to answer
+    what = {"audio": "voice note", "video": "video"}.get(attachment.kind, attachment.kind)
+    _acknowledge_document(db, attachment, f"[{what.capitalize()} received] The customer sent a {what} that could not be downloaded. Kindly ask them to send it again or type their message.")
 
 
 def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str):

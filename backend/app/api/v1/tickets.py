@@ -380,7 +380,7 @@ def assign_ticket(ticket_id: int, payload: AssignTicketRequest, db: Session = De
     # 2. Assigning the ticket assigns its chat (one owner for the customer), with the same rules
     conversation = ticket.conversation
     check_assign_permission(db, current_user, conversation, payload.user_id)
-    assign_owner(db, conversation, payload.user_id, current_user, ticket_number=ticket.number)
+    assign_owner(db, conversation, payload.user_id, current_user, ticket=ticket)
 
     db.refresh(ticket)
     return serialize_ticket(ticket)

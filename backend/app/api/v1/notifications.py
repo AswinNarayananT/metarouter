@@ -15,8 +15,9 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 class MarkNotificationsReadRequest(BaseModel):
-    # Only this chat's notifications (opening a chat); empty = mark everything read
+    # Only this chat's / ticket's notifications (opening it); both empty = mark everything read
     conversation_id: Optional[int] = None
+    ticket_id: Optional[int] = None
 
 
 def _unread_count(db: Session, user_id: int) -> int:
@@ -24,14 +25,24 @@ def _unread_count(db: Session, user_id: int) -> int:
 
 
 @router.get("/")
-def list_notifications(limit: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. The user's newest notifications (read and unread)
-    notifications = db.query(Notification).options(selectinload(Notification.actor)).filter(
+def list_notifications(limit: int = Query(15, ge=1, le=50), before_id: Optional[int] = Query(None, ge=1), unread_only: bool = False, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. The user's notifications, newest first (Unread tab = only unread ones)
+    query = db.query(Notification).options(selectinload(Notification.actor), selectinload(Notification.ticket)).filter(
         Notification.user_id == current_user.id
-    ).order_by(Notification.id.desc()).limit(limit).all()
+    )
+    if unread_only:
+        query = query.filter(Notification.read_at.is_(None))
+
+    # 2. Next page = older than the last one loaded (ids, not page numbers: new ones keep arriving live)
+    if before_id is not None:
+        query = query.filter(Notification.id < before_id)
+
+    # 3. One extra row tells whether there are more to load
+    notifications = query.order_by(Notification.id.desc()).limit(limit + 1).all()
 
     return {
-        "notifications": [serialize_notification(n) for n in notifications],
+        "notifications": [serialize_notification(n) for n in notifications[:limit]],
+        "has_more": len(notifications) > limit,
         "unread_count": _unread_count(db, current_user.id)
     }
 
@@ -70,6 +81,8 @@ def mark_notifications_read(payload: MarkNotificationsReadRequest, db: Session =
     )
     if payload.conversation_id is not None:
         query = query.filter(Notification.conversation_id == payload.conversation_id)
+    if payload.ticket_id is not None:
+        query = query.filter(Notification.ticket_id == payload.ticket_id)
 
     notifications = query.all()
     now = datetime.now(timezone.utc)

@@ -39,7 +39,13 @@ export function ConversationListItem({
           <p className="text-xs text-on-surface-variant truncate">
             {last?.sender === 'model' && <Bot className="inline w-3 h-3 mr-1 -mt-0.5" />}
             {last?.sender === 'human' && <UserRound className="inline w-3 h-3 mr-1 -mt-0.5" />}
-            {last?.attachment ? (
+            {last?.attachment?.kind === 'audio' ? (
+              <>🎤 {last.attachment.transcript?.text || 'Voice note'}</>
+            ) : last?.attachment?.kind === 'video' ? (
+              <>🎥 Video</>
+            ) : last?.attachment?.kind === 'sticker' ? (
+              <>Sticker</>
+            ) : last?.attachment ? (
               <>
                 <Paperclip className="inline w-3 h-3 mr-1 -mt-0.5" />
                 {last.attachment.fileName}

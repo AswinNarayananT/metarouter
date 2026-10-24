@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from app.config import settings
-from app.workers.tasks.chat_tasks import process_chat_message_task
+from app.workers.tasks.chat_tasks import process_chat_message_task, process_reaction_task
 from app.workers.tasks.whatsapp_tasks import process_whatsapp_status_task, process_quality_update_task
 from app.workers.tasks.media_tasks import process_media_message_task
 
@@ -41,18 +41,44 @@ def _has_valid_signature(raw_body: bytes, signature_header: Optional[str]) -> bo
     return hmac.compare_digest(expected, signature_header.removeprefix("sha256="))
 
 
-def _message_text(message: dict) -> str:
+# Files the customer can send: downloaded by the media task (voice notes are transcribed, documents parsed)
+MEDIA_TYPES = ("image", "document", "audio", "video", "sticker")
+
+
+def _describe_message(message: dict) -> dict:
+    # Text the chat (and the AI) sees for a non-file message, plus details kept for the bubble
     msg_type = message.get("type")
     if msg_type == "text":
-        return message.get("text", {}).get("body", "")
+        return {"text": message.get("text", {}).get("body", ""), "message_type": "text"}
     if msg_type == "button":
-        return message.get("button", {}).get("text", "")
+        return {"text": message.get("button", {}).get("text", ""), "message_type": "text"}
     if msg_type == "interactive":
         interactive = message.get("interactive", {})
         reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
-        return reply.get("title", "")
-    # Images, documents, audio, etc. — kept as a placeholder until media handling is added
-    return f"[{msg_type or 'unknown'} message]"
+        return {"text": reply.get("title", ""), "message_type": "text"}
+
+    if msg_type == "location":
+        # "📍 Shared location: Brototype, Infopark Rd (10.0159, 76.3419)" - the AI can answer about it
+        location = message.get("location", {})
+        place = ", ".join(p for p in (location.get("name"), location.get("address")) if p)
+        coordinates = f"{location.get('latitude')}, {location.get('longitude')}"
+        return {
+            "text": f"📍 Shared location: {place} ({coordinates})" if place else f"📍 Shared location ({coordinates})",
+            "message_type": "location",
+            "message_data": {k: location.get(k) for k in ("latitude", "longitude", "name", "address", "url")}
+        }
+
+    if msg_type == "contacts":
+        # "👤 Shared contact: Rahul, +91 98765 43210"
+        cards = [
+            {"name": (c.get("name") or {}).get("formatted_name"), "phones": [p.get("phone") for p in c.get("phones", []) if p.get("phone")]}
+            for c in message.get("contacts", [])
+        ]
+        summary = "; ".join(", ".join([card["name"] or "Contact"] + card["phones"]) for card in cards)
+        return {"text": f"👤 Shared contact: {summary}", "message_type": "contacts", "message_data": {"contacts": cards}}
+
+    # Polls, orders, unsupported types ...: kept as a note, nothing for the AI to answer
+    return {"text": f"[Customer sent a message type that isn't supported: {msg_type or 'unknown'}]", "message_type": "unsupported", "ai_reply": False}
 
 
 def _status_error(status: dict) -> Optional[str]:
@@ -114,9 +140,16 @@ async def receive_whatsapp_webhook(request: Request):
                     "referral": message.get("referral")  # Only on a first message from a Click-to-WhatsApp ad
                 }
 
-                # Images and documents (bills, invoices) are downloaded and parsed
+                # Emoji reaction to one of our messages: shown on that message, no reply
+                if message.get("type") == "reaction":
+                    reaction = message.get("reaction") or {}
+                    if reaction.get("message_id"):
+                        process_reaction_task.delay(phone_number_id=phone_number_id, reacted_wamid=reaction["message_id"], emoji=reaction.get("emoji"))
+                    continue
+
+                # Files: images, documents, voice notes, videos and stickers are downloaded (and read / transcribed)
                 media_type = message.get("type")
-                media = message.get(media_type) if media_type in ("image", "document") else None
+                media = message.get(media_type) if media_type in MEDIA_TYPES else None
                 if media and media.get("id"):
                     process_media_message_task.delay(
                         phone_number_id=phone_number_id,
@@ -134,11 +167,15 @@ async def receive_whatsapp_webhook(request: Request):
                     )
                     continue
 
+                described = _describe_message(message)
                 process_chat_message_task.delay(
                     phone_number_id=phone_number_id,
                     customer_phone=message.get("from"),
-                    user_text=_message_text(message),
+                    user_text=described["text"],
                     wamid=message.get("id"),
+                    message_type=described["message_type"],
+                    message_data=described.get("message_data"),
+                    ai_reply=described.get("ai_reply", True),
                     **customer
                 )
 

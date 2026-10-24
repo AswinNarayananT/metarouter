@@ -16,7 +16,7 @@ export function ContactPanel({
   onClose: () => void;
   onOpenDocument: (messageId: number) => void;
 }) {
-  const documents = conversation.messages.filter((m) => m.attachment);
+  const documents = conversation.messages.filter((m) => m.attachment && ['image', 'pdf', 'file'].includes(m.attachment.kind));
 
   return (
     <SidePanel title="Contact details" closeLabel="Close contact details" onClose={onClose}>

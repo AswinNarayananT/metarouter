@@ -26,7 +26,7 @@ def check_assign_permission(db: Session, actor: User, conversation: Conversation
         raise HTTPException(status_code=403, detail="Only admins and managers can assign chats to other members")
 
 
-def assign_owner(db: Session, conversation: Conversation, user_id: Optional[int], actor: User, ticket_number: Optional[int] = None) -> dict:
+def assign_owner(db: Session, conversation: Conversation, user_id: Optional[int], actor: User, ticket=None) -> dict:
     # 1. The new owner must be an active member of this workspace
     assignee = None
     if user_id is not None:
@@ -78,7 +78,6 @@ def assign_owner(db: Session, conversation: Conversation, user_id: Optional[int]
     if assignee and assignee.id != actor.id:
         publish_event(user_group(assignee.id), "conversation.assigned", {**conversation_data, "assigned_by": {"id": actor.id, "name": actor.name}})
         last_customer_text = db.query(ChatMessage.content).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user").order_by(ChatMessage.id.desc()).limit(1).scalar()
-        title = f"{first_name(actor.name)} assigned you ticket #{ticket_number}" if ticket_number else None
-        notify_assignee(db, conversation, assignee, actor, last_customer_text, title)
+        notify_assignee(db, conversation, assignee, actor, last_customer_text, ticket)
 
     return conversation_data

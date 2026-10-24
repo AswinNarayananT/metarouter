@@ -49,7 +49,9 @@ class ChatMessage(Base):
     id = Column(Integer, primary_key=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
     sender = Column(String(20), nullable=False) # 'user', 'model', 'human', 'broadcast' or 'system' (activity: assigned, taken over ...)
-    message_type = Column(String(20), default="text", server_default="text", nullable=False)  # text, template, event (system activity)
+    message_type = Column(String(20), default="text", server_default="text", nullable=False)  # text, template, image, document, audio, video, sticker, location, event (system activity)
+    # Emoji the customer reacted to this message with (WhatsApp reaction); None = no reaction
+    reaction = Column(String(32), nullable=True)
     # Team member who wrote an agent reply or caused an activity entry
     sent_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     template_data = Column(JSONB, nullable=True)  # name, language, body parameters (template messages only)

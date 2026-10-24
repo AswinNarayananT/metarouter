@@ -7,7 +7,11 @@ from app.services.whatsapp_service import WhatsAppTokenError
 NUMBER_DISCONNECTED_ERROR = "WhatsApp number disconnected — reconnect it in Channels"
 
 # Why the connection stopped, by Meta's error_subcode (only 458 means the client removed our access)
+# Our own marker for "an admin disconnected it in Channels" (Meta's subcodes are all positive)
+MANUAL_DISCONNECT_SUBCODE = 0
+
 DISCONNECT_EXPLANATIONS = {
+    MANUAL_DISCONNECT_SUBCODE: "An admin disconnected this number in Channels. Connect it again to start receiving messages.",
     458: "MetaRouter's access was removed from your Meta Business settings (Business Integrations). If that wasn't intended, reconnect to restore it.",
     460: "The Facebook account used to connect WhatsApp changed its password, which disconnects connected apps.",
     459: "Meta needs the account owner to log in to Facebook and confirm the account.",

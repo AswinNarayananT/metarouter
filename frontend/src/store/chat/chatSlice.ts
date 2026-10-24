@@ -1,13 +1,19 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import type { ChatConversation, ChatMessage, ChatState, DeliveryStatus } from '@/types/chatTypes';
+import type { ChatConversation, ChatFilterTab, ChatMessage, ChatState, ConversationStatus, DeliveryStatus } from '@/types/chatTypes';
 import type { ApiAttachment, ApiChatMessage, ApiConversation, RealtimeEventMap } from '@/types/realtimeTypes';
 import type { Ticket } from '@/types/ticketTypes';
 import { mapAttachment, mapConversation, mapMessage } from './chatMappers';
-import { assignConversation, fetchConversations, fetchMessages, sendAgentMessage, updateConversationStatus } from './chatThunks';
+import { assignConversation, fetchConversationCounts, fetchConversations, fetchMessages, sendAgentAttachment, sendAgentMessage, sendAgentTemplate, updateConversationStatus } from './chatThunks';
 
 const initialState: ChatState = {
   conversations: [],
+  listFilter: 'all',
+  listSearch: '',
+  listPage: 1,
+  hasMoreChats: false,
+  isLoadingMore: false,
+  tabCounts: null,
   threads: {},
   sendingId: null,
   selectedId: null,
@@ -115,6 +121,11 @@ const chatSlice = createSlice({
       const { id, number, status } = action.payload;
       conversation.openTicket = status === 'closed' ? (conversation.openTicket?.id === id ? null : conversation.openTicket) : { id, number, status };
     },
+    // Tab or search changed: the page loads a fresh first page for it
+    setChatListQuery: (state, action: PayloadAction<{ filter?: ChatFilterTab; search?: string }>) => {
+      if (action.payload.filter !== undefined) state.listFilter = action.payload.filter;
+      if (action.payload.search !== undefined) state.listSearch = action.payload.search;
+    },
     selectConversation: (state, action: PayloadAction<number | null>) => {
       state.selectedId = action.payload;
       const conversation = state.conversations.find((c) => c.id === action.payload);
@@ -126,20 +137,41 @@ const chatSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchConversations.pending, (state) => {
-        state.isLoading = true;
+      .addCase(fetchConversations.pending, (state, action) => {
+        if ((action.meta.arg?.page ?? 1) > 1) state.isLoadingMore = true;
+        else state.isLoading = true;
         state.loadError = null;
       })
       .addCase(fetchConversations.fulfilled, (state, action) => {
         state.isLoading = false;
+        state.isLoadingMore = false;
+        // An answer for a tab / search the agent has already left: ignore it
+        if (action.payload.query !== `${state.listFilter}|${state.listSearch.trim()}`) return;
         state.hasLoaded = true;
-        // Replace the list but keep unread counts and loaded messages of chats we already had
+        const { conversations, page, total_pages } = action.payload;
         const previous = new Map(state.conversations.map((c) => [c.id, c]));
-        state.conversations = action.payload.conversations.map((c) => mapConversation(c, previous.get(c.id)));
+        const incoming = conversations.map((c) => mapConversation(c, previous.get(c.id)));
+
+        if (page === 1) {
+          // Fresh first page; keep unread counts and loaded messages, and keep the open chat even if it isn't on it
+          const open = state.conversations.find((c) => c.id === state.selectedId);
+          state.conversations = open && !incoming.some((c) => c.id === open.id) ? [...incoming, open] : incoming;
+        } else {
+          // Next page: add what's new (a chat can move between pages while scrolling)
+          const byId = new Map(state.conversations.map((c) => [c.id, c]));
+          incoming.forEach((c) => byId.set(c.id, c));
+          state.conversations = [...byId.values()];
+        }
         sortByActivity(state.conversations);
+        state.listPage = page;
+        state.hasMoreChats = page < total_pages;
+      })
+      .addCase(fetchConversationCounts.fulfilled, (state, action) => {
+        state.tabCounts = action.payload;
       })
       .addCase(fetchConversations.rejected, (state, action) => {
         state.isLoading = false;
+        state.isLoadingMore = false;
         state.loadError = action.payload as string;
       })
 
@@ -164,26 +196,6 @@ const chatSlice = createSlice({
         const thread = state.threads[action.meta.arg.conversationId];
         thread.isLoading = false;
         thread.loadError = action.payload as string;
-      })
-
-      .addCase(sendAgentMessage.pending, (state, action) => {
-        state.sendingId = action.meta.arg.conversationId;
-        state.actionError = null;
-      })
-      .addCase(sendAgentMessage.fulfilled, (state, action) => {
-        const { conversationId } = action.meta.arg;
-        state.sendingId = null;
-        mergeMessages(state, conversationId, action.payload.messages);
-        // Replying takes the chat over from the AI (and makes you the owner if nobody was)
-        const conversation = findConversation(state, conversationId);
-        if (conversation) {
-          conversation.status = action.payload.conversation_status;
-          conversation.assignedTo = action.payload.assigned_to;
-        }
-      })
-      .addCase(sendAgentMessage.rejected, (state, action) => {
-        state.sendingId = null;
-        state.actionError = action.payload as string;
       })
 
       .addCase(updateConversationStatus.pending, (state, action) => {
@@ -212,6 +224,38 @@ const chatSlice = createSlice({
         state.actionError = action.payload as string;
       })
 
+      // Text, file and template replies: same sending state, merge and takeover
+      .addMatcher(
+        (action) => [sendAgentMessage.pending.type, sendAgentAttachment.pending.type, sendAgentTemplate.pending.type].includes(action.type),
+        (state, action: PayloadAction<unknown, string, { arg: { conversationId: number } }>) => {
+          state.sendingId = action.meta.arg.conversationId;
+          state.actionError = null;
+        }
+      )
+      .addMatcher(
+        (action) => [sendAgentMessage.fulfilled.type, sendAgentAttachment.fulfilled.type, sendAgentTemplate.fulfilled.type].includes(action.type),
+        (
+          state,
+          action: PayloadAction<{ messages: ApiChatMessage[]; conversation_status: ConversationStatus; assigned_to: ChatConversation['assignedTo'] }, string, { arg: { conversationId: number } }>
+        ) => {
+          const { conversationId } = action.meta.arg;
+          state.sendingId = null;
+          mergeMessages(state, conversationId, action.payload.messages);
+          // Replying takes the chat over from the AI (and makes you the owner if nobody was)
+          const conversation = findConversation(state, conversationId);
+          if (conversation) {
+            conversation.status = action.payload.conversation_status;
+            conversation.assignedTo = action.payload.assigned_to;
+          }
+        }
+      )
+      .addMatcher(
+        (action) => [sendAgentMessage.rejected.type, sendAgentAttachment.rejected.type, sendAgentTemplate.rejected.type].includes(action.type),
+        (state, action: PayloadAction<unknown>) => {
+          state.sendingId = null;
+          state.actionError = action.payload as string;
+        }
+      )
       // Logged out: never show one user's chats to the next one
       .addMatcher((action) => action.type === 'workspace/logoutWorkspace', () => initialState);
   },
@@ -223,6 +267,7 @@ export const {
   messageStatusReceived,
   attachmentReceived,
   ticketChanged,
+  setChatListQuery,
   selectConversation,
   clearChatActionError,
 } = chatSlice.actions;

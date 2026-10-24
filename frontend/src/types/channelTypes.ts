@@ -7,6 +7,7 @@ export type WhatsAppQualityRating = 'GREEN' | 'YELLOW' | 'RED';
 export interface WhatsAppNumber {
   id: number;
   displayPhoneNumber: string;
+  verifiedName: string | null;     // Business name WhatsApp shows customers
   qualityRating: WhatsAppQualityRating;
   messagingTier: string;           // TIER_250, TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
   status: 'connected' | 'disconnected';
