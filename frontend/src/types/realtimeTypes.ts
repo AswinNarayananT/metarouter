@@ -61,6 +61,7 @@ export interface ApiConversation {
   open_ticket: { id: number; number: number; status: string } | null; // The chat's current support session
   window_open: boolean; // Free text allowed (24 hours since the customer's last message)
   window_expires_at: string | null;
+  unread_count?: number; // Chat list only: this user's unread customer messages (live events don't carry it)
 }
 
 import type { AppNotification } from './notificationTypes';
@@ -79,6 +80,7 @@ export interface RealtimeEventMap {
   'notification.new': AppNotification; // Only to the recipient
   'ticket.updated': Ticket; // A ticket was opened, changed or closed
   'notifications.read': { ids: number[]; conversation_id: number | null; unread_count: number }; // Read in another tab
+  'conversation.read': { conversation_id: number }; // This user opened the chat in another tab
   // Replies to what this tab sent
   subscribed: { conversation_id: number };
   unsubscribed: { conversation_id: number };

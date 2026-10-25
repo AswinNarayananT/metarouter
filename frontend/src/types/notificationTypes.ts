@@ -1,6 +1,6 @@
 /* Notifications — mirror GET /api/v1/notifications (backend notification_service.serialize_notification) */
 
-export type NotificationType = 'handover' | 'assigned' | 'ticket_assigned';
+export type NotificationType = 'handover' | 'assigned' | 'ticket_assigned' | 'reminder'; // reminder = a handed-over chat still nobody's
 
 export interface AppNotification {
   id: number;

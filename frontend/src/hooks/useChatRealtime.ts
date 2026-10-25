@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { attachmentReceived, conversationReceived, messageReceived, messageStatusReceived, ticketChanged } from '@/store/chat/chatSlice';
+import { attachmentReceived, conversationReadElsewhere, conversationReceived, messageReceived, messageStatusReceived, ticketChanged } from '@/store/chat/chatSlice';
 import { fetchConversationCounts, fetchConversations, fetchMessages } from '@/store/chat/chatThunks';
 import { notificationReceived, notificationsReadElsewhere } from '@/store/notifications/notificationSlice';
 import { fetchNotifications } from '@/store/notifications/notificationThunks';
@@ -21,6 +21,7 @@ export function useChatListRealtimeSync() {
   useRealtimeEvent('conversation.handover', (conversation) => dispatch(conversationReceived(conversation)));
   useRealtimeEvent('conversation.assigned', (conversation) => dispatch(conversationReceived(conversation)));
   useRealtimeEvent('ticket.updated', (ticket) => dispatch(ticketChanged(ticket)));
+  useRealtimeEvent('conversation.read', (update) => dispatch(conversationReadElsewhere(update)));
 
   // 2. Many chats changed, or we were offline and missed events: reload the list (only if it was loaded)
   const refetch = () => {

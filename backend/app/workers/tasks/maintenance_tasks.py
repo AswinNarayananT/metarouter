@@ -6,7 +6,7 @@ from app.database import SessionLocal
 from app.config import settings
 from app.core.redis_client import redis_client
 from app.realtime.notify import notify_attachment_updated
-from app.models.conversation_model import ChatMessage, MessageStatus
+from app.models.conversation_model import ChatMessage, MessageStatus, Conversation, ConversationStatus
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import get_phone_number_status, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
@@ -17,9 +17,12 @@ from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task, knowledge_retry_marker_key
 from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import download_whatsapp_media_task, parse_document_task, media_retry_marker_key
-from app.models.ticket_model import Ticket
+from app.models.ticket_model import Ticket, TicketActivity
 from app.services.ticket_service import close_ticket
 from app.models.notification_model import Notification
+from app.services.notification_service import notify_unassigned_reminder
+
+REMINDER_KEY_EXPIRE_SECONDS = 2 * 24 * 3600  # Long after the last reminder could be due
 
 STUCK_MESSAGES_PER_SWEEP = 500
 IDLE_TICKETS_PER_SWEEP = 50  # Each close makes one AI labelling call
@@ -230,6 +233,50 @@ def close_idle_tickets_task():
             except Exception as e:
                 db.rollback()
                 print(f"[TICKETS] could not close ticket {ticket.id}: {e}")
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="remind_unassigned_chats_task")
+def remind_unassigned_chats_task():
+    thresholds = sorted({int(m) for m in settings.UNASSIGNED_REMINDER_MINUTES.split(",") if m.strip().isdigit()})
+    if not thresholds:
+        return
+
+    db = SessionLocal()
+    try:
+        # 1. Chats the team has to pick up (handed over, nobody owns them), with when their ticket was handed over
+        handed_over = db.query(TicketActivity.ticket_id, func.max(TicketActivity.id).label("activity_id"), func.max(TicketActivity.created_at).label("at")).filter(
+            TicketActivity.type == "escalated"
+        ).group_by(TicketActivity.ticket_id).subquery()
+        rows = db.query(Conversation, handed_over.c.activity_id, handed_over.c.at).join(
+            Ticket, (Ticket.conversation_id == Conversation.id) & (Ticket.status != "closed")
+        ).join(
+            handed_over, handed_over.c.ticket_id == Ticket.id
+        ).filter(
+            Conversation.status == ConversationStatus.HUMAN_TAKEOVER,
+            Conversation.assigned_user_id.is_(None)
+        ).all()
+
+        now = datetime.now(timezone.utc)
+        for conversation, activity_id, handed_over_at in rows:
+            # 2. Reminders now due; each is sent once per handover (Redis remembers, so every-minute runs don't repeat it)
+            waited_minutes = (now - handed_over_at).total_seconds() / 60
+            due = [m for m in thresholds if waited_minutes >= m]
+            newly_due = [m for m in due if redis_client.set(f"unassigned_reminder:{activity_id}:{m}", 1, nx=True, ex=REMINDER_KEY_EXPIRE_SECONDS)]
+            if not newly_due:
+                continue
+
+            # 3. Several due at once (e.g. the worker was down): only the latest one is sent
+            minutes = max(newly_due)
+            preview = db.query(ChatMessage.content).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user").order_by(ChatMessage.id.desc()).limit(1).scalar()
+            try:
+                sent = notify_unassigned_reminder(db, conversation, minutes, minutes == thresholds[0], preview)
+                print(f"[REMINDER] chat {conversation.id} waiting {int(waited_minutes)} min: reminded {len(sent)} people ({minutes} min reminder)")
+            except Exception as e:
+                db.rollback()
+                print(f"[REMINDER] could not remind about chat {conversation.id}: {e}")
 
     finally:
         db.close()

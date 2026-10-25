@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     BROADCAST_CHECK_INTERVAL_SECONDS: int = 60  # Restart tier-paused broadcasts that are due
     TICKET_IDLE_CLOSE_HOURS: int = 4  # An AI-handled ticket with no new message for this long is closed (no reply)
     TICKET_SWEEP_INTERVAL_MINUTES: int = 10  # How often idle tickets are checked
+    UNASSIGNED_REMINDER_MINUTES: str = "5,15"  # Remind about a handed-over chat nobody took after these minutes (first: the team, later: admins / managers)
+    UNASSIGNED_REMINDER_CHECK_SECONDS: int = 60  # How often waiting chats are checked
     NOTIFICATION_RETENTION_DAYS: int = 60  # Read notifications older than this are deleted (unread ones are kept)
     NOTIFICATION_CLEANUP_INTERVAL_HOURS: int = 24  # How often old notifications are cleaned up
     STALLED_BROADCAST_MINUTES: int = 10  # Sending broadcast with no progress for this long is restarted
@@ -80,6 +82,7 @@ class Settings(BaseSettings):
     GEMINI_CHAT_BACKUP_MODEL: str = "gemini-3.5-flash-lite,gemini-flash-latest"  # Tried in order when the chat model is overloaded / times out
     GEMINI_TIMEOUT_SECONDS: int = 60  # A Gemini request taking longer is treated as failed (then retried / backup)
     GEMINI_RETRIES: int = 1  # Extra tries on the same model before switching to the backup
+    GEMINI_CHAT_TIMEOUT_SECONDS: int = 20  # Customer replies: a model slower than this is skipped for the backup (the customer is waiting)
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     # Must match the Vector(...) size of knowledge_chunks.embedding
     EMBEDDING_DIMENSIONS: int = 768

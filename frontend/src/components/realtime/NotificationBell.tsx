@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, Hand, Loader2, Ticket as TicketIcon, UserPlus } from 'lucide-react';
+import { AlarmClock, Bell, CheckCheck, Hand, Loader2, Ticket as TicketIcon, UserPlus } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { selectConversation } from '@/store/chat/chatSlice';
 import { selectTicket } from '@/store/tickets/ticketSlice';
@@ -28,6 +28,7 @@ const TYPE_ICONS = {
   handover: { icon: Hand, className: 'bg-amber-500/15 text-amber-700' },
   assigned: { icon: UserPlus, className: 'bg-primary/10 text-primary' },
   ticket_assigned: { icon: TicketIcon, className: 'bg-primary/10 text-primary' },
+  reminder: { icon: AlarmClock, className: 'bg-amber-500/15 text-amber-700' },
 };
 
 /** Header bell: unread badge and the newest notifications, so a missed pop-up alert is still here later. */

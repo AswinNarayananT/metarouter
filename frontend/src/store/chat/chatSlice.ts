@@ -131,6 +131,11 @@ const chatSlice = createSlice({
       const conversation = state.conversations.find((c) => c.id === action.payload);
       if (conversation) conversation.unread = 0;
     },
+    // conversation.read event: this user opened the chat in another tab
+    conversationReadElsewhere: (state, action: PayloadAction<RealtimeEventMap['conversation.read']>) => {
+      const conversation = findConversation(state, action.payload.conversation_id);
+      if (conversation) conversation.unread = 0;
+    },
     clearChatActionError: (state) => {
       state.actionError = null;
     },
@@ -151,9 +156,13 @@ const chatSlice = createSlice({
         const { conversations, page, total_pages } = action.payload;
         const previous = new Map(state.conversations.map((c) => [c.id, c]));
         const incoming = conversations.map((c) => mapConversation(c, previous.get(c.id)));
+        // Unread counts come from the server; the chat being looked at is read
+        incoming.forEach((c) => {
+          if (c.id === state.selectedId) c.unread = 0;
+        });
 
         if (page === 1) {
-          // Fresh first page; keep unread counts and loaded messages, and keep the open chat even if it isn't on it
+          // Fresh first page; keep loaded messages, and keep the open chat even if it isn't on it
           const open = state.conversations.find((c) => c.id === state.selectedId);
           state.conversations = open && !incoming.some((c) => c.id === open.id) ? [...incoming, open] : incoming;
         } else {
@@ -269,6 +278,7 @@ export const {
   ticketChanged,
   setChatListQuery,
   selectConversation,
+  conversationReadElsewhere,
   clearChatActionError,
 } = chatSlice.actions;
 export default chatSlice.reducer;

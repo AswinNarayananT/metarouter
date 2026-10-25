@@ -68,3 +68,16 @@ class ChatMessage(Base):
     conversation = relationship("Conversation", back_populates="messages")
     sent_by = relationship("User")
     attachment = relationship("ChatAttachment", back_populates="message", uselist=False, cascade="all, delete-orphan")
+
+class ConversationRead(Base):
+    __tablename__ = "conversation_reads"
+    # Each team member's own read marker per chat: unread = customer messages newer than it
+    __table_args__ = (
+        UniqueConstraint("user_id", "conversation_id", name="uq_conversation_read_user_conversation"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    last_read_message_id = Column(Integer, nullable=False, default=0)  # Newest message the user has seen
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

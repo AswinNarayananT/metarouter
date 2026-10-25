@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import unicodedata
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
@@ -44,12 +45,22 @@ def _has_valid_signature(raw_body: bytes, signature_header: Optional[str]) -> bo
 # Files the customer can send: downloaded by the media task (voice notes are transcribed, documents parsed)
 MEDIA_TYPES = ("image", "document", "audio", "video", "sticker")
 
+# Unicode groups an emoji is made of: symbols (😀 👍 🇮🇳), skin tones, variation selectors and joiners (👨‍👩‍👧)
+EMOJI_CATEGORIES = ("So", "Sk", "Mn", "Cf")
+
+
+def _is_emoji_only(text: str) -> bool:
+    # "👍", "🙏🙏", "❤️": only emoji, no letters or digits (like a sticker, nothing for the AI to answer)
+    chars = [c for c in text if not c.isspace()]
+    return bool(chars) and all(unicodedata.category(c) in EMOJI_CATEGORIES for c in chars)
+
 
 def _describe_message(message: dict) -> dict:
     # Text the chat (and the AI) sees for a non-file message, plus details kept for the bubble
     msg_type = message.get("type")
     if msg_type == "text":
-        return {"text": message.get("text", {}).get("body", ""), "message_type": "text"}
+        body = message.get("text", {}).get("body", "")
+        return {"text": body, "message_type": "text", "ai_reply": not _is_emoji_only(body)}
     if msg_type == "button":
         return {"text": message.get("button", {}).get("text", ""), "message_type": "text"}
     if msg_type == "interactive":

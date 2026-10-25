@@ -48,6 +48,10 @@ celery_app.conf.beat_schedule = {
         "task": "close_idle_tickets_task",
         "schedule": timedelta(minutes=settings.TICKET_SWEEP_INTERVAL_MINUTES),
     },
+    "remind-unassigned-chats": {
+        "task": "remind_unassigned_chats_task",
+        "schedule": timedelta(seconds=settings.UNASSIGNED_REMINDER_CHECK_SECONDS),
+    },
     "clean-old-notifications": {
         "task": "clean_old_notifications_task",
         "schedule": timedelta(hours=settings.NOTIFICATION_CLEANUP_INTERVAL_HOURS),

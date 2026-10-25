@@ -6,10 +6,11 @@ import os
 import uuid
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.database import get_db
 from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
-from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus, MessageStatus
+from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus, MessageStatus, ConversationRead
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.ticket_model import Ticket
 from app.models.attachment_model import ChatAttachment
@@ -17,7 +18,7 @@ from app.config import settings
 from app.schemas.conversation_schema import SendMessageRequest, UpdateConversationRequest, AssignConversationRequest, SendTemplateRequest
 from app.services.messaging_service import queue_outgoing_message, OutgoingMessageError
 from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, record_activity, first_name
-from app.realtime.connection_manager import org_group
+from app.realtime.connection_manager import org_group, user_group
 from app.realtime.events import publish_event
 from app.services.assignment_service import check_assign_permission, assign_owner
 from app.services.ticket_service import get_open_ticket, escalate_ticket, sync_ticket_owner, mark_ticket_in_progress, hand_ticket_back_to_ai
@@ -84,15 +85,27 @@ def list_conversations(status: Optional[ConversationStatus] = Query(None), assig
     conversation_ids = [row.Conversation.id for row in rows]
     open_tickets = {t.conversation_id: t for t in db.query(Ticket).filter(Ticket.conversation_id.in_(conversation_ids), Ticket.status != "closed").all()} if conversation_ids else {}
 
+    # 4. This user's unread customer messages per chat (newer than their read marker), one query for the page
+    unread_counts = dict(db.query(ChatMessage.conversation_id, func.count(ChatMessage.id)).outerjoin(
+        ConversationRead, (ConversationRead.conversation_id == ChatMessage.conversation_id) & (ConversationRead.user_id == current_user.id)
+    ).filter(
+        ChatMessage.conversation_id.in_(conversation_ids),
+        ChatMessage.sender == "user",
+        ChatMessage.id > func.coalesce(ConversationRead.last_read_message_id, 0)
+    ).group_by(ChatMessage.conversation_id).all()) if conversation_ids else {}
+
     return {
         "conversations": [
-            serialize_conversation(
-                row.Conversation,
-                last_messages.get(row.last_id),
-                as_utc(row.last_customer_at),
-                display_numbers.get(row.Conversation.phone_number_id),
-                open_tickets.get(row.Conversation.id)
-            )
+            {
+                **serialize_conversation(
+                    row.Conversation,
+                    last_messages.get(row.last_id),
+                    as_utc(row.last_customer_at),
+                    display_numbers.get(row.Conversation.phone_number_id),
+                    open_tickets.get(row.Conversation.id)
+                ),
+                "unread_count": unread_counts.get(row.Conversation.id, 0)
+            }
             for row in rows
         ],
         "total": total,
@@ -127,6 +140,34 @@ def get_conversation(conversation_id: int, db: Session = Depends(get_db), curren
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     return conversation_payload(db, conversation)
+
+
+@router.post("/{conversation_id}/read")
+def mark_conversation_read(conversation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. Only chats of the user's own workspace
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.organization_id == current_user.organization_id
+    ).first()
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # 2. Move the user's marker to the newest message (one row per user and chat; never moves back)
+    last_id = db.query(func.max(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation_id).scalar() or 0
+    db.execute(pg_insert(ConversationRead).values(user_id=current_user.id, conversation_id=conversation_id, last_read_message_id=last_id).on_conflict_do_update(
+        constraint="uq_conversation_read_user_conversation",
+        set_={"last_read_message_id": func.greatest(ConversationRead.last_read_message_id, last_id), "updated_at": func.now()}
+    ))
+    db.commit()
+
+    # 3. The user's other tabs clear the badge too
+    publish_event(user_group(current_user.id), "conversation.read", {"conversation_id": conversation_id})
+
+    return {
+        "conversation_id": conversation_id,
+        "last_read_message_id": last_id
+    }
 
 
 @router.get("/{conversation_id}/messages")

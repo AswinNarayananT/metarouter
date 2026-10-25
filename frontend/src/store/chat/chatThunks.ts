@@ -144,3 +144,16 @@ export const sendAgentTemplate = createAsyncThunk(
     }
   }
 );
+
+// Opening a chat (and new messages while it's open) moves this user's read marker, so unread counts survive a reload
+export const markConversationRead = createAsyncThunk(
+  'chat/markConversationRead',
+  async (conversationId: number, { rejectWithValue }) => {
+    try {
+      const response = await api.post<{ conversation_id: number; last_read_message_id: number }>(`/api/v1/conversations/${conversationId}/read`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to mark the chat as read'));
+    }
+  }
+);

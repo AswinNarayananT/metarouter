@@ -74,6 +74,19 @@ def notify_team_of_handover(db: Session, conversation: Conversation, preview: Op
     return create_notifications(db, conversation, [r.id for r in recipients], "handover", "A customer needs a human", conversation_summary(conversation, preview))
 
 
+def notify_unassigned_reminder(db: Session, conversation: Conversation, minutes: int, first_reminder: bool, preview: Optional[str]) -> list:
+    # First reminder: everyone who got the handover; later ones only admins / managers, who can assign someone
+    roles = handover_roles(db, conversation.organization_id) | SUPERVISOR_ROLES if first_reminder else SUPERVISOR_ROLES
+    recipients = db.query(User.id).filter(
+        User.organization_id == conversation.organization_id,
+        User.is_active == True,
+        User.role.in_(roles)
+    ).all()
+
+    title = f"Still waiting for {minutes} min · {customer_label(conversation)}" if first_reminder else f"Nobody has taken this chat for {minutes} min · {customer_label(conversation)}"
+    return create_notifications(db, conversation, [r.id for r in recipients], "reminder", title, short(preview))
+
+
 def notify_assignee(db: Session, conversation: Conversation, assignee: User, actor: User, preview: Optional[str], ticket=None) -> list:
     # Only the new owner, and never for assigning yourself
     if assignee.id == actor.id:

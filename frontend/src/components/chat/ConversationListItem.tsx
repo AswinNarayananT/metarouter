@@ -56,7 +56,7 @@ export function ConversationListItem({
           </p>
           {conversation.unread > 0 && (
             <span className="min-w-5 h-5 px-1.5 rounded-full bg-primary text-on-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
-              {conversation.unread}
+              {conversation.unread > 99 ? '99+' : conversation.unread}
             </span>
           )}
         </div>

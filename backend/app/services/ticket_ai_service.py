@@ -14,9 +14,17 @@ RULES:
    - "enquiry": the customer only asked for information (timings, fees, process, availability).
    - "problem": something isn't working or needs fixing / doing for them (missing receipt, can't log in, refund).
    - "complaint": the customer is unhappy with the service, a person or the experience.
-2. group and subgroup: group = broad topic, subgroup = the specific issue inside it.
-   ALWAYS reuse a group and subgroup from EXISTING GROUPS when one fits, spelled exactly the same.
-   Only invent a new one if nothing fits; keep it short (2-4 words) and general enough to be reused by similar chats.
+2. group and subgroup: group = broad topic, subgroup = the specific issue inside it. Decide them separately:
+   - group: reuse an EXISTING group when the conversation is about the same broad topic (anything about fees,
+     payments or refunds -> "Fees & Payments"). Create a new group only for a topic none of them covers.
+   - subgroup: reuse an EXISTING subgroup ONLY if it is the same specific issue. Being in the same group is not
+     enough. If the issue is different, create a NEW subgroup under the existing group.
+   - Copy reused names exactly as written. New names: short (2-4 words), general enough for similar chats to reuse.
+   Examples, with existing "Fees & Payments > Missing Receipt":
+   - "I paid but got no receipt"          -> Fees & Payments > Missing Receipt   (same issue: reuse)
+   - "I want a refund of my fee"          -> Fees & Payments > Refund Request    (same topic, new issue: new subgroup)
+   - "What is the course fee?"            -> Fees & Payments > Fee Details       (same topic, new issue: new subgroup)
+   - "I can't log in to the portal"       -> Technical Support > Login Problem   (new topic: new group)
 3. subject: one line, what the customer needed. No customer names or phone numbers.
 4. description: 2-4 sentences with the useful details (dates, amounts, references) from the chat.
 5. resolution: how it was answered or solved, in one or two sentences. Empty string if it wasn't solved.

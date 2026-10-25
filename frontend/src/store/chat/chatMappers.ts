@@ -105,7 +105,7 @@ export function mapMessage(message: ApiChatMessage): ChatMessage {
   };
 }
 
-// `existing` keeps what only the browser knows: unread count and the loaded messages
+// `existing` keeps what only the browser knows: the loaded messages, and the unread count when the server didn't send one (live events)
 export function mapConversation(conversation: ApiConversation, existing?: ChatConversation): ChatConversation {
   const lastActivityAt = conversation.last_message?.created_at ?? conversation.updated_at;
   const phone = formatPhone(conversation.customer_phone);
@@ -122,7 +122,7 @@ export function mapConversation(conversation: ApiConversation, existing?: ChatCo
     status: conversation.status,
     assignedTo: conversation.assigned_to,
     openTicket: conversation.open_ticket,
-    unread: existing?.unread ?? 0,
+    unread: conversation.unread_count ?? existing?.unread ?? 0,
     lastActive: formatListTime(lastActivityAt),
     lastActivityAt,
     lastMessage: conversation.last_message ? mapMessage(conversation.last_message) : null,

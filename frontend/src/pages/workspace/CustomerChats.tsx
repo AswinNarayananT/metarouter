@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatSidePanel } from '@/types/chatTypes';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { clearChatActionError, selectConversation, setChatListQuery } from '@/store/chat/chatSlice';
-import { assignConversation, fetchConversationCounts, fetchConversations, fetchMessages, sendAgentAttachment, sendAgentMessage, sendAgentTemplate, updateConversationStatus } from '@/store/chat/chatThunks';
+import { assignConversation, fetchConversationCounts, fetchConversations, fetchMessages, markConversationRead, sendAgentAttachment, sendAgentMessage, sendAgentTemplate, updateConversationStatus } from '@/store/chat/chatThunks';
 import { TemplateDialog } from '@/components/chat/TemplateDialog';
 import type { BroadcastTemplate } from '@/types/broadcastTypes';
 import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
@@ -98,6 +98,12 @@ export function CustomerChats() {
   }, [dispatch, selectedId, hasUnreadForChat]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  // Looking at the chat = read: save this user's marker on opening it and when new messages arrive while it's open
+  const selectedLastMessageId = selected?.lastMessage?.id ?? null;
+  useEffect(() => {
+    if (selectedId !== null) dispatch(markConversationRead(selectedId));
+  }, [dispatch, selectedId, selectedLastMessageId]);
   const thread = selectedId !== null ? threads[selectedId] : undefined;
   const documentMessage =
     panel?.type === 'document' ? selected?.messages.find((m) => m.id === panel.messageId) : undefined;

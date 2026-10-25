@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Ticket as TicketIcon, UserPlus, UserRound, X } from 'lucide-react';
+import { AlarmClock, Ticket as TicketIcon, UserPlus, UserRound, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { selectConversation } from '@/store/chat/chatSlice';
 import { selectTicket } from '@/store/tickets/ticketSlice';
@@ -13,7 +13,7 @@ const AUTO_DISMISS_MS = 15_000;
 
 interface Alert {
   key: string;            // One card per chat / ticket
-  kind: 'handover' | 'assigned' | 'ticket_assigned';
+  kind: 'handover' | 'assigned' | 'ticket_assigned' | 'reminder';
   title: string;
   body: string;
   conversationId: number;
@@ -24,10 +24,11 @@ const KIND_STYLES = {
   handover: { icon: UserRound, className: 'bg-amber-500/15 text-amber-700', border: 'border-amber-500/30' },
   assigned: { icon: UserPlus, className: 'bg-primary/10 text-primary', border: 'border-primary/30' },
   ticket_assigned: { icon: TicketIcon, className: 'bg-primary/10 text-primary', border: 'border-primary/30' },
+  reminder: { icon: AlarmClock, className: 'bg-amber-500/15 text-amber-700', border: 'border-amber-500/50' },
 };
 
 // Top-right cards (just under the navbar) on every workspace page:
-// the AI handed a chat to the team, or someone assigned you a chat / ticket
+// the AI handed a chat to the team, a handed-over chat is still waiting, or someone assigned you a chat / ticket
 export function HandoverAlerts() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -52,9 +53,9 @@ export function HandoverAlerts() {
     });
   });
 
-  // Assignments: same title and text as the bell ("Aromal assigned you ticket #12 · John Doe")
+  // Assignments and "still waiting" reminders: same title and text as the bell ("Aromal assigned you ticket #12 · John Doe")
   useRealtimeEvent('notification.new', (notification) => {
-    if (notification.type !== 'assigned' && notification.type !== 'ticket_assigned') return;
+    if (notification.type === 'handover') return; // Shown from conversation.handover above
     if (notification.conversation_id === null) return;
     push({
       key: notification.ticket ? `ticket-${notification.ticket.id}` : `chat-${notification.conversation_id}`,

@@ -27,7 +27,11 @@ def model_chain(main: str, backups: str) -> list:
     return [main] + [m.strip() for m in (backups or "").split(",") if m.strip()]
 
 
-def generate_with_backup(models: list, contents, config, purpose: str):
+def generate_with_backup(models: list, contents, config, purpose: str, timeout_seconds: int = settings.GEMINI_TIMEOUT_SECONDS):
+    # A shorter limit for this call (customer replies) than the client default (documents, voice notes)
+    if timeout_seconds != settings.GEMINI_TIMEOUT_SECONDS:
+        config.http_options = types.HttpOptions(timeout=timeout_seconds * 1000, retry_options=types.HttpRetryOptions(attempts=1))
+
     # 1. Main model first (retried a little), then the backup; a bad request fails at once (a backup won't fix it)
     last_error = None
     for model in [m for m in dict.fromkeys(models) if m]:
@@ -46,7 +50,7 @@ def generate_with_backup(models: list, contents, config, purpose: str):
                     break  # Next model
             except (httpx.TimeoutException, httpx.NetworkError) as e:
                 last_error = e
-                print(f"[GEMINI] {purpose}: {model} {type(e).__name__} after {settings.GEMINI_TIMEOUT_SECONDS}s limit, trying the next model")
+                print(f"[GEMINI] {purpose}: {model} {type(e).__name__} after {timeout_seconds}s limit, trying the next model")
                 break  # Next model
             time.sleep(RETRY_DELAY_SECONDS * (attempt + 1))
 
@@ -132,6 +136,10 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
     Keep replies short and conversational, like a WhatsApp message: at most about 80 words unless the customer
     asks for details. Always finish your sentences.
 
+    LANGUAGE:
+    Always reply in English, whatever language the customer writes or speaks in (Malayalam, Hindi, Tamil,
+    Manglish ...). Understand their message, but answer only in simple, clear English.
+
     CLOSING PROTOCOL:
     1. When you have fully answered the customer's question or solved their problem, end that reply by asking
        if there is anything else you can help with.
@@ -179,7 +187,8 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
                 # Gemini 3 ignores thinking_budget=0; "low" is the lowest level it accepts.
                 thinking_config=types.ThinkingConfig(thinking_level="low"),
             ),
-            "customer reply"
+            "customer reply",
+            timeout_seconds=settings.GEMINI_CHAT_TIMEOUT_SECONDS  # The customer is waiting: move to the backup sooner
         )
         if not response.text:
             raise ValueError(f"Empty response from Gemini (finish reason: {response.candidates[0].finish_reason if response.candidates else 'unknown'})")
