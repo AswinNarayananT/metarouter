@@ -5,6 +5,7 @@ import { useAppSelector } from '@/store';
 import { Home } from '@/pages/Home';
 import { Login } from '@/pages/Login';
 import { AcceptInvitation } from '@/pages/workspace/AcceptInvitation';
+import { WorkspaceOnboarding } from '@/pages/auth/WorkspaceOnboarding';
 
 // Super Admin Pages & Components
 import { SuperAdminLogin } from '@/pages/SuperAdminLogin';
@@ -14,6 +15,8 @@ import { SuperAdminDashboard } from '@/pages/superAdmin/Dashboard';
 import { OrganizationListPage } from '@/pages/superAdmin/Organizations';
 import { CreateOrganizationPage } from '@/pages/superAdmin/CreateOrganization';
 import { OrganizationDetailPage } from '@/pages/superAdmin/OrganizationDetail';
+import { PlatformModulesPage } from '@/pages/superAdmin/PlatformModules';
+import { AuditLogsPage } from '@/pages/superAdmin/AuditLogs';
 import { SuperAdminSettings } from '@/pages/superAdmin/SuperAdminSettings';
 
 // Workspace Pages & Layout
@@ -29,11 +32,30 @@ import { InviteMembers } from '@/pages/workspace/InviteMembers';
 import { WorkspaceSettings } from '@/pages/workspace/WorkspaceSettings';
 import { AISettings } from '@/pages/workspace/AISettings';
 import { Channels } from '@/pages/workspace/Channels';
+import { Orders } from '@/pages/workspace/Orders';
 
 // Route Guards
 import { ProtectedWorkspaceRoute } from '@/components/routes/ProtectedWorkspaceRoute';
 import { PublicOnlyRoute } from '@/components/routes/PublicOnlyRoute';
 import { AdminOnlyRoute } from '@/components/routes/AdminOnlyRoute';
+import { FeatureRoute } from '@/components/routes/FeatureRoute';
+import { useFeatureFlags } from '@/hooks/useFeatureFlag';
+
+// Pages to land on when the workspace has no Overview module, in order
+const LANDING_PAGES = [
+  { feature: 'customer_chats', path: '/dashboard/chats' },
+  { feature: 'tickets', path: '/dashboard/tickets' },
+  { feature: 'orders', path: '/dashboard/orders' },
+  { feature: 'team_members', path: '/dashboard/members' },
+  { feature: 'settings', path: '/dashboard/settings' },
+];
+
+function WorkspaceHome() {
+  const features = useFeatureFlags();
+  if (features.overview) return <WorkspaceOverview />;
+  const landing = LANDING_PAGES.find((page) => features[page.feature]);
+  return landing ? <Navigate to={landing.path} replace /> : <FeatureRoute feature="overview" featureTitle="Overview">{null}</FeatureRoute>;
+}
 
 function SuperAdminLoginGate() {
   const user = useAppSelector((state) => state.superAdmin.user);
@@ -68,6 +90,15 @@ function App() {
           }
         />
 
+        <Route
+          path="/onboard"
+          element={
+            <PublicOnlyRoute>
+              <WorkspaceOnboarding />
+            </PublicOnlyRoute>
+          }
+        />
+
         {/* ========================================== */}
         {/* Super Admin Portal Routes                  */}
         {/* ========================================== */}
@@ -86,6 +117,8 @@ function App() {
           <Route path="organizations" element={<OrganizationListPage />} />
           <Route path="organizations/new" element={<CreateOrganizationPage />} />
           <Route path="organizations/:id" element={<OrganizationDetailPage />} />
+          <Route path="modules" element={<PlatformModulesPage />} />
+          <Route path="audit-logs" element={<AuditLogsPage />} />
           <Route path="settings" element={<SuperAdminSettings />} />
         </Route>
 
@@ -100,14 +133,38 @@ function App() {
             </ProtectedWorkspaceRoute>
           }
         >
-          <Route index element={<WorkspaceOverview />} />
-          <Route path="chats" element={<CustomerChats />} />
-          <Route path="tickets" element={<Tickets />} />
+          <Route index element={<WorkspaceHome />} />
+          <Route
+            path="orders"
+            element={
+              <FeatureRoute feature="orders" featureTitle="Orders & Commerce">
+                <Orders />
+              </FeatureRoute>
+            }
+          />
+          <Route
+            path="chats"
+            element={
+              <FeatureRoute feature="customer_chats" featureTitle="Customer Chats">
+                <CustomerChats />
+              </FeatureRoute>
+            }
+          />
+          <Route
+            path="tickets"
+            element={
+              <FeatureRoute feature="tickets" featureTitle="Tickets">
+                <Tickets />
+              </FeatureRoute>
+            }
+          />
           <Route
             path="broadcast"
             element={
               <AdminOnlyRoute>
-                <Broadcasts />
+                <FeatureRoute feature="broadcasts" featureTitle="Broadcast Campaigns">
+                  <Broadcasts />
+                </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
@@ -115,7 +172,9 @@ function App() {
             path="broadcast/new"
             element={
               <AdminOnlyRoute>
-                <NewBroadcast />
+                <FeatureRoute feature="broadcasts" featureTitle="New Broadcast">
+                  <NewBroadcast />
+                </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
@@ -123,7 +182,9 @@ function App() {
             path="broadcast/:id"
             element={
               <AdminOnlyRoute>
-                <BroadcastDetail />
+                <FeatureRoute feature="broadcasts" featureTitle="Broadcast Details">
+                  <BroadcastDetail />
+                </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
@@ -131,16 +192,27 @@ function App() {
             path="channels"
             element={
               <AdminOnlyRoute>
-                <Channels />
+                <FeatureRoute feature="channels" featureTitle="Channels">
+                  <Channels />
+                </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
-          <Route path="members" element={<TeamMembers />} />
+          <Route
+            path="members"
+            element={
+              <FeatureRoute feature="team_members" featureTitle="Team Members">
+                <TeamMembers />
+              </FeatureRoute>
+            }
+          />
           <Route
             path="invite"
             element={
               <AdminOnlyRoute>
-                <InviteMembers />
+                <FeatureRoute feature="invite_members" featureTitle="Invite Members">
+                  <InviteMembers />
+                </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
@@ -148,11 +220,20 @@ function App() {
             path="ai-settings"
             element={
               <AdminOnlyRoute>
-                <AISettings />
+                <FeatureRoute feature="ai_assistant" featureTitle="AI Assistant">
+                  <AISettings />
+                </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
-          <Route path="settings" element={<WorkspaceSettings />} />
+          <Route
+            path="settings"
+            element={
+              <FeatureRoute feature="settings" featureTitle="Workspace Settings">
+                <WorkspaceSettings />
+              </FeatureRoute>
+            }
+          />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

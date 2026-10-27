@@ -14,8 +14,13 @@ from app.services.conversation_service import serialize_message, can_reply, SUPE
 from app.services.ticket_service import serialize_ticket, serialize_activity, update_ticket, add_ticket_note, close_ticket, hand_chat_back_after_close, OPEN_STATUSES
 from app.services.assignment_service import check_assign_permission, assign_owner
 from app.workers.tasks.ticket_tasks import relabel_ticket_task, file_closed_ticket_task
+from app.core.features import require_feature
 
-router = APIRouter(prefix="/tickets", tags=["Tickets"])
+router = APIRouter(
+    prefix="/tickets",
+    tags=["Tickets"],
+    dependencies=[Depends(require_feature("tickets"))]
+)
 
 SESSION_MESSAGES_LIMIT = 200  # Messages of the session shown on the ticket
 

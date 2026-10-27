@@ -1,7 +1,21 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
+
+DEFAULT_ORGANIZATION_FEATURES = {
+    "overview": True,
+    "channels": True,
+    "ai_assistant": True,
+    "customer_chats": True,
+    "broadcasts": True,
+    "team_members": True,
+    "invite_members": True,
+    "settings": True,
+    "tickets": True,
+    "orders": False,
+}
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -10,6 +24,8 @@ class Organization(Base):
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
     subscription_status = Column(String, default="active")
+    # Only this workspace's overrides ({"orders": true}); every other module follows its platform default
+    features = Column(JSONB, nullable=False, default=dict, server_default='{}')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     profile = relationship("OrganizationProfile", back_populates="organization", uselist=False, cascade="all, delete-orphan")

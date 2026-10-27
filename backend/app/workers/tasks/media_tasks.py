@@ -12,6 +12,7 @@ from app.config import settings
 from app.models.conversation_model import ChatMessage, ConversationStatus
 from app.models.attachment_model import ChatAttachment
 from app.models.whatsapp_model import WhatsAppNumber
+from app.models.organization_model import Organization
 from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected, number_is_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.services.document_parser_service import parse_document, transcribe_audio, DocumentParseError
@@ -348,4 +349,9 @@ def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str)
     # ... and when the number is disconnected (the reply couldn't be delivered)
     if number_is_disconnected(db, conversation.organization_id, conversation.phone_number_id):
         return
+    # ... and when the workspace is inactive (suspended)
+    org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
+    if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
+        return
     reply_with_ai(db, conversation, summary)
+

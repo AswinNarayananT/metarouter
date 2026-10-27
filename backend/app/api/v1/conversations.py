@@ -27,8 +27,13 @@ from app.services.broadcast_service import summarize_template, render_body
 from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.realtime.notify import notify_new_messages
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
+from app.core.features import require_feature
 
-router = APIRouter(prefix="/conversations", tags=["Conversations"])
+router = APIRouter(
+    prefix="/conversations",
+    tags=["Conversations"],
+    dependencies=[Depends(require_feature("customer_chats"))]
+)
 
 # Sent when an agent hands the chat back: the AI closes the ticket once the customer needs nothing else
 ANYTHING_ELSE_TEXT = "Is there anything else I can help you with?"

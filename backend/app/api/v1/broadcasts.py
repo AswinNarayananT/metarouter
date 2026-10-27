@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app.core.deps import get_current_workspace_user
-from app.models.organization_model import User
+from app.models.organization_model import User, Organization
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.conversation_model import ChatMessage
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
@@ -18,8 +18,13 @@ from app.services.broadcast_service import parse_contacts_csv, build_audience, s
 from app.workers.tasks.broadcast_tasks import process_broadcast_task
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
 from app.models.conversation_model import MessageStatus
+from app.core.features import require_feature
 
-router = APIRouter(prefix="/broadcasts", tags=["Broadcasts"])
+router = APIRouter(
+    prefix="/broadcasts",
+    tags=["Broadcasts"],
+    dependencies=[Depends(require_feature("broadcasts"))]
+)
 
 DELIVERY_STATUSES = ["pending", "sent", "delivered", "read", "failed"]
 
@@ -238,13 +243,18 @@ def resume_broadcast(broadcast_id: int, db: Session = Depends(get_db), current_u
     if broadcast.status != "paused":
         raise HTTPException(status_code=400, detail="Only a paused broadcast can be resumed")
 
-    # 1. The number must have recovered from a low quality rating
+    # 1. The workspace must be active (not inactive)
+    org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
+    if not org or org.subscription_status != "active":
+        raise HTTPException(status_code=400, detail="Cannot resume broadcasts while the workspace is inactive")
+
+    # 2. The number must have recovered from a low quality rating
     number = _get_number(db, current_user.organization_id, broadcast.phone_number_id)
     quality = check_number_quality(number)
     if quality["blocked"]:
         raise HTTPException(status_code=400, detail=quality["warning"])
 
-    # 2. Clear the pause; a new token makes any older scheduled run stop
+    # 3. Clear the pause; a new token makes any older scheduled run stop
     broadcast.status = "sending"
     broadcast.pause_reason = None
     broadcast.paused_at = None

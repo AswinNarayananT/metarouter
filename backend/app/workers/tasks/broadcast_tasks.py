@@ -8,6 +8,7 @@ from app.config import settings
 from app.models.conversation_model import ChatMessage, MessageStatus
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.whatsapp_model import WhatsAppNumber
+from app.models.organization_model import Organization
 from app.services.broadcast_service import render_body, check_number_quality, tier_capacity
 from app.workers.tasks.chat_tasks import _get_or_create_conversation
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
@@ -30,9 +31,18 @@ def process_broadcast_task(broadcast_id: int, dispatch_token: Optional[str] = No
             db.rollback()
             return
 
-        # Finished broadcasts, quality and disconnect pauses (only Resume restarts those) do nothing
-        if broadcast.status in ("completed", "failed") or (broadcast.status == "paused" and broadcast.pause_reason in ("quality_low", "number_disconnected")):
+        # Finished broadcasts, quality, disconnect and workspace inactive (suspended) pauses (only Resume restarts those) do nothing
+        if broadcast.status in ("completed", "failed") or (broadcast.status == "paused" and broadcast.pause_reason in ("quality_low", "number_disconnected", "workspace_inactive", "workspace_suspended")):
             db.rollback()
+            return
+
+        # Workspace is inactive (suspended): pause this broadcast right away
+        org = db.query(Organization).filter(Organization.id == broadcast.organization_id).first()
+        if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
+            _pause(broadcast, "workspace_inactive")
+            broadcast.dispatch_token = None
+            db.commit()
+            print(f"[BROADCAST] {broadcast.id}: paused, workspace {broadcast.organization_id} is inactive (suspended)")
             return
 
         number = db.query(WhatsAppNumber).filter(

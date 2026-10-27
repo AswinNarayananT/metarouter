@@ -216,3 +216,25 @@ def tier_capacity(db: Session, number: WhatsAppNumber) -> dict:
         resume_at = oldest.replace(tzinfo=timezone.utc) + timedelta(hours=24, minutes=1)
 
     return {"limit": limit, "used": used, "remaining": remaining, "resume_at": resume_at}
+
+
+def pause_workspace_broadcasts(db: Session, organization_id: int, reason: str = "workspace_inactive") -> int:
+    """
+    Pauses all queued, sending, or paused broadcasts of a workspace when it is inactive (suspended).
+    """
+    from app.models.broadcast_model import Broadcast
+
+    broadcasts = db.query(Broadcast).filter(
+        Broadcast.organization_id == organization_id,
+        Broadcast.status.in_(["queued", "sending", "paused"])
+    ).all()
+
+    for broadcast in broadcasts:
+        broadcast.status = "paused"
+        broadcast.pause_reason = reason
+        broadcast.paused_at = datetime.now(timezone.utc)
+        broadcast.resume_at = None
+        broadcast.dispatch_token = None
+
+    db.flush()
+    return len(broadcasts)

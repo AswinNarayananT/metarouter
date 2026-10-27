@@ -11,3 +11,6 @@ from app.models.contact_model import ContactOptOut
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.notification_model import Notification
 from app.models.ticket_model import TicketGroup, Ticket, TicketActivity
+from app.models.organization_invitation_model import OrganizationInvitation
+from app.models.audit_log_model import AuditLog
+from app.models.platform_module_model import PlatformModule

@@ -12,8 +12,13 @@ from app.models.organization_model import User
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task
+from app.core.features import require_feature
 
-router = APIRouter(prefix="/ai-settings", tags=["AI Settings & Knowledge"])
+router = APIRouter(
+    prefix="/ai-settings",
+    tags=["AI Settings & Knowledge"],
+    dependencies=[Depends(require_feature("ai_assistant"))]
+)
 
 VALID_HANDOVER_ROLES = {"admin", "manager", "service"}
 DEFAULT_BOT_NAME = "Support Assistant"

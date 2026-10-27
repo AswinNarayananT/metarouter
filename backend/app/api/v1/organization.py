@@ -5,6 +5,7 @@ from app.core.deps import get_db, get_current_workspace_user
 from app.models.organization_model import Organization, User
 from app.schemas.workspace_schema import TeamMemberResponse
 from app.schemas.auth_schema import UpdateNameRequest
+from app.core.features import require_feature
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
@@ -31,11 +32,15 @@ def get_current_organization(
             detail="Workspace not found"
         )
         
+    from app.core.features import get_organization_features
+    features = get_organization_features(db, organization.id)
+
     return {
         "id": organization.id,
         "name": organization.name,
         "slug": organization.slug,
-        "created_at": organization.created_at
+        "created_at": organization.created_at,
+        "features": features,
     }
 
 
@@ -55,7 +60,7 @@ def list_organization_members(
     )
 
 
-@router.patch("/current", response_model=dict)
+@router.patch("/current", response_model=dict, dependencies=[Depends(require_feature("settings"))])
 def update_current_organization(
     payload: UpdateNameRequest,
     db: Session = Depends(get_db),

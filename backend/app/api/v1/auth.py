@@ -9,6 +9,7 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.deps import get_current_workspace_user, token_issued_after_reset, ensure_workspace_active, WORKSPACE_SUSPENDED_ERROR
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
 from app.core.token_blacklist import blacklist_token, is_token_revoked, rotation_marker
+from app.core.features import get_organization_features
 from app.schemas.auth_schema import WorkspaceLoginRequest, WorkspaceLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest
 
 router = APIRouter(prefix="/auth", tags=["Workspace Authentication"])
@@ -70,6 +71,8 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
     # 4. Set Refresh Token in an HTTP-only Cookie
     _set_refresh_cookie(response, refresh_token)
 
+    features = get_organization_features(db, org.id)
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -78,8 +81,9 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
             "name": user.name,
             "email": user.email,
             "role": user.role,
-            "organization_id":org.id,
-            "organization_name": org.name
+            "organization_id": org.id,
+            "organization_name": org.name,
+            "features": features,
         }
     }
 
@@ -177,6 +181,7 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
 
     org = ensure_workspace_active(db, org_id)
+    features = get_organization_features(db, org.id) if org else {}
     
     return {
         "user": {
@@ -184,8 +189,9 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
             "name": user.name,
             "email": user.email,
             "role": user.role,
-            "organization_id":org.id if org else None,
-            "organization_name": org.name if org else None
+            "organization_id": org.id if org else None,
+            "organization_name": org.name if org else None,
+            "features": features,
         }
     }
 

@@ -9,6 +9,7 @@ import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
 import { markNotificationsRead } from '@/store/notifications/notificationThunks';
 import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
+import { useReplyWindowOpen } from '@/hooks/useReplyWindow';
 import { AssignMenu } from '@/components/chat/AssignMenu';
 import { TicketChip } from '@/components/chat/TicketChip';
 import { TicketHint } from '@/components/chat/TicketHint';
@@ -23,6 +24,7 @@ import { DocumentViewer } from '@/components/chat/DocumentViewer';
 import { EmptyChatState } from '@/components/chat/EmptyChatState';
 import { MessageList } from '@/components/chat/MessageList';
 import { TakeoverBanner } from '@/components/chat/TakeoverBanner';
+import { WindowNoticeBanner } from '@/components/chat/WindowNoticeBanner';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const COUNTS_REFRESH_MS = 1500;
@@ -182,8 +184,9 @@ export function CustomerChats() {
     if (selected) dispatch(assignConversation({ conversationId: selected.id, userId }));
   };
 
-  // WhatsApp allows free text only within 24 hours of the customer's last message
-  const windowClosed = selected ? !selected.windowOpen : false;
+  // WhatsApp allows free text only within 24 hours of the customer's last message (closes live, with the badge)
+  const windowOpenNow = useReplyWindowOpen(selected?.windowOpen ?? false, selected?.windowExpiresAt ?? null);
+  const windowClosed = selected ? !windowOpenNow : false;
   // After the agent replied in a chat with an open ticket: suggest handing back so the AI closes it
   const lastRealMessage = selected ? [...selected.messages].reverse().find((m) => m.sender !== 'system') : undefined;
   const canHandleChat = Boolean(selected && (selected.assignedTo?.id === currentUserId || isSupervisor));
@@ -237,6 +240,14 @@ export function CustomerChats() {
               onBack={() => setMobileView('list')}
               onToggleTakeover={toggleTakeover}
               onToggleContact={() => setPanel((p) => (p?.type === 'contact' ? null : { type: 'contact' }))}
+              onOpenTemplates={
+                ownedByOther
+                  ? undefined
+                  : () => {
+                      dispatch(clearChatActionError());
+                      setTemplateOpen(true);
+                    }
+              }
               assignControl={
                 <>
                 {selected.openTicket && <TicketChip ticket={selected.openTicket} />}
@@ -267,6 +278,15 @@ export function CustomerChats() {
                 onCloseTicket={() => setClosingTicket(true)}
               />
             )}
+            <WindowNoticeBanner
+              windowOpen={selected.windowOpen}
+              windowExpiresAt={selected.windowExpiresAt}
+              disabled={ownedByOther}
+              onOpenTemplates={() => {
+                dispatch(clearChatActionError());
+                setTemplateOpen(true);
+              }}
+            />
             <Composer
               value={draft}
               onChange={setDraft}

@@ -6,12 +6,16 @@ class WorkspaceLoginRequest(BaseModel):
     password: str
     org_slug: str  # Extracted from subdomain or input context
 
+from typing import Optional, Dict
+
 class WorkspaceUserResponse(BaseModel):
     id: int
     name: str
     email: str
     role: str
     organization_name: str
+    organization_id: Optional[int] = None
+    features: Optional[Dict[str, bool]] = None
 
 class WorkspaceLoginResponse(BaseModel):
     access_token: str

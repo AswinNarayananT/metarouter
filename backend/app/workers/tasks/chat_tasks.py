@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.workers.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
+from app.models.organization_model import Organization
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.contact_model import ContactOptOut
 from app.config import settings
@@ -91,6 +92,10 @@ def process_chat_message_task(
         # Disconnected number: keep the message (and STOP/START), but nothing can be sent back
         disconnected = number.status == "disconnected"
 
+        # Check if the workspace is inactive (suspended)
+        org = db.query(Organization).filter(Organization.id == organization_id).first()
+        is_inactive = (not org) or (org.subscription_status == "inactive") or (org.subscription_status != "active")
+
         # 1. Get or create conversation, and keep the customer's name / id / ad up to date
         conversation = _get_or_create_conversation(db, organization_id, phone_number_id, customer_phone)
         update_customer_profile(db, conversation, customer_name, customer_user_id, referral)
@@ -121,14 +126,14 @@ def process_chat_message_task(
                     db.commit()
                 except IntegrityError:
                     db.rollback()  # Already opted out by a parallel message
-            if not disconnected:
+            if not disconnected and not is_inactive:
                 queue_outgoing_message(db, conversation, sender="model", content=OPT_OUT_CONFIRMATION_TEXT)
             return
 
         if keyword in opt_in_keywords:
             db.query(ContactOptOut).filter(ContactOptOut.organization_id == organization_id, ContactOptOut.customer_phone == customer_phone).delete()
             db.commit()
-            if not disconnected:
+            if not disconnected and not is_inactive:
                 queue_outgoing_message(db, conversation, sender="model", content=OPT_IN_CONFIRMATION_TEXT)
             return
 
@@ -144,7 +149,12 @@ def process_chat_message_task(
             print(f"[WEBHOOK] {phone_number_id} is disconnected; saved the message without an AI reply")
             return
 
-        # 6. Generate and send the AI reply (not for messages with nothing to answer, e.g. an unsupported type)
+        # 6. Inactive (suspended) workspace: save incoming messages, but send no AI reply
+        if is_inactive:
+            print(f"[WEBHOOK] Workspace {organization_id} is inactive (suspended); saved the message without an AI reply")
+            return
+
+        # 7. Generate and send the AI reply (not for messages with nothing to answer, e.g. an unsupported type)
         if ai_reply:
             reply_with_ai(db, conversation, user_text)
 
@@ -153,6 +163,12 @@ def process_chat_message_task(
 
 
 def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
+    # Inactive (suspended) workspace: send no AI reply
+    org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
+    if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
+        print(f"[AI REPLY] Workspace {conversation.organization_id} is inactive (suspended); skipping AI reply")
+        return
+
     # 1. Generate AI reply
     ai_raw_reply = generate_ai_response(db, conversation, user_text)
 

@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Dict
@@ -12,6 +13,12 @@ def get_password_hash(password: str) -> str:
     pwd_bytes = password.encode("utf-8")[:72]
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
+
+def hash_invite_token(token: str) -> str:
+    # Invite links are stored only as a SHA-256 hash: a database leak can't be used to claim a workspace
+    # (the link is random and single-use, so a fast hash is enough; bcrypt is for passwords people choose)
+    return hashlib.sha256(token.encode()).hexdigest()
+
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()

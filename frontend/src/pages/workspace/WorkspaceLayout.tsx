@@ -16,9 +16,10 @@ import {
   Menu,
   X,
   Route,
+  ShoppingBag,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { logoutWorkspaceSession } from '@/store/workspace/workspaceThunks';
+import { logoutWorkspaceSession, fetchCurrentUser, fetchOrganization } from '@/store/workspace/workspaceThunks';
 import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { DisconnectedNumberBanner } from '@/components/channels/DisconnectedNumberBanner';
 import { LiveStatus } from '@/components/realtime/LiveStatus';
@@ -26,6 +27,7 @@ import { HandoverAlerts } from '@/components/realtime/HandoverAlerts';
 import { NotificationBell } from '@/components/realtime/NotificationBell';
 import { useRealtimeConnection } from '@/hooks/useRealtime';
 import { useChatListRealtimeSync, useNotificationsRealtimeSync } from '@/hooks/useChatRealtime';
+import { useFeatureFlags } from '@/hooks/useFeatureFlag';
 
 export function WorkspaceLayout() {
   const dispatch = useAppDispatch();
@@ -37,10 +39,22 @@ export function WorkspaceLayout() {
   const isAdmin = user?.role === 'admin';
   const numbers = useAppSelector((state) => state.broadcast.numbers);
 
-  // Load the workspace's numbers once so a disconnected one shows a banner on every page
+  const features = useFeatureFlags();
+
+  // Sync workspace numbers and feature flags on mount and whenever user switches back to this tab
   useEffect(() => {
-    dispatch(fetchWhatsAppNumbers());
-  }, [dispatch]);
+    if (features.channels !== false) {
+      dispatch(fetchWhatsAppNumbers());
+    }
+    dispatch(fetchCurrentUser());
+    dispatch(fetchOrganization());
+
+    const handleFocus = () => {
+      dispatch(fetchCurrentUser());
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [dispatch, features.channels]);
 
   // One live-updates socket for every workspace page (closed on logout), keeping the chat list current
   useRealtimeConnection();
@@ -49,33 +63,35 @@ export function WorkspaceLayout() {
 
   // Desktop: collapse to icon rail. Mobile: slide-over drawer.
   const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  // Close the mobile drawer whenever the route changes
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [location.pathname]);
+  // The drawer remembers the page it was opened on, so a route change closes it
+  const [mobileOpenPath, setMobileOpenPath] = useState<string | null>(null);
+  const mobileOpen = mobileOpenPath === location.pathname;
+  const setMobileOpen = (open: boolean) => setMobileOpenPath(open ? location.pathname : null);
 
   const handleLogout = async () => {
     await dispatch(logoutWorkspaceSession());
     navigate('/login');
   };
 
-  const navItems = [
-    { label: 'Overview', path: '/dashboard', icon: LayoutDashboard },
-    ...(isAdmin
-      ? [
-          { label: 'Channels', path: '/dashboard/channels', icon: Cable },
-          { label: 'AI Assistant', path: '/dashboard/ai-settings', icon: Bot },
-        ]
-      : []),
-    { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare },
-    { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket },
-    ...(isAdmin ? [{ label: 'Broadcast', path: '/dashboard/broadcast', icon: Send }] : []),
-    { label: 'Team Members', path: '/dashboard/members', icon: Users },
-    ...(isAdmin ? [{ label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus }] : []),
-    { label: 'Settings', path: '/dashboard/settings', icon: Settings },
+  const allNavItems = [
+    { label: 'Overview', path: '/dashboard', icon: LayoutDashboard, feature: 'overview' },
+    { label: 'Orders', path: '/dashboard/orders', icon: ShoppingBag, feature: 'orders' },
+    { label: 'Channels', path: '/dashboard/channels', icon: Cable, feature: 'channels', adminOnly: true },
+    { label: 'AI Assistant', path: '/dashboard/ai-settings', icon: Bot, feature: 'ai_assistant', adminOnly: true },
+    { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare, feature: 'customer_chats' },
+    { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket, feature: 'tickets' },
+    { label: 'Broadcast', path: '/dashboard/broadcast', icon: Send, feature: 'broadcasts', adminOnly: true },
+    { label: 'Team Members', path: '/dashboard/members', icon: Users, feature: 'team_members' },
+    { label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus, feature: 'invite_members', adminOnly: true },
+    { label: 'Settings', path: '/dashboard/settings', icon: Settings, feature: 'settings' },
   ];
+
+  const navItems = allNavItems.filter((item) => {
+    if (item.adminOnly && !isAdmin) return false;
+    // Same rule as the page guard and the backend: a module the server didn't report as enabled is hidden
+    if (item.feature && !features[item.feature]) return false;
+    return true;
+  });
 
   const isItemActive = (path: string) =>
     path === '/dashboard'

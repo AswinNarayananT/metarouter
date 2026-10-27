@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { TypedUseSelectorHook } from 'react-redux';
 import superAdminReducer from './superAdmin/superAdminSlice';
 import organizationReducer from './superAdmin/organizationSlice';
+import auditLogReducer from './superAdmin/auditLogSlice';
 import workspaceReducer from './workspace/workspaceSlice';
 import broadcastReducer from './broadcast/broadcastSlice';
 import knowledgeReducer from './knowledge/knowledgeSlice';
@@ -14,6 +15,7 @@ export const store = configureStore({
   reducer: {
     superAdmin: superAdminReducer,
     organizations: organizationReducer,
+    auditLogs: auditLogReducer,
     workspace: workspaceReducer,
     broadcast: broadcastReducer,
     knowledge: knowledgeReducer,

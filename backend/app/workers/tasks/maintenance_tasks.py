@@ -9,6 +9,7 @@ from app.realtime.notify import notify_attachment_updated
 from app.models.conversation_model import ChatMessage, MessageStatus, Conversation, ConversationStatus
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.whatsapp_model import WhatsAppNumber
+from app.models.organization_model import Organization
 from app.services.whatsapp_service import get_phone_number_status, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task, pause_number_broadcasts, retry_marker_key
@@ -32,8 +33,16 @@ IDLE_TICKETS_PER_SWEEP = 50  # Each close makes one AI labelling call
 def refresh_whatsapp_numbers_task():
     db = SessionLocal()
     try:
-        # Disconnected numbers are skipped until they are reconnected
-        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.status == "connected").all()
+        # Disconnected numbers and suspended workspaces are skipped
+        numbers = (
+            db.query(WhatsAppNumber)
+            .join(Organization, WhatsAppNumber.organization_id == Organization.id)
+            .filter(
+                WhatsAppNumber.status == "connected",
+                Organization.subscription_status == "active"
+            )
+            .all()
+        )
         updated = 0
 
         for number in numbers:
@@ -71,21 +80,30 @@ def refresh_whatsapp_numbers_task():
 def sweep_stuck_messages_task():
     db = SessionLocal()
     try:
-        # 1. Outgoing messages still pending well after they were queued
+        # 1. Outgoing messages still pending well after they were queued (skip suspended workspaces)
         stuck_before = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=settings.STUCK_MESSAGE_MINUTES)
-        rows = db.query(ChatMessage.id).filter(
-            ChatMessage.status == MessageStatus.PENDING,
-            ChatMessage.created_at < stuck_before
-        ).order_by(ChatMessage.id).limit(STUCK_MESSAGES_PER_SWEEP).all()
+        rows = (
+            db.query(ChatMessage.id)
+            .join(Conversation, ChatMessage.conversation_id == Conversation.id)
+            .join(Organization, Conversation.organization_id == Organization.id)
+            .filter(
+                ChatMessage.status == MessageStatus.PENDING,
+                ChatMessage.created_at < stuck_before,
+                Organization.subscription_status == "active"
+            )
+            .order_by(ChatMessage.id)
+            .limit(STUCK_MESSAGES_PER_SWEEP)
+            .all()
+        )
         message_ids = [r.id for r in rows]
 
-        # 2. Leave messages held back on purpose by a quality- or disconnect-paused broadcast
+        # 2. Leave messages held back on purpose by a quality-, disconnect-, or suspended-paused broadcast
         held = set()
         if message_ids:
             held_rows = db.query(BroadcastRecipient.chat_message_id).join(Broadcast, Broadcast.id == BroadcastRecipient.broadcast_id).filter(
                 BroadcastRecipient.chat_message_id.in_(message_ids),
                 Broadcast.status == "paused",
-                Broadcast.pause_reason.in_(["quality_low", "number_disconnected"])
+                Broadcast.pause_reason.in_(["quality_low", "number_disconnected", "workspace_inactive", "workspace_suspended"])
             ).all()
             held = {r.chat_message_id for r in held_rows}
 
@@ -101,11 +119,17 @@ def sweep_stuck_messages_task():
         if requeued:
             print(f"[SWEEP] re-queued {requeued} stuck messages")
 
-        # 4. Knowledge PDFs still processing well after upload / retry (e.g. the worker restarted)
-        stuck_documents = db.query(KnowledgeDocument.id).filter(
-            KnowledgeDocument.status == "processing",
-            KnowledgeDocument.processing_started_at < datetime.now(timezone.utc) - timedelta(minutes=settings.STUCK_MESSAGE_MINUTES)
-        ).all()
+        # 4. Knowledge PDFs still processing well after upload / retry (skip suspended workspaces)
+        stuck_documents = (
+            db.query(KnowledgeDocument.id)
+            .join(Organization, KnowledgeDocument.organization_id == Organization.id)
+            .filter(
+                KnowledgeDocument.status == "processing",
+                KnowledgeDocument.processing_started_at < datetime.now(timezone.utc) - timedelta(minutes=settings.STUCK_MESSAGE_MINUTES),
+                Organization.subscription_status == "active"
+            )
+            .all()
+        )
         for row in stuck_documents:
             if redis_client.exists(knowledge_retry_marker_key(row.id)):
                 continue
@@ -113,12 +137,20 @@ def sweep_stuck_messages_task():
             process_knowledge_document_task.delay(row.id)
             print(f"[SWEEP] re-queued stuck knowledge document {row.id}")
 
-        # 5. Customer media still downloading / parsing well after it arrived (e.g. the worker restarted)
+        # 5. Customer media still downloading / parsing well after it arrived (skip suspended workspaces)
         now = datetime.now(timezone.utc)
-        attachments = db.query(ChatAttachment).filter(
-            ChatAttachment.created_at < now - timedelta(minutes=settings.STUCK_MESSAGE_MINUTES),
-            or_(ChatAttachment.download_status == "pending", (ChatAttachment.download_status == "done") & (ChatAttachment.parse_status == "pending"))
-        ).order_by(ChatAttachment.id).limit(STUCK_MESSAGES_PER_SWEEP).all()
+        attachments = (
+            db.query(ChatAttachment)
+            .join(Organization, ChatAttachment.organization_id == Organization.id)
+            .filter(
+                ChatAttachment.created_at < now - timedelta(minutes=settings.STUCK_MESSAGE_MINUTES),
+                or_(ChatAttachment.download_status == "pending", (ChatAttachment.download_status == "done") & (ChatAttachment.parse_status == "pending")),
+                Organization.subscription_status == "active"
+            )
+            .order_by(ChatAttachment.id)
+            .limit(STUCK_MESSAGES_PER_SWEEP)
+            .all()
+        )
 
         too_old_before = now - timedelta(hours=settings.STUCK_MEDIA_MAX_AGE_HOURS)
         for attachment in attachments:
@@ -156,16 +188,30 @@ def resume_due_broadcasts_task():
     try:
         now = datetime.now(timezone.utc)
 
-        # 1. Tier pauses whose 24-hour window has freed up
-        due = db.query(Broadcast).filter(
-            Broadcast.status == "paused",
-            Broadcast.pause_reason == "tier_limit",
-            Broadcast.resume_at <= now
-        ).all()
+        # 1. Tier pauses whose 24-hour window has freed up (skip suspended workspaces)
+        due = (
+            db.query(Broadcast)
+            .join(Organization, Broadcast.organization_id == Organization.id)
+            .filter(
+                Broadcast.status == "paused",
+                Broadcast.pause_reason == "tier_limit",
+                Broadcast.resume_at <= now,
+                Organization.subscription_status == "active"
+            )
+            .all()
+        )
 
-        # 2. Sending broadcasts that stopped making progress (their next batch job was lost)
+        # 2. Sending broadcasts that stopped making progress (skip suspended workspaces)
         stalled_before = now.replace(tzinfo=None) - timedelta(minutes=settings.STALLED_BROADCAST_MINUTES)
-        sending = db.query(Broadcast).filter(Broadcast.status.in_(["queued", "sending"])).all()
+        sending = (
+            db.query(Broadcast)
+            .join(Organization, Broadcast.organization_id == Organization.id)
+            .filter(
+                Broadcast.status.in_(["queued", "sending"]),
+                Organization.subscription_status == "active"
+            )
+            .all()
+        )
         stalled = []
         completed = 0
         for broadcast in sending:
@@ -213,17 +259,26 @@ def resume_due_broadcasts_task():
 def close_idle_tickets_task():
     db = SessionLocal()
     try:
-        # 1. Tickets the AI is handling whose chat has had no message for a while (customer stopped replying)
+        # 1. Tickets the AI is handling whose chat has had no message for a while (skip suspended workspaces)
         #    Team tickets (open / in progress / waiting) are never closed automatically
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=settings.TICKET_IDLE_CLOSE_HOURS)
         last_activity = db.query(ChatMessage.conversation_id, func.max(ChatMessage.created_at).label("last_at")).filter(
             ChatMessage.sender != "system"
         ).group_by(ChatMessage.conversation_id).subquery()
 
-        tickets = db.query(Ticket).join(last_activity, last_activity.c.conversation_id == Ticket.conversation_id).filter(
-            Ticket.status == "ai_handling",
-            last_activity.c.last_at < cutoff
-        ).order_by(Ticket.id).limit(IDLE_TICKETS_PER_SWEEP).all()
+        tickets = (
+            db.query(Ticket)
+            .join(last_activity, last_activity.c.conversation_id == Ticket.conversation_id)
+            .join(Organization, Ticket.organization_id == Organization.id)
+            .filter(
+                Ticket.status == "ai_handling",
+                last_activity.c.last_at < cutoff,
+                Organization.subscription_status == "active"
+            )
+            .order_by(Ticket.id)
+            .limit(IDLE_TICKETS_PER_SWEEP)
+            .all()
+        )
 
         # 2. File and close each one (one failing doesn't stop the rest)
         for ticket in tickets:
@@ -246,18 +301,22 @@ def remind_unassigned_chats_task():
 
     db = SessionLocal()
     try:
-        # 1. Chats the team has to pick up (handed over, nobody owns them), with when their ticket was handed over
+        # 1. Chats the team has to pick up (handed over, nobody owns them), with when their ticket was handed over (skip suspended workspaces)
         handed_over = db.query(TicketActivity.ticket_id, func.max(TicketActivity.id).label("activity_id"), func.max(TicketActivity.created_at).label("at")).filter(
             TicketActivity.type == "escalated"
         ).group_by(TicketActivity.ticket_id).subquery()
-        rows = db.query(Conversation, handed_over.c.activity_id, handed_over.c.at).join(
-            Ticket, (Ticket.conversation_id == Conversation.id) & (Ticket.status != "closed")
-        ).join(
-            handed_over, handed_over.c.ticket_id == Ticket.id
-        ).filter(
-            Conversation.status == ConversationStatus.HUMAN_TAKEOVER,
-            Conversation.assigned_user_id.is_(None)
-        ).all()
+        rows = (
+            db.query(Conversation, handed_over.c.activity_id, handed_over.c.at)
+            .join(Ticket, (Ticket.conversation_id == Conversation.id) & (Ticket.status != "closed"))
+            .join(handed_over, handed_over.c.ticket_id == Ticket.id)
+            .join(Organization, Conversation.organization_id == Organization.id)
+            .filter(
+                Conversation.status == ConversationStatus.HUMAN_TAKEOVER,
+                Conversation.assigned_user_id.is_(None),
+                Organization.subscription_status == "active"
+            )
+            .all()
+        )
 
         now = datetime.now(timezone.utc)
         for conversation, activity_id, handed_over_at in rows:
@@ -286,12 +345,18 @@ def remind_unassigned_chats_task():
 def clean_old_notifications_task():
     db = SessionLocal()
     try:
-        # 1. Read notifications older than the retention period (unread ones are never deleted)
+        # 1. Read notifications older than the retention period (unread ones are never deleted; skip suspended workspaces)
         cutoff = datetime.now(timezone.utc) - timedelta(days=settings.NOTIFICATION_RETENTION_DAYS)
-        deleted = db.query(Notification).filter(
-            Notification.read_at.isnot(None),
-            Notification.created_at < cutoff
-        ).delete(synchronize_session=False)
+        active_org_ids = db.query(Organization.id).filter(Organization.subscription_status == "active").subquery()
+        deleted = (
+            db.query(Notification)
+            .filter(
+                Notification.organization_id.in_(active_org_ids),
+                Notification.read_at.isnot(None),
+                Notification.created_at < cutoff
+            )
+            .delete(synchronize_session=False)
+        )
         db.commit()
 
         if deleted:

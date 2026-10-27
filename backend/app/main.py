@@ -7,6 +7,8 @@ from app.database import SessionLocal
 from app.core.init_db import init_super_admin
 from app.api.v1.super_admin.auth import router as super_admin_auth_router
 from app.api.v1.super_admin.organizations import router as super_admin_organizations_router
+from app.api.v1.super_admin.audit_logs import router as super_admin_audit_logs_router
+from app.api.v1.super_admin.modules import router as super_admin_modules_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.organization import router as organization_router
 from app.api.v1.invitations import router as invitations_router
@@ -20,6 +22,7 @@ from app.api.v1.conversations import router as conversations_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.tickets import router as tickets_router
 from app.api.v1.overview import router as overview_router
+from app.api.v1.onboarding import router as onboarding_router
 from app.realtime.events import listen_for_events
 
 @asynccontextmanager
@@ -61,6 +64,8 @@ app.add_middleware(
 
 app.include_router(super_admin_auth_router, prefix="/api/v1")
 app.include_router(super_admin_organizations_router, prefix="/api/v1")
+app.include_router(super_admin_audit_logs_router, prefix="/api/v1")
+app.include_router(super_admin_modules_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(organization_router, prefix="/api/v1")
 app.include_router(invitations_router, prefix="/api/v1")
@@ -74,6 +79,7 @@ app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
 app.include_router(tickets_router, prefix="/api/v1")
 app.include_router(overview_router, prefix="/api/v1")
+app.include_router(onboarding_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():

@@ -23,6 +23,7 @@ from app.services.whatsapp_service import (
 )
 from app.models.contact_model import ContactOptOut
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
+from app.models.organization_model import Organization
 from app.core.redis_client import redis_client
 from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.realtime.notify import notify_message_status
@@ -38,6 +39,7 @@ RETRY_BASE_SECONDS = 30
 PAIR_RATE_LIMIT_BASE_SECONDS = 120
 # WhatsApp only allows free-form replies within 24 hours of the customer's last message
 CUSTOMER_SERVICE_WINDOW = timedelta(hours=24)
+WORKSPACE_SUSPENDED_ERROR = "Not sent: the workspace was suspended"
 
 
 def _mark_failed(db: Session, message: ChatMessage, error: str) -> None:
@@ -94,6 +96,26 @@ def send_whatsapp_message_task(self, message_id: int):
             if _is_broadcast_message(db, message):
                 return
             _mark_failed(db, message, NUMBER_DISCONNECTED_ERROR)
+            return
+
+        # Inactive (suspended) workspace: no messages sent; broadcast messages pause with workspace_inactive
+        org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
+        if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
+            if _is_broadcast_message(db, message):
+                recipient = db.query(BroadcastRecipient).filter(BroadcastRecipient.chat_message_id == message.id).first()
+                broadcast = recipient.broadcast if recipient else None
+                if broadcast and (broadcast.status != "paused" or broadcast.pause_reason not in ("workspace_inactive", "workspace_suspended")):
+                    broadcast.status = "paused"
+                    broadcast.pause_reason = "workspace_inactive"
+                    broadcast.paused_at = datetime.now(timezone.utc)
+                    broadcast.resume_at = None
+                    broadcast.dispatch_token = None
+                    db.commit()
+                    print(f"[BROADCAST] {broadcast.id}: paused, workspace {conversation.organization_id} is inactive (suspended)")
+                return
+            # A normal reply is failed, not left pending: otherwise the stuck-message sweeper would send it
+            # (possibly days late) as soon as the workspace is reactivated
+            _mark_failed(db, message, WORKSPACE_SUSPENDED_ERROR)
             return
 
         if message.message_type == "template":

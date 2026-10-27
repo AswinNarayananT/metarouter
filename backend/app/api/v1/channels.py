@@ -11,8 +11,13 @@ from app.schemas.channel_schema import ConnectWhatsAppRequest
 from app.services.channel_service import disconnect_explanation, MANUAL_DISCONNECT_SUBCODE
 from app.services.whatsapp_service import exchange_signup_code, granted_waba_ids, waba_phone_number_ids, phone_number_details, register_phone_number, deregister_phone_number, subscribe_app_to_waba, unsubscribe_app_from_waba, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.workers.tasks.whatsapp_tasks import pause_number_broadcasts
+from app.core.features import require_feature
 
-router = APIRouter(prefix="/channels", tags=["Channels"])
+router = APIRouter(
+    prefix="/channels",
+    tags=["Channels"],
+    dependencies=[Depends(require_feature("channels"))]
+)
 
 
 def _require_admin(user: User):

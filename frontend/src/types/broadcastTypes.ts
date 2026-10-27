@@ -53,7 +53,7 @@ export interface BroadcastPreview extends AudienceCounts {
 
 export type AudienceSource = 'customers' | 'contacts';
 export type BroadcastStatus = 'queued' | 'sending' | 'paused' | 'completed' | 'failed';
-export type PauseReason = 'quality_low' | 'tier_limit' | 'number_disconnected';
+export type PauseReason = 'quality_low' | 'tier_limit' | 'number_disconnected' | 'workspace_inactive' | 'workspace_suspended';
 export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export type DeliveryCounts = Record<DeliveryStatus, number>;

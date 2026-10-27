@@ -1,59 +1,33 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { AlertCircle, Building2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Building2, CheckCircle2, Clock, Mail, RotateCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Card, Container } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { createOrganization } from '@/store/superAdmin/organizationThunks';
-import { clearOrganizationError } from '@/store/superAdmin/organizationSlice';
-import { emailField, fieldError, nameField } from '@/validation/schemas';
+import { createOrganizationInvite, fetchOrganizationInvites, revokeOrganizationInvite } from '@/store/superAdmin/organizationThunks';
+import { clearOrganizationError, clearLastInvitation } from '@/store/superAdmin/organizationSlice';
+import { emailField, fieldError } from '@/validation/schemas';
+import type { OrganizationInvitation } from '@/types/organizationTypes';
 
-function toSlug(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 80);
+interface InviteFormValues {
+  email: string;
+  organization_name: string;
+  expires_in_days: number;
 }
 
-interface CreateOrganizationValues {
-  name: string;
-  slug: string;
-  support_email: string;
-  support_phone: string;
-  admin_name: string;
-  admin_email: string;
-  admin_password: string;
-}
-
-// Mirrors the backend OrganizationCreateRequest constraints
-const schema = Yup.object({
-  name: nameField('Organization name'),
-  slug: Yup.string()
-    .trim()
-    .test('slug-length', 'Slug must be between 2 and 80 characters', (value) => {
-      if (!value) return true; // optional — derived from the name when empty
-      const slug = toSlug(value);
-      return slug.length >= 2 && slug.length <= 80;
-    }),
-  support_email: emailField('Support email'),
-  support_phone: Yup.string()
-    .trim()
-    .required('Support phone is required')
-    .matches(/^\+?[\d\s()-]+$/, 'Phone can only contain digits, spaces, +, - and ()')
-    .min(6, 'Phone must be at least 6 characters')
-    .max(32, 'Phone must be 32 characters or less'),
-  admin_name: nameField('Admin name'),
-  admin_email: emailField('Admin email'),
-  admin_password: Yup.string()
-    .required('Admin password is required')
-    .min(8, 'Password must be at least 8 characters')
-    .max(128, 'Password must be 128 characters or less'),
+const inviteSchema = Yup.object({
+  email: emailField('Client admin email'),
+  organization_name: Yup.string().trim().max(120, 'Organization name must be 120 characters or less'),
+  expires_in_days: Yup.number().required().min(1).max(30),
 });
+
+const EXPIRY_OPTIONS = [
+  { label: '24 Hours', days: 1 },
+  { label: '3 Days', days: 3 },
+  { label: '7 Days', days: 7 },
+];
 
 const inputClass =
   'w-full px-4 py-2.5 bg-surface border rounded-xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 text-sm transition-all';
@@ -70,223 +44,262 @@ function FieldMessage({ error }: { error?: string }) {
   return error ? <p className="mt-1 text-xs text-error">{error}</p> : null;
 }
 
+/**
+ * New organization = an emailed invitation. The client admin opens the link, names the workspace and sets their
+ * own password; the super admin never sees the password or the link (the server stores only a hash of it).
+ */
 export function CreateOrganizationPage() {
   const dispatch = useAppDispatch();
-  const navigate = useNavigate();
-  const { isSaving, error } = useAppSelector((state) => state.organizations);
-  const [passwordVisible, setPasswordVisible] = useState(false);
+  const { isInviting, lastInvitation, invitations, error } = useAppSelector((state) => state.organizations);
+  const [resendingId, setResendingId] = useState<number | null>(null);
+  // Expiry is judged against when the page was opened (render must not read the clock)
+  const [openedAt] = useState(() => Date.now());
 
   useEffect(() => {
     dispatch(clearOrganizationError());
+    dispatch(clearLastInvitation());
+    dispatch(fetchOrganizationInvites());
   }, [dispatch]);
 
-  const formik = useFormik<CreateOrganizationValues>({
-    initialValues: {
-      name: '',
-      slug: '',
-      support_email: '',
-      support_phone: '',
-      admin_name: '',
-      admin_email: '',
-      admin_password: '',
-    },
-    validationSchema: schema,
-    onSubmit: async (values) => {
+  const inviteFormik = useFormik<InviteFormValues>({
+    initialValues: { email: '', organization_name: '', expires_in_days: 3 },
+    validationSchema: inviteSchema,
+    onSubmit: async (values, { resetForm }) => {
       dispatch(clearOrganizationError());
-      const slug = values.slug.trim() ? toSlug(values.slug) : toSlug(values.name);
       const result = await dispatch(
-        createOrganization({
-          name: values.name.trim(),
-          slug: slug || undefined,
-          support_email: values.support_email.trim(),
-          support_phone: values.support_phone.trim(),
-          admin_name: values.admin_name.trim(),
-          admin_email: values.admin_email.trim(),
-          admin_password: values.admin_password,
-        }),
+        createOrganizationInvite({
+          email: values.email.trim(),
+          organization_name: values.organization_name.trim() || undefined,
+          expires_in_days: Number(values.expires_in_days),
+        })
       );
-
-      if (createOrganization.fulfilled.match(result)) {
-        navigate(`/admin/organizations/${result.payload.id}`, {
-          state: { adminPassword: result.payload.admin_password, justCreated: true },
-        });
-      }
+      if (createOrganizationInvite.fulfilled.match(result)) resetForm();
     },
   });
 
-  const { values } = formik;
-  const previewSlug = values.slug.trim() ? toSlug(values.slug) : toSlug(values.name);
-  const err = (name: keyof CreateOrganizationValues) => fieldError(formik, name);
-
-  const generatePassword = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*';
-    const generated = Array.from(crypto.getRandomValues(new Uint8Array(12)))
-      .map((n) => alphabet[n % alphabet.length])
-      .join('');
-    formik.setFieldValue('admin_password', generated);
-    formik.setFieldTouched('admin_password', true, false);
-    setPasswordVisible(true);
+  // Resend = a fresh link emailed to the same address (the old link stops working)
+  const resend = async (invite: OrganizationInvitation) => {
+    setResendingId(invite.id);
+    dispatch(clearOrganizationError());
+    await dispatch(
+      createOrganizationInvite({
+        email: invite.email,
+        organization_name: invite.organization_name || undefined,
+        expires_in_days: 3,
+      })
+    );
+    setResendingId(null);
   };
+
+  const isInviteExpired = (invite: OrganizationInvitation) => new Date(invite.expires_at).getTime() < openedAt;
 
   return (
     <Container size="md">
-      <div className="mb-8">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-4 border border-outline-variant/30">
+      <div className="mb-6">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-3 border border-outline-variant/30">
           <Building2 className="size-3.5" />
-          New organization
+          Workspace Management
         </div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Create organization</h1>
-        <p className="mt-2 text-on-surface-variant">
-          Provision a workspace and the first admin user. You will be able to copy credentials on the next screen.
+        <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">New Organization</h1>
+        <p className="mt-1.5 text-sm text-on-surface-variant">
+          Invite the client's administrator by email. They set up the workspace and choose their own password.
         </p>
       </div>
 
-      <Card variant="form" className="p-6 sm:p-8">
-        {error && (
-          <div className="mb-5 p-3 rounded-lg bg-error-container text-on-error-container text-sm flex items-center gap-2">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{error}</span>
-          </div>
+      {error && (
+        <div className="mb-6 p-3.5 rounded-xl bg-error/10 border border-error/20 text-error text-sm flex items-center gap-2.5">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="space-y-8">
+        {/* Sent: the link went to the admin's inbox, nothing to copy here */}
+        {lastInvitation && (
+          <Card variant="default" className="p-6 bg-primary/5 border-primary/30 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <div className="size-10 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                <CheckCircle2 className="size-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-on-surface">Invitation emailed</h3>
+                <p className="mt-1 text-xs text-on-surface-variant leading-relaxed">
+                  A setup link was sent to <strong>{lastInvitation.email}</strong>. It works once and expires on{' '}
+                  {new Date(lastInvitation.expires_at).toLocaleDateString()}. If it doesn't arrive, use <strong>Resend</strong> below.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end text-[11px] pt-1 border-t border-primary/10">
+              <button type="button" onClick={() => dispatch(clearLastInvitation())} className="text-primary hover:underline font-medium cursor-pointer">
+                Invite another client
+              </button>
+            </div>
+          </Card>
         )}
 
-        <form onSubmit={formik.handleSubmit} noValidate className="space-y-8">
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Building2 className="size-4 text-primary" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface">Organization</h2>
-            </div>
-            <div>
-              <label htmlFor="name" className={labelClass}>Organization name</label>
-              <input
-                id="name"
-                placeholder="Neurosta Labs"
-                aria-invalid={!!err('name')}
-                {...formik.getFieldProps('name')}
-                className={`${inputClass} ${borderClass(!!err('name'))}`}
-              />
-              <FieldMessage error={err('name')} />
-            </div>
-            <div>
-              <label htmlFor="slug" className={labelClass}>Workspace slug</label>
-              <input
-                id="slug"
-                placeholder={previewSlug || 'neurosta-labs'}
-                aria-invalid={!!err('slug')}
-                {...formik.getFieldProps('slug')}
-                className={`${inputClass} ${borderClass(!!err('slug'))} font-mono`}
-              />
-              {err('slug') ? (
-                <FieldMessage error={err('slug')} />
-              ) : (
-                <p className="mt-1.5 text-[11px] text-on-surface-variant">
-                  Login workspace: <span className="font-mono font-semibold text-primary">{previewSlug || '—'}</span>
-                </p>
-              )}
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="support_email" className={labelClass}>Support email</label>
-                <input
-                  id="support_email"
-                  type="email"
-                  placeholder="support@client.com"
-                  aria-invalid={!!err('support_email')}
-                  {...formik.getFieldProps('support_email')}
-                  className={`${inputClass} ${borderClass(!!err('support_email'))}`}
-                />
-                <FieldMessage error={err('support_email')} />
-              </div>
-              <div>
-                <label htmlFor="support_phone" className={labelClass}>Support phone</label>
-                <input
-                  id="support_phone"
-                  type="tel"
-                  placeholder="+91 98765 43210"
-                  aria-invalid={!!err('support_phone')}
-                  {...formik.getFieldProps('support_phone')}
-                  className={`${inputClass} ${borderClass(!!err('support_phone'))}`}
-                />
-                <FieldMessage error={err('support_phone')} />
-              </div>
-            </div>
-          </section>
+        <Card variant="form" className="p-6 sm:p-8">
+          <div className="mb-6 space-y-1">
+            <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
+              <Mail className="size-4 text-primary" />
+              <span>Client Administrator Invitation</span>
+            </h2>
+            <p className="text-xs text-on-surface-variant">We'll email them a single-use setup link.</p>
+          </div>
 
-          <section className="space-y-4 pt-2 border-t border-surface-container-high">
-            <div className="flex items-center gap-2 mb-1 mt-6">
-              <ShieldCheck className="size-4 text-primary" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-on-surface">Admin user</h2>
-            </div>
+          <form onSubmit={inviteFormik.handleSubmit} noValidate className="space-y-5">
             <div>
-              <label htmlFor="admin_name" className={labelClass}>Admin full name</label>
-              <input
-                id="admin_name"
-                placeholder="Priya Kumar"
-                aria-invalid={!!err('admin_name')}
-                {...formik.getFieldProps('admin_name')}
-                className={`${inputClass} ${borderClass(!!err('admin_name'))}`}
-              />
-              <FieldMessage error={err('admin_name')} />
+              <label htmlFor="invite-email" className={labelClass}>
+                Client Admin Email <span className="text-error">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  id="invite-email"
+                  type="email"
+                  placeholder="client.admin@company.com"
+                  aria-invalid={!!fieldError(inviteFormik, 'email')}
+                  {...inviteFormik.getFieldProps('email')}
+                  className={`${inputClass} ${borderClass(!!fieldError(inviteFormik, 'email'))} pl-10`}
+                />
+                <Mail className="size-4 text-on-surface-variant/50 absolute left-3.5 top-3 pointer-events-none" />
+              </div>
+              <FieldMessage error={fieldError(inviteFormik, 'email')} />
             </div>
-            <div>
-              <label htmlFor="admin_email" className={labelClass}>Admin email</label>
-              <input
-                id="admin_email"
-                type="email"
-                placeholder="priya@client.com"
-                aria-invalid={!!err('admin_email')}
-                {...formik.getFieldProps('admin_email')}
-                className={`${inputClass} ${borderClass(!!err('admin_email'))}`}
-              />
-              <FieldMessage error={err('admin_email')} />
-            </div>
+
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="admin_password" className="block text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Admin password
+                <label htmlFor="invite-org-name" className={labelClass}>
+                  Organization Name (Optional Hint)
                 </label>
-                <button
-                  type="button"
-                  className="text-[11px] font-semibold text-primary hover:underline"
-                  onClick={generatePassword}
-                >
-                  Generate password
-                </button>
+                <span className="text-[10px] text-on-surface-variant/70">Client can change this on setup</span>
               </div>
               <div className="relative">
                 <input
-                  id="admin_password"
-                  type={passwordVisible ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  placeholder="Minimum 8 characters"
-                  aria-invalid={!!err('admin_password')}
-                  {...formik.getFieldProps('admin_password')}
-                  className={`${inputClass} ${borderClass(!!err('admin_password'))} pr-12`}
+                  id="invite-org-name"
+                  type="text"
+                  placeholder="e.g. Acme Corporation"
+                  aria-invalid={!!fieldError(inviteFormik, 'organization_name')}
+                  {...inviteFormik.getFieldProps('organization_name')}
+                  className={`${inputClass} ${borderClass(!!fieldError(inviteFormik, 'organization_name'))} pl-10`}
                 />
-                <button
-                  type="button"
-                  onClick={() => setPasswordVisible((v) => !v)}
-                  className="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-on-surface"
-                  aria-label={passwordVisible ? 'Hide password' : 'Show password'}
-                >
-                  {passwordVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
+                <Building2 className="size-4 text-on-surface-variant/50 absolute left-3.5 top-3 pointer-events-none" />
               </div>
-              <FieldMessage error={err('admin_password')} />
+              <FieldMessage error={fieldError(inviteFormik, 'organization_name')} />
             </div>
-          </section>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button type="submit" variant="primary" loading={isSaving} className="glow-primary flex-1">
-              Create organization
-            </Button>
-            <Link to="/admin/organizations" className="sm:w-auto">
-              <Button type="button" variant="secondary" className="w-full">
-                Cancel
+            <div>
+              <label className={labelClass}>Link Expiration</label>
+              <div className="grid grid-cols-3 gap-3">
+                {EXPIRY_OPTIONS.map((option) => (
+                  <button
+                    key={option.days}
+                    type="button"
+                    onClick={() => inviteFormik.setFieldValue('expires_in_days', option.days)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      inviteFormik.values.expires_in_days === option.days
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-outline-variant/40 bg-surface text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <Clock className="size-3.5" />
+                    <span>{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-surface rounded-xl border border-outline-variant/30 flex items-start gap-2.5">
+              <ShieldCheck className="size-4 text-primary shrink-0 mt-0.5" />
+              <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                The administrator sets their own password through the emailed link. Super admins never see their password or the link,
+                and modules can be switched on per workspace from its detail page once it's set up.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <Button type="submit" variant="primary" loading={isInviting && resendingId === null} className="glow-primary flex-1">
+                <Mail className="size-4 mr-1.5" />
+                Send Invitation
               </Button>
-            </Link>
+              <Link to="/admin/organizations" className="sm:w-auto">
+                <Button type="button" variant="secondary" className="w-full">
+                  View Organizations
+                </Button>
+              </Link>
+            </div>
+          </form>
+        </Card>
+
+        {invitations.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-on-surface uppercase tracking-wider">Recent Workspace Invitations ({invitations.length})</h3>
+
+            <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl overflow-hidden divide-y divide-outline-variant/20 shadow-xs">
+              {invitations.map((inv) => {
+                const expired = isInviteExpired(inv);
+                return (
+                  <div
+                    key={inv.id}
+                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-surface-container/50 transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-on-surface">{inv.email}</span>
+                        {inv.is_used ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            Activated
+                          </span>
+                        ) : expired ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-error/10 text-error border border-error/20">Expired</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant flex items-center gap-2">
+                        {inv.organization_name ? (
+                          <span>
+                            Workspace: <strong>{inv.organization_name}</strong>
+                          </span>
+                        ) : (
+                          <span>
+                            Workspace: <em>Self-named</em>
+                          </span>
+                        )}
+                        <span>•</span>
+                        <span>Expires {new Date(inv.expires_at).toLocaleDateString()}</span>
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!inv.is_used && (
+                        <button
+                          type="button"
+                          onClick={() => resend(inv)}
+                          disabled={resendingId === inv.id}
+                          title="Email a fresh link (the old one stops working)"
+                          className="px-3 py-1.5 rounded-lg border border-outline-variant/40 bg-surface hover:bg-surface-container text-xs font-medium text-on-surface flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                        >
+                          <RotateCw className={`size-3.5 text-on-surface-variant ${resendingId === inv.id ? 'animate-spin' : ''}`} />
+                          <span>{resendingId === inv.id ? 'Sending…' : 'Resend'}</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => dispatch(revokeOrganizationInvite(inv.id))}
+                        title="Revoke invitation"
+                        className="p-1.5 rounded-lg hover:bg-error/10 text-on-surface-variant hover:text-error transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </form>
-      </Card>
+        )}
+      </div>
     </Container>
   );
 }

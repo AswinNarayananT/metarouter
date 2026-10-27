@@ -22,6 +22,7 @@ from app.core.security import  get_password_hash
 from app.core.deps import get_current_workspace_user
 from app.config import settings
 from app.workers.tasks.email_tasks import send_invitation_email_task
+from app.core.features import require_feature
 
 router = APIRouter(prefix="/invitations", tags=["Workspace Invitations"])
 
@@ -35,7 +36,7 @@ def _invitation_status(invitation: Invitation, now: datetime) -> str:
 
 
 # List invitations sent by the organization (admin only, paginated)
-@router.get("", response_model=PaginatedInvitationsResponse)
+@router.get("", response_model=PaginatedInvitationsResponse, dependencies=[Depends(require_feature("invite_members"))])
 def list_invitations(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -83,7 +84,7 @@ def list_invitations(
         "total_pages": max(1, math.ceil(total / page_size)),
     }
 
-@router.post("/generate", response_model=BulkInvitationResponse)
+@router.post("/generate", response_model=BulkInvitationResponse, dependencies=[Depends(require_feature("invite_members"))])
 def generate_invitations(
     payload: BulkInviteRequest,
     db: Session = Depends(get_db),

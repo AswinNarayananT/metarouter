@@ -1,17 +1,28 @@
 import { createSlice } from '@reduxjs/toolkit';
-import type { DashboardStats, OrganizationDetail, OrganizationListItem } from '@/types/organizationTypes';
+import type { DashboardStats, OrganizationDetail, OrganizationListItem, OrganizationInvitation } from '@/types/organizationTypes';
 import {
-  createOrganization,
   fetchDashboardStats,
   fetchOrganization,
   fetchOrganizations,
   updateOrganizationStatus,
+  createOrganizationInvite,
+  fetchOrganizationInvites,
+  revokeOrganizationInvite,
+  deleteOrganization,
 } from './organizationThunks';
 
 interface OrganizationState {
   list: OrganizationListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
   current: OrganizationDetail | null;
   stats: DashboardStats | null;
+  invitations: OrganizationInvitation[];
+  isInviting: boolean;
+  isDeleting: boolean;
+  lastInvitation: OrganizationInvitation | null;
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
@@ -19,12 +30,21 @@ interface OrganizationState {
 
 const initialState: OrganizationState = {
   list: [],
+  total: 0,
+  page: 1,
+  page_size: 10,
+  total_pages: 1,
   current: null,
   stats: null,
+  invitations: [],
+  isInviting: false,
+  isDeleting: false,
+  lastInvitation: null,
   isLoading: false,
   isSaving: false,
   error: null,
 };
+
 
 const organizationSlice = createSlice({
   name: 'organizations',
@@ -35,6 +55,9 @@ const organizationSlice = createSlice({
     },
     clearCurrentOrganization: (state) => {
       state.current = null;
+    },
+    clearLastInvitation: (state) => {
+      state.lastInvitation = null;
     },
   },
   extraReducers: (builder) => {
@@ -57,7 +80,19 @@ const organizationSlice = createSlice({
       })
       .addCase(fetchOrganizations.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.list = action.payload;
+        if (action.payload && typeof action.payload === 'object' && 'items' in action.payload) {
+          state.list = action.payload.items;
+          state.total = action.payload.total;
+          state.page = action.payload.page;
+          state.page_size = action.payload.page_size;
+          state.total_pages = action.payload.total_pages;
+        } else if (Array.isArray(action.payload)) {
+          state.list = action.payload;
+          state.total = action.payload.length;
+          state.page = 1;
+          state.page_size = action.payload.length || 10;
+          state.total_pages = 1;
+        }
       })
       .addCase(fetchOrganizations.rejected, (state, action) => {
         state.isLoading = false;
@@ -73,18 +108,6 @@ const organizationSlice = createSlice({
       })
       .addCase(fetchOrganization.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload as string;
-      })
-      .addCase(createOrganization.pending, (state) => {
-        state.isSaving = true;
-        state.error = null;
-      })
-      .addCase(createOrganization.fulfilled, (state, action) => {
-        state.isSaving = false;
-        state.current = action.payload;
-      })
-      .addCase(createOrganization.rejected, (state, action) => {
-        state.isSaving = false;
         state.error = action.payload as string;
       })
       // Update Organization Status Handling
@@ -110,9 +133,59 @@ const organizationSlice = createSlice({
       .addCase(updateOrganizationStatus.rejected, (state, action) => {
         state.isSaving = false;
         state.error = action.payload as string;
+      })
+      // Organization Invitations
+      .addCase(createOrganizationInvite.pending, (state) => {
+        state.isInviting = true;
+        state.error = null;
+      })
+      .addCase(createOrganizationInvite.fulfilled, (state, action) => {
+        state.isInviting = false;
+        state.lastInvitation = action.payload;
+        state.invitations = [action.payload, ...state.invitations.filter((i) => i.id !== action.payload.id)];
+      })
+      .addCase(createOrganizationInvite.rejected, (state, action) => {
+        state.isInviting = false;
+        state.error = action.payload as string;
+      })
+      .addCase(fetchOrganizationInvites.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchOrganizationInvites.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.invitations = action.payload;
+      })
+      .addCase(fetchOrganizationInvites.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      .addCase(revokeOrganizationInvite.fulfilled, (state, action) => {
+        state.invitations = state.invitations.filter((i) => i.id !== action.payload);
+        if (state.lastInvitation?.id === action.payload) {
+          state.lastInvitation = null;
+        }
+      })
+      // Delete Organization
+      .addCase(deleteOrganization.pending, (state) => {
+        state.isDeleting = true;
+        state.error = null;
+      })
+      .addCase(deleteOrganization.fulfilled, (state, action) => {
+        state.isDeleting = false;
+        state.list = state.list.filter((org) => org.id !== action.payload.id);
+        state.total = Math.max(0, state.total - 1);
+        if (state.current && state.current.id === action.payload.id) {
+          state.current = null;
+        }
+      })
+      .addCase(deleteOrganization.rejected, (state, action) => {
+        state.isDeleting = false;
+        state.error = action.payload as string;
       });
   },
 });
 
-export const { clearOrganizationError, clearCurrentOrganization } = organizationSlice.actions;
+export const { clearOrganizationError, clearCurrentOrganization, clearLastInvitation } = organizationSlice.actions;
+
 export default organizationSlice.reducer;

@@ -22,6 +22,7 @@ const initialState: WorkspaceState = {
   user: null,
   token: tokenFromStorage || null,
   organization: null,
+  features: {},
   isLoading: false,
   error: null,
   settingsSaveSuccess: false,
@@ -57,11 +58,13 @@ export const workspaceSlice = createSlice({
     setCredentials: (state, action: PayloadAction<{ user: WorkspaceUser | null; access_token: string }>) => {
       state.token = action.payload.access_token;
       state.user = action.payload.user;
+      state.features = action.payload.user?.features || {};
       localStorage.setItem('workspace_token', action.payload.access_token);
     },
     logoutWorkspace: (state) => {
       state.user = null;
       state.token = null;
+      state.features = {};
       state.error = null;
       state.organization = null;
       state.settingsSaveSuccess = false;
@@ -126,6 +129,7 @@ export const workspaceSlice = createSlice({
         state.isLoading = false;
         state.token = action.payload.access_token;
         state.user = action.payload.user;
+        state.features = action.payload.user?.features || {};
         localStorage.setItem('workspace_token', action.payload.access_token);
       })
       .addCase(loginWorkspaceUser.rejected, (state, action) => {
@@ -140,6 +144,7 @@ export const workspaceSlice = createSlice({
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
         state.isLoading = false;
         state.user = action.payload.user;
+        state.features = action.payload.user?.features || {};
       })
       .addCase(fetchCurrentUser.rejected, (state, action) => {
         state.isLoading = false;
@@ -153,6 +158,12 @@ export const workspaceSlice = createSlice({
       .addCase(fetchOrganization.fulfilled, (state, action) => {
         state.isLoading = false;
         state.organization = action.payload;
+        if (action.payload.features) {
+          state.features = action.payload.features;
+          if (state.user) {
+            state.user.features = action.payload.features;
+          }
+        }
       })
       .addCase(fetchOrganization.rejected, (state, action) => {
         state.isLoading = false;

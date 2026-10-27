@@ -2,6 +2,7 @@ import { Bot, Paperclip, UserRound } from 'lucide-react';
 import type { ChatConversation } from '@/types/chatTypes';
 import { Avatar } from './Avatar';
 import { StatusBadge } from './StatusBadge';
+import { WindowTimerBadge } from './WindowTimerBadge';
 
 export function ConversationListItem({
   conversation,
@@ -60,16 +61,23 @@ export function ConversationListItem({
             </span>
           )}
         </div>
-        <div className="mt-1.5 flex items-center gap-2 min-w-0">
-          <StatusBadge status={conversation.status} />
-          {conversation.assignedTo ? (
-            <span className="flex items-center gap-1 text-[11px] text-on-surface-variant truncate">
-              <UserRound className="w-3 h-3 shrink-0" />
-              {conversation.assignedTo.name}
-            </span>
-          ) : (
-            conversation.status === 'human_takeover' && <span className="text-[11px] font-medium text-amber-700">Unassigned</span>
-          )}
+        <div className="mt-1.5 flex items-center justify-between gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <StatusBadge status={conversation.status} />
+            {conversation.assignedTo ? (
+              <span className="flex items-center gap-1 text-[11px] text-on-surface-variant truncate">
+                <UserRound className="w-3 h-3 shrink-0" />
+                {conversation.assignedTo.name}
+              </span>
+            ) : (
+              conversation.status === 'human_takeover' && <span className="text-[11px] font-medium text-amber-700">Unassigned</span>
+            )}
+          </div>
+          <WindowTimerBadge
+            variant="compact"
+            windowOpen={conversation.windowOpen}
+            windowExpiresAt={conversation.windowExpiresAt}
+          />
         </div>
       </div>
     </button>

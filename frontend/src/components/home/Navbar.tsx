@@ -21,7 +21,8 @@ const IS_AUTHENTICATED = false;
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  // The menu remembers the page it was opened on, so moving to another page closes it
+  const [mobileOpenPath, setMobileOpenPath] = useState<string | null>(null);
   const location = useLocation();
   const isHome = location.pathname === '/';
 
@@ -31,9 +32,7 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [location.pathname]);
+  const mobileOpen = mobileOpenPath === location.pathname;
 
   return (
     <header
@@ -101,7 +100,7 @@ export function Navbar() {
           {/* Mobile menu button */}
           <button
             className="md:hidden p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors"
-            onClick={() => setMobileOpen((v) => !v)}
+            onClick={() => setMobileOpenPath(mobileOpen ? null : location.pathname)}
             aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={mobileOpen}
           >

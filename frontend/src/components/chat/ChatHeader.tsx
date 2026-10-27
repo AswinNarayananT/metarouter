@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { ChatConversation } from '@/types/chatTypes';
 import { Avatar } from './Avatar';
 import { StatusBadge } from './StatusBadge';
+import { WindowTimerBadge } from './WindowTimerBadge';
 
 /** Top bar of the open conversation: customer, status, takeover and details toggles. */
 export function ChatHeader({
@@ -12,6 +13,7 @@ export function ChatHeader({
   onToggleTakeover,
   onToggleContact,
   assignControl,
+  onOpenTemplates,
 }: {
   conversation: ChatConversation;
   contactOpen: boolean;
@@ -19,11 +21,12 @@ export function ChatHeader({
   onToggleTakeover: () => void;
   onToggleContact: () => void;
   assignControl?: ReactNode; // Owner picker (AssignMenu)
+  onOpenTemplates?: () => void;
 }) {
   const isHuman = conversation.status === 'human_takeover';
 
   return (
-    <header className="h-16 shrink-0 px-3 sm:px-5 flex items-center gap-3 border-b border-outline-variant/30 bg-surface-container-low">
+    <header className="h-16 shrink-0 px-3 sm:px-5 flex items-center gap-2.5 sm:gap-3 border-b border-outline-variant/30 bg-surface-container-low">
       <button
         type="button"
         onClick={onBack}
@@ -41,9 +44,16 @@ export function ChatHeader({
         </p>
       </div>
 
-      <div className="hidden sm:block">
+      <div className="hidden md:block">
         <StatusBadge status={conversation.status} />
       </div>
+
+      <WindowTimerBadge
+        windowOpen={conversation.windowOpen}
+        windowExpiresAt={conversation.windowExpiresAt}
+        onClick={!conversation.windowOpen ? onOpenTemplates : undefined}
+      />
+
       {assignControl}
       <button
         type="button"

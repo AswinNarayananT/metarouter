@@ -11,6 +11,7 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.deps import get_current_super_admin
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
 from app.core.token_blacklist import blacklist_token
+from app.services.audit_service import record_audit_log, get_client_ip
 
 router = APIRouter(prefix="/superadmin", tags=["Super Admin Authentication"])
 
@@ -25,6 +26,17 @@ def super_admin_login(payload: SuperAdminLoginRequest, request: Request, db: Ses
     # 2. Verify existence and password
     if not admin or not verify_password(payload.password, admin.hashed_password):
         record_failed_login("super_admin", payload.email, request)
+        record_audit_log(
+            db,
+            action="SUPER_ADMIN_LOGIN_FAILED",
+            category="security",
+            actor_type="anonymous",
+            actor_email=payload.email,
+            target_type="super_admin",
+            details={"reason": "Invalid credentials"},
+            ip_address=get_client_ip(request),
+            status="failed",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -40,6 +52,22 @@ def super_admin_login(payload: SuperAdminLoginRequest, request: Request, db: Ses
         "admin_id": admin.id
     }
     access_token = create_access_token(data=access_token_payload, expires_delta=timedelta(minutes=settings.SUPER_ADMIN_TOKEN_EXPIRE_MINUTES))
+
+    # Audit log login
+    record_audit_log(
+        db,
+        action="SUPER_ADMIN_LOGIN",
+        category="security",
+        actor_type="super_admin",
+        actor_id=admin.id,
+        actor_email=admin.email,
+        target_type="super_admin",
+        target_id=admin.id,
+        target_name=admin.name,
+        details={"login_method": "password"},
+        ip_address=get_client_ip(request),
+        status="success",
+    )
 
     # 4. Construct user response matching SuperAdminResponse schema
     admin_response = SuperAdminResponse(
@@ -89,6 +117,7 @@ def update_super_admin_profile(
 @router.post("/change-password")
 def change_super_admin_password(
     payload: ChangePasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
     admin: SuperAdmin = Depends(get_current_super_admin)
 ):
@@ -101,5 +130,20 @@ def change_super_admin_password(
 
     admin.hashed_password = get_password_hash(payload.new_password)
     db.commit()
+
+    record_audit_log(
+        db,
+        action="SUPER_ADMIN_PASSWORD_CHANGED",
+        category="security",
+        actor_type="super_admin",
+        actor_id=admin.id,
+        actor_email=admin.email,
+        target_type="super_admin",
+        target_id=admin.id,
+        target_name=admin.name,
+        details={"status": "password_rotated"},
+        ip_address=get_client_ip(request),
+        status="success",
+    )
 
     return {"message": "Password updated successfully"}

@@ -3,8 +3,9 @@ export interface WorkspaceUser {
   name: string;
   email: string;
   role: string;
-  organization_id:number;
+  organization_id: number;
   organization_name: string;
+  features?: Record<string, boolean>;
 }
 
 export interface CurrentOrganization {
@@ -12,6 +13,7 @@ export interface CurrentOrganization {
   name: string;
   slug: string;
   created_at: string | null;
+  features?: Record<string, boolean>;
 }
 
 export interface TeamMember {
@@ -79,6 +81,7 @@ export interface WorkspaceState {
   user: WorkspaceUser | null;
   token: string | null;
   organization: CurrentOrganization | null;
+  features: Record<string, boolean>;
   isLoading: boolean;
   error: string | null;
   // Profile / Workspace settings save

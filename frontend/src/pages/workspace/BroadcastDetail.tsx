@@ -94,6 +94,8 @@ export function BroadcastDetail() {
                   <Unplug className="w-4 h-4 shrink-0 mt-0.5" />
                 ) : broadcast.pause_reason === 'quality_low' ? (
                   <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                ) : broadcast.pause_reason === 'workspace_inactive' || broadcast.pause_reason === 'workspace_suspended' ? (
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
                 ) : (
                   <Clock className="w-4 h-4 shrink-0 mt-0.5" />
                 )}
@@ -102,6 +104,8 @@ export function BroadcastDetail() {
                     ? `Paused because this WhatsApp number was disconnected. Reconnect it in Channels, then Resume to send to the customers still waiting.`
                     : broadcast.pause_reason === 'quality_low'
                     ? `Paused because WhatsApp flagged this number for low quality. ${broadcast.not_released_count.toLocaleString()} customers are still waiting. Resume once the quality recovers.`
+                    : broadcast.pause_reason === 'workspace_inactive' || broadcast.pause_reason === 'workspace_suspended'
+                    ? `Paused because this workspace is inactive. Reactivate the workspace to resume broadcasts.`
                     : `Daily messaging limit reached. ${broadcast.not_released_count.toLocaleString()} customers will get the message automatically${broadcast.resume_at ? ` from ${formatDateTime(broadcast.resume_at)}` : ' when the limit frees up'}.`}
                 </span>
               </span>
