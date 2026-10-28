@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, Image as ImageIcon, LayoutTemplate, Loader2, Paperclip, Send, Smile, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FileText, Image as ImageIcon, LayoutTemplate, Loader2, Paperclip, Send, Smile, X, Zap } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
+import { QuickReplyPicker } from './QuickReplyPicker';
+import { matchQuickReplies } from '@/utils/quickReplies';
+import type { QuickReply } from '@/types/quickReplyTypes';
+
+const SLASH_COMMAND = /^\/\S*$/; // "/ref" typed at the start of an otherwise empty box
 
 const MAX_HEIGHT_PX = 160;
 // What WhatsApp accepts from us (checked again by the server, with size limits)
@@ -12,7 +17,8 @@ function formatSize(bytes: number) {
 
 /**
  * Reply box: grows with its content, Enter sends, Shift + Enter adds a new line.
- * Emoji picker, a file to send (the text becomes its caption), and "Send template" when free text isn't allowed.
+ * Emoji picker, quick replies ("/" or the ⚡ button), a file to send (the text becomes its caption),
+ * and "Send template" when free text isn't allowed.
  */
 export function Composer({
   value,
@@ -25,6 +31,8 @@ export function Composer({
   file = null,
   onFileChange,
   onOpenTemplates,
+  quickReplies,
+  fillQuickReply,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -36,6 +44,8 @@ export function Composer({
   file?: File | null;             // Attached file waiting to be sent
   onFileChange?: (file: File | null) => void;
   onOpenTemplates?: () => void;   // Templates work even when free text is locked (24-hour window)
+  quickReplies?: QuickReply[];    // Saved replies; inserted into the box, never sent on their own
+  fillQuickReply?: (content: string) => string; // Fills {customer_name} etc. for this chat
 }) {
   const disabled = Boolean(disabledReason);
   const canSend = !disabled && !sending && (Boolean(value.trim()) || Boolean(file));
@@ -52,23 +62,85 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
   }, [value]);
 
+  // Quick replies: "/ref" at the start of the box, or the ⚡ button (with its own search)
+  const [buttonPickerOpen, setButtonPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [dismissedSlash, setDismissedSlash] = useState<string | null>(null); // Escape on "/xyz" keeps it as plain text
+  const [activeIndex, setActiveIndex] = useState(0);
+  const slashOpen = Boolean(quickReplies) && !disabled && SLASH_COMMAND.test(value) && dismissedSlash !== value;
+  const pickerOpen = slashOpen || (buttonPickerOpen && !disabled);
+  const matches = useMemo(
+    () => (quickReplies ? matchQuickReplies(quickReplies, slashOpen ? value.slice(1) : pickerSearch, !slashOpen) : []),
+    [quickReplies, slashOpen, value, pickerSearch]
+  );
+  const highlighted = Math.min(activeIndex, Math.max(matches.length - 1, 0));
+
+  const closePicker = useCallback(() => {
+    setButtonPickerOpen(false);
+    setPickerSearch('');
+    if (SLASH_COMMAND.test(value)) setDismissedSlash(value);
+  }, [value]);
+
+  // Insert at the cursor and keep typing from there
+  const insertText = (text: string) => {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    onChange(value.slice(0, start) + text + value.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
+
+  const pickQuickReply = (reply: QuickReply) => {
+    const text = fillQuickReply ? fillQuickReply(reply.content) : reply.content;
+    if (slashOpen) {
+      // "/ref" is replaced by the reply, ready to edit and send
+      const el = textareaRef.current;
+      onChange(text);
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(text.length, text.length);
+      });
+    } else {
+      insertText(text);
+    }
+    setButtonPickerOpen(false);
+    setPickerSearch('');
+    setActiveIndex(0);
+  };
+
+  // Arrow keys / Enter / Tab / Escape while the list is open; true when the key was used here
+  const handlePickerKey = (e: React.KeyboardEvent): boolean => {
+    if (!pickerOpen) return false;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closePicker();
+      textareaRef.current?.focus();
+      return true;
+    }
+    if (matches.length === 0) return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((highlighted + step + matches.length) % matches.length);
+      return true;
+    }
+    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+      e.preventDefault();
+      pickQuickReply(matches[highlighted]);
+      return true;
+    }
+    return false;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (handlePickerKey(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (canSend) onSend();
     }
-  };
-
-  // Insert at the cursor and keep typing from there
-  const insertEmoji = (emoji: string) => {
-    const el = textareaRef.current;
-    const start = el?.selectionStart ?? value.length;
-    const end = el?.selectionEnd ?? value.length;
-    onChange(value.slice(0, start) + emoji + value.slice(end));
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(start + emoji.length, start + emoji.length);
-    });
   };
 
   const isImage = file?.type.startsWith('image/');
@@ -108,12 +180,52 @@ export function Composer({
           >
             <Smile className="w-5 h-5" />
           </button>
-          {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={closeEmoji} />}
+          {emojiOpen && <EmojiPicker onPick={insertText} onClose={closeEmoji} />}
+          {quickReplies && (
+            <button
+              type="button"
+              onClick={() => setButtonPickerOpen(true)}
+              disabled={disabled}
+              aria-label="Quick replies"
+              aria-expanded={pickerOpen}
+              title="Insert a saved reply (or type / in the box)"
+              className="p-2 my-1 rounded-lg text-on-surface-variant hover:text-on-surface disabled:opacity-40 cursor-pointer"
+            >
+              <Zap className="w-5 h-5" />
+            </button>
+          )}
+          {pickerOpen && quickReplies && (
+            <QuickReplyPicker
+              replies={matches}
+              activeIndex={highlighted}
+              onActiveIndexChange={setActiveIndex}
+              onPick={pickQuickReply}
+              onClose={closePicker}
+              emptyText={quickReplies.length === 0 ? 'No quick replies yet. Add them in Settings.' : 'No quick reply matches.'}
+              search={
+                slashOpen
+                  ? undefined
+                  : {
+                      value: pickerSearch,
+                      onChange: (text) => {
+                        setPickerSearch(text);
+                        setActiveIndex(0);
+                      },
+                      onKeyDown: (e) => {
+                        handlePickerKey(e);
+                      },
+                    }
+              }
+            />
+          )}
           <textarea
             ref={textareaRef}
             rows={1}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              onChange(e.target.value);
+              setActiveIndex(0);
+            }}
             onKeyDown={handleKeyDown}
             placeholder={disabled ? 'Free text is unavailable: send a template instead' : file ? 'Add a caption (optional)' : placeholder}
             disabled={disabled}
@@ -178,7 +290,7 @@ export function Composer({
         </div>
       ) : (
         <p className="max-w-3xl mx-auto mt-1.5 px-1 text-[10px] text-on-surface-variant hidden sm:block">
-          Enter to send · Shift + Enter for a new line
+          Enter to send · Shift + Enter for a new line{quickReplies ? ' · / for quick replies' : ''}
         </p>
       )}
     </div>

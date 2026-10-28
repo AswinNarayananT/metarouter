@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { loginWorkspaceUser } from '@/store/workspace/workspaceThunks';
 import { clearWorkspaceError } from '@/store/workspace/workspaceSlice';
 import { emailField, fieldError } from '@/validation/schemas';
+import type { LoginErrorPayload } from '@/types/workspaceTypes';
 
 interface LoginFormValues {
   email: string;
@@ -33,6 +34,8 @@ export function LoginForm() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { isLoading, error } = useAppSelector((state) => state.workspace);
+  // Server said this input is wrong; shown under it until its value is changed
+  const [rejected, setRejected] = useState<{ field: 'email' | 'password'; message: string; value: string } | null>(null);
 
   useEffect(() => {
     dispatch(clearWorkspaceError());
@@ -42,6 +45,7 @@ export function LoginForm() {
     initialValues: { email: '', password: '' },
     validationSchema: loginSchema,
     onSubmit: async (values) => {
+      setRejected(null);
       const resultAction = await dispatch(
         loginWorkspaceUser({
           email: values.email.trim(),
@@ -52,12 +56,21 @@ export function LoginForm() {
 
       if (loginWorkspaceUser.fulfilled.match(resultAction)) {
         navigate('/dashboard');
+      } else if (loginWorkspaceUser.rejected.match(resultAction)) {
+        // Point at the wrong input and put the cursor there
+        const failure = resultAction.payload as LoginErrorPayload | undefined;
+        if (failure?.field) {
+          setRejected({ field: failure.field, message: failure.message, value: values[failure.field] });
+          document.getElementById(failure.field)?.focus();
+        }
       }
     },
   });
 
-  const emailError = fieldError(formik, 'email');
-  const passwordError = fieldError(formik, 'password');
+  const serverErrorFor = (field: 'email' | 'password') =>
+    rejected?.field === field && formik.values[field] === rejected.value ? rejected.message : undefined;
+  const emailError = fieldError(formik, 'email') || serverErrorFor('email');
+  const passwordError = fieldError(formik, 'password') || serverErrorFor('password');
 
   return (
     <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-8 shadow-xl relative z-10">

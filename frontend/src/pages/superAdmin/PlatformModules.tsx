@@ -27,6 +27,7 @@ import { Card, Container } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { superAdminApi } from '@/api/superAdminApi';
 import { getApiErrorMessage } from '@/api/errors';
+import { notifyError } from '@/utils/notify';
 import type { PlatformModule, CreateModulePayload, UpdateModulePayload } from '@/types/moduleTypes';
 
 // Available icons for selection
@@ -73,7 +74,6 @@ export function PlatformModulesPage() {
   const [editingModule, setEditingModule] = useState<PlatformModule | null>(null);
   const [deletingModule, setDeletingModule] = useState<PlatformModule | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState<CreateModulePayload>({
@@ -130,7 +130,6 @@ export function PlatformModulesPage() {
       is_active: true,
       default_enabled: false,
     });
-    setFormError(null);
     setIsAddModalOpen(true);
   };
 
@@ -145,13 +144,11 @@ export function PlatformModulesPage() {
       is_active: m.is_active,
       default_enabled: m.default_enabled,
     });
-    setFormError(null);
   };
 
   const handleSaveModule = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    setFormError(null);
 
     try {
       if (editingModule) {
@@ -173,7 +170,7 @@ export function PlatformModulesPage() {
       }
       await loadModules();
     } catch (err) {
-      setFormError(getApiErrorMessage(err, 'Failed to save module'));
+      notifyError(err, 'Failed to save module'); // The form stays open to fix and retry
     } finally {
       setIsSaving(false);
     }
@@ -188,7 +185,7 @@ export function PlatformModulesPage() {
         prev.map((item) => (item.id === m.id ? { ...item, is_active: !item.is_active } : item)),
       );
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to toggle module status'));
+      notifyError(err, 'Failed to toggle module status');
     }
   };
 
@@ -200,7 +197,7 @@ export function PlatformModulesPage() {
       setDeletingModule(null);
       await loadModules();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to delete module'));
+      notifyError(err, 'Failed to delete module');
     } finally {
       setIsSaving(false);
     }
@@ -509,11 +506,6 @@ export function PlatformModulesPage() {
               </button>
             </div>
 
-            {formError && (
-              <div className="mb-4 p-3 rounded-xl bg-error-container/30 border border-error/30 text-error text-xs">
-                {formError}
-              </div>
-            )}
 
             <form onSubmit={handleSaveModule} className="space-y-4">
               {/* Module Key (Immutable on edit) */}

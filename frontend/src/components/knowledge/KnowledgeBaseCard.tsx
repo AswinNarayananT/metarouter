@@ -15,7 +15,7 @@ const POLL_INTERVAL_MS = 5000;
 
 export function KnowledgeBaseCard() {
   const dispatch = useAppDispatch();
-  const { documents, maxDocuments, isLoading, loadError, isUploading, uploadError, busyIds, actionError } = useAppSelector(
+  const { documents, maxDocuments, isLoading, loadError, isUploading, busyIds } = useAppSelector(
     (state) => state.knowledge
   );
 
@@ -59,13 +59,8 @@ export function KnowledgeBaseCard() {
       </div>
 
       <div className="p-6 space-y-5">
-        <KnowledgeUpload isUploading={isUploading} disabled={limitReached} serverError={uploadError} onUpload={handleUpload} />
-
-        {actionError && (
-          <p role="alert" className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-sm text-error">
-            <AlertCircle className="w-4 h-4 shrink-0" /> {actionError}
-          </p>
-        )}
+        {/* Failed uploads, retries and deletes show as toasts */}
+        <KnowledgeUpload isUploading={isUploading} disabled={limitReached} onUpload={handleUpload} />
 
         {isLoading && documents.length === 0 ? (
           <div className="space-y-2" aria-busy="true">

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Literal
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 
 class AdminUserPublic(BaseModel):
@@ -199,6 +199,19 @@ class DashboardStats(BaseModel):
 
 class UpdateStatusRequest(BaseModel):
     subscription_status: Literal["active", "inactive"]  # inactive = suspended: the workspace can't log in or use the API
+
+
+class ImpersonateUserRequest(BaseModel):
+    user_id: int
+    reason: str = Field(..., min_length=5, max_length=200)  # Ticket number or what the client reported; kept in the audit log
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Reason must be at least 5 characters")
+        return value
 
 
 class PaginatedOrganizationsResponse(BaseModel):

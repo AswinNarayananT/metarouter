@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_ROTATION_GRACE_SECONDS: int = 30  # A just-rotated refresh token still works this long (parallel tabs / requests refreshing together)
     SUPER_ADMIN_TOKEN_EXPIRE_MINUTES: int = 1440  # Super admin has no refresh token yet, so one longer token
+    IMPERSONATION_TOKEN_EXPIRE_MINUTES: int = 30  # Read-only support session in a client workspace; no refresh token, it just ends
+    IMPERSONATION_CODE_EXPIRE_SECONDS: int = 60  # One-time code the admin tab hands to the new workspace tab
     COOKIE_SECURE: bool = False  # True in production (HTTPS): the refresh-token cookie is then only sent over HTTPS
 
     # Login protection: failed attempts allowed per email + IP and per IP, then locked for LOGIN_LOCKOUT_MINUTES
@@ -76,6 +78,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = ""
     FRONTEND_BASE_URL: str = "http://localhost:5173"
+    WORKSPACE_URL_TEMPLATE: str = "http://localhost:5173"  # Where a workspace opens; "{slug}" is replaced, e.g. https://{slug}.metarouter.ai
 
     GOOGLE_API_KEY: str = ""
     GEMINI_CHAT_MODEL: str = "gemini-3.8-flash"
@@ -84,6 +87,7 @@ class Settings(BaseSettings):
     GEMINI_RETRIES: int = 1  # Extra tries on the same model before switching to the backup
     GEMINI_CHAT_TIMEOUT_SECONDS: int = 20  # Customer replies: a model slower than this is skipped for the backup (the customer is waiting)
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
+    AI_SIMULATOR_MAX_PER_10_MIN: int = 30  # "Try it" test questions per admin every 10 minutes (each one is a Gemini call)
     # Must match the Vector(...) size of knowledge_chunks.embedding
     EMBEDDING_DIMENSIONS: int = 768
     

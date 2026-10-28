@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api/axios';
 import { getApiErrorMessage } from '@/api/errors';
+import { notifyError } from '@/utils/notify';
 import {
   PASSWORD_RULES,
   confirmPasswordField,
@@ -98,7 +99,6 @@ export function WorkspaceOnboarding() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState<CompleteOrganizationOnboardingResponse | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [showPassword, setShowPassword] = useState(false);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
@@ -146,7 +146,6 @@ export function WorkspaceOnboarding() {
     onSubmit: async (values) => {
       if (!token) return;
       setIsSubmitting(true);
-      setSubmitError(null);
 
       const finalSlug = values.slug.trim() ? toSlug(values.slug) : toSlug(values.organization_name);
 
@@ -165,7 +164,7 @@ export function WorkspaceOnboarding() {
         );
         setSubmitSuccess(response.data);
       } catch (err) {
-        setSubmitError(getApiErrorMessage(err, 'Failed to complete workspace onboarding.'));
+        notifyError(err, 'Failed to complete workspace onboarding.');
       } finally {
         setIsSubmitting(false);
       }
@@ -338,13 +337,7 @@ export function WorkspaceOnboarding() {
 
         {/* Main Onboarding Form */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 sm:p-8 shadow-xl">
-          {submitError && (
-            <div className="mb-6 p-3.5 rounded-xl bg-error/10 border border-error/20 text-error text-xs flex items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{submitError}</span>
-            </div>
-          )}
-
+          {/* A failed submit shows as a toast */}
           <form onSubmit={formik.handleSubmit} className="space-y-6">
             {/* ---------------- Section 1: Administrator Credentials ---------------- */}
             <div className="space-y-4">

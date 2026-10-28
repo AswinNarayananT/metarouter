@@ -66,9 +66,9 @@ const auditLogSlice = createSlice({
       .addCase(exportAuditLogsCsv.fulfilled, (state) => {
         state.isExporting = false;
       })
-      .addCase(exportAuditLogsCsv.rejected, (state, action) => {
+      // Shown as a toast (store/errorToastMiddleware); `error` stays for loading the list
+      .addCase(exportAuditLogsCsv.rejected, (state) => {
         state.isExporting = false;
-        state.error = action.payload || 'Failed to export audit logs';
       });
   },
 });

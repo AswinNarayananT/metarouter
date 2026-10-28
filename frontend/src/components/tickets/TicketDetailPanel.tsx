@@ -39,7 +39,7 @@ export function TicketDetailPanel({
 }) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { groups, savingId, actionError, relabelingId } = useAppSelector((state) => state.tickets);
+  const { groups, savingId, relabelingId } = useAppSelector((state) => state.tickets);
   const currentUser = useAppSelector((state) => state.workspace.user);
   const members = useAppSelector((state) => state.workspace.teamMembers);
   const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -269,7 +269,7 @@ export function TicketDetailPanel({
           {relabelingId === ticket.id ? 'AI is refreshing…' : 'Refresh with AI'}
         </button>
       </section>
-      {actionError && !closing && <p className="text-xs text-error">{actionError}</p>}
+      {/* Failed saves, notes, relabels and closes show as toasts */}
 
       {/* Resolution */}
       {(ticket.resolution || ticket.close_reason) && (
@@ -358,7 +358,7 @@ export function TicketDetailPanel({
       </section>
 
       {closing && (
-        <CloseTicketDialog ticketNumber={ticket.number} busy={saving} error={actionError} onCancel={() => setClosing(false)} onConfirm={confirmClose} />
+        <CloseTicketDialog ticketNumber={ticket.number} busy={saving} onCancel={() => setClosing(false)} onConfirm={confirmClose} />
       )}
     </PanelFrame>
   );

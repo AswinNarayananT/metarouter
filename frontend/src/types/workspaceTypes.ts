@@ -6,6 +6,15 @@ export interface WorkspaceUser {
   organization_id: number;
   organization_name: string;
   features?: Record<string, boolean>;
+  impersonation?: ImpersonationInfo | null;
+  can_handle_chats?: boolean; // Role may pick up / take over unassigned chats (AI settings); sent by /auth/me
+}
+
+// Set only when a super admin is viewing the workspace as this user (read-only support session)
+export interface ImpersonationInfo {
+  admin_email: string;
+  expires_at: number; // Unix seconds
+  read_only: boolean;
 }
 
 export interface CurrentOrganization {
@@ -140,4 +149,10 @@ export interface LoginCredentials {
   email: string;
   password: string;
   org_slug: string;
+}
+
+// Why sign-in failed; `field` is set when one input is wrong (shown under that input)
+export interface LoginErrorPayload {
+  message: string;
+  field: 'email' | 'password' | null;
 }

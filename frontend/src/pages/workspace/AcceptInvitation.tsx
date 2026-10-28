@@ -161,13 +161,7 @@ export function AcceptInvitation() {
           </p>
         </div>
 
-        {error && (
-          <div role="alert" className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
+        {/* A failed sign-up shows as a toast */}
         <form onSubmit={formik.handleSubmit} noValidate className="space-y-4">
           <div>
             <label htmlFor="invite-email" className="block text-xs font-medium text-on-surface mb-1">

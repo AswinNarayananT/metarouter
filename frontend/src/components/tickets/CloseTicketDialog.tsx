@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, X } from 'lucide-react';
 
-/** Close a ticket from the dashboard: how it was solved (required) and whether the AI takes the chat back. */
+/** Close a ticket from the dashboard: how it was solved (required) and whether the AI takes the chat back.
+ *  A failed close shows as a toast and the dialog stays open. */
 export function CloseTicketDialog({
   ticketNumber,
   busy,
-  error,
   onCancel,
   onConfirm,
 }: {
   ticketNumber: number;
   busy: boolean;
-  error: string | null;
   onCancel: () => void;
   onConfirm: (resolution: string, handBackToAi: boolean) => void;
 }) {
@@ -57,8 +56,6 @@ export function CloseTicketDialog({
               <span className="block text-xs text-on-surface-variant">The AI answers the customer's next message, which starts a new ticket.</span>
             </span>
           </label>
-
-          {error && <p className="text-xs text-error">{error}</p>}
         </div>
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-outline-variant/30">

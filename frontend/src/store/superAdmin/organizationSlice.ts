@@ -130,9 +130,9 @@ const organizationSlice = createSlice({
           state.list[index].subscription_status = updatedStatus;
         }
       })
-      .addCase(updateOrganizationStatus.rejected, (state, action) => {
+      // Failed actions show as a toast (store/errorToastMiddleware); `error` stays for page loads
+      .addCase(updateOrganizationStatus.rejected, (state) => {
         state.isSaving = false;
-        state.error = action.payload as string;
       })
       // Organization Invitations
       .addCase(createOrganizationInvite.pending, (state) => {
@@ -144,9 +144,8 @@ const organizationSlice = createSlice({
         state.lastInvitation = action.payload;
         state.invitations = [action.payload, ...state.invitations.filter((i) => i.id !== action.payload.id)];
       })
-      .addCase(createOrganizationInvite.rejected, (state, action) => {
+      .addCase(createOrganizationInvite.rejected, (state) => {
         state.isInviting = false;
-        state.error = action.payload as string;
       })
       .addCase(fetchOrganizationInvites.pending, (state) => {
         state.isLoading = true;
@@ -179,9 +178,8 @@ const organizationSlice = createSlice({
           state.current = null;
         }
       })
-      .addCase(deleteOrganization.rejected, (state, action) => {
+      .addCase(deleteOrganization.rejected, (state) => {
         state.isDeleting = false;
-        state.error = action.payload as string;
       });
   },
 });

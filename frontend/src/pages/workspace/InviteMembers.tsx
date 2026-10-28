@@ -69,7 +69,7 @@ function borderClass(hasError: boolean) {
 
 export function InviteMembers() {
   const dispatch = useAppDispatch();
-  const { isInviting, inviteSuccess, lastInvitations, error, user } = useAppSelector((state) => state.workspace);
+  const { isInviting, inviteSuccess, lastInvitations, user } = useAppSelector((state) => state.workspace);
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [submittedCount, setSubmittedCount] = useState(0);
@@ -143,10 +143,11 @@ export function InviteMembers() {
       </div>
 
       <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-xl p-6 space-y-6">
-        {(error || listError) && (
+        {/* Form problems (e.g. duplicate emails); a failed send shows as a toast */}
+        {listError && (
           <div role="alert" className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{listError || error}</span>
+            <span>{listError}</span>
           </div>
         )}
 

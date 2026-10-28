@@ -22,8 +22,11 @@ import {
   Link2,
   Hash,
   AlertCircle,
+  Zap,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
+import { QuickRepliesManager } from '@/components/settings/QuickRepliesManager';
 import {
   fetchOrganization,
   changePassword,
@@ -39,7 +42,7 @@ import {
   strongPasswordField,
 } from '@/validation/schemas';
 
-type SettingsTab = 'workspace' | 'profile' | 'security';
+type SettingsTab = 'workspace' | 'profile' | 'security' | 'quick-replies';
 
 interface DetailsFormValues {
   organization_name: string;
@@ -199,8 +202,12 @@ export function WorkspaceSettings() {
     settingsSaveError,
   } = useAppSelector((state) => state.workspace);
   const isAdmin = user?.role === 'admin';
+  const hasChats = useFeatureFlag('customer_chats'); // Quick replies are used in Customer Chats
 
-  const [tab, setTab] = useState<SettingsTab | null>(null);
+  // "Manage quick replies" in a chat links here with ?tab=quick-replies
+  const [tab, setTab] = useState<SettingsTab | null>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'quick-replies' ? 'quick-replies' : null
+  );
   const [isEditingWorkspace, setIsEditingWorkspace] = useState(false);
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
@@ -357,6 +364,7 @@ export function WorkspaceSettings() {
       : []),
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'security', label: 'Security', icon: ShieldCheck },
+    ...(hasChats ? [{ id: 'quick-replies' as const, label: 'Quick replies', icon: Zap }] : []),
   ];
   const activeTab: SettingsTab = tab ?? (isAdmin ? 'workspace' : 'profile');
 
@@ -418,15 +426,7 @@ export function WorkspaceSettings() {
 
         {/* Section content */}
         <div className="flex-1 min-w-0 space-y-6">
-          {settingsSaveError && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error-container/20 border border-error/30 text-sm text-error"
-            >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{settingsSaveError}</span>
-            </div>
-          )}
+          {/* A failed save shows as a toast */}
           {settingsSaveSuccess && !settingsSaveError && (
             <div
               role="status"
@@ -611,16 +611,7 @@ export function WorkspaceSettings() {
                 </div>
               )}
 
-              {changePasswordError && (
-                <div
-                  role="alert"
-                  className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error-container/20 border border-error/30 text-sm text-error"
-                >
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{changePasswordError}</span>
-                </div>
-              )}
-
+              {/* A failed change (e.g. wrong current password) shows as a toast */}
               <form onSubmit={passwordForm.handleSubmit} noValidate className="space-y-5">
                 <Field label="Current password">
                   <PasswordField
@@ -714,6 +705,9 @@ export function WorkspaceSettings() {
               </form>
             </SectionCard>
           )}
+
+          {/* ---------- Quick replies (all users) ---------- */}
+          {activeTab === 'quick-replies' && hasChats && <QuickRepliesManager />}
         </div>
       </div>
 

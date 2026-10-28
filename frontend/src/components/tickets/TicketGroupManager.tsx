@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, GitMerge, Loader2, Pencil, X } from 'lucide-react';
 import { api } from '@/api/axios';
-import { getApiErrorMessage } from '@/api/errors';
+import { notifyError } from '@/utils/notify';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchTicketGroups, fetchTickets } from '@/store/tickets/ticketThunks';
 import type { TicketGroupNode } from '@/types/ticketTypes';
@@ -14,14 +14,12 @@ export function TicketGroupManager() {
   const groups = useAppSelector((state) => state.tickets.groups);
   const [editing, setEditing] = useState<Editing>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const allSubgroups = groups.flatMap((g) => g.subgroups.map((sg) => ({ ...sg, groupName: g.name })));
 
   const save = async () => {
     if (!editing || !editing.value) return;
     setBusy(true);
-    setError(null);
     try {
       if (editing.mode === 'rename') await api.patch(`/api/v1/tickets/groups/${editing.id}`, { name: editing.value.trim() });
       else await api.post(`/api/v1/tickets/groups/${editing.id}/merge`, { into_id: Number(editing.value) });
@@ -29,7 +27,7 @@ export function TicketGroupManager() {
       dispatch(fetchTicketGroups());
       dispatch(fetchTickets({ page: 1 })); // Moved tickets show their new labels
     } catch (err) {
-      setError(getApiErrorMessage(err, editing.mode === 'rename' ? 'Failed to rename' : 'Failed to merge'));
+      notifyError(err, editing.mode === 'rename' ? 'Failed to rename' : 'Failed to merge');
     } finally {
       setBusy(false);
     }
@@ -83,10 +81,7 @@ export function TicketGroupManager() {
           <>
             <button
               type="button"
-              onClick={() => {
-                setError(null);
-                setEditing({ id: item.id, mode: 'rename', value: item.name });
-              }}
+              onClick={() => setEditing({ id: item.id, mode: 'rename', value: item.name })}
               aria-label={`Rename ${item.name}`}
               className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container cursor-pointer"
             >
@@ -94,10 +89,7 @@ export function TicketGroupManager() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setError(null);
-                setEditing({ id: item.id, mode: 'merge', value: '' });
-              }}
+              onClick={() => setEditing({ id: item.id, mode: 'merge', value: '' })}
               disabled={mergeOptions.length === 0}
               aria-label={`Merge ${item.name}`}
               title="Merge into another one (its tickets move there)"
@@ -119,7 +111,6 @@ export function TicketGroupManager() {
           The AI builds this list and reuses it for new tickets. Merge near-duplicates ("Receipt missing" into "Receipt not received") so repeated problems count together.
         </p>
       </div>
-      {error && <p className="text-xs text-error">{error}</p>}
       {groups.length === 0 && <p className="py-6 text-center text-sm text-on-surface-variant">No groups yet. They appear as the AI files tickets.</p>}
       <div className="divide-y divide-outline-variant/20">
         {groups.map((group: TicketGroupNode) => (

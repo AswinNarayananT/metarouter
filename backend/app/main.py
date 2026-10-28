@@ -21,6 +21,7 @@ from app.api.v1.realtime import router as realtime_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.tickets import router as tickets_router
+from app.api.v1.quick_replies import router as quick_replies_router
 from app.api.v1.overview import router as overview_router
 from app.api.v1.onboarding import router as onboarding_router
 from app.realtime.events import listen_for_events
@@ -78,6 +79,7 @@ app.include_router(realtime_router, prefix="/api/v1")
 app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
 app.include_router(tickets_router, prefix="/api/v1")
+app.include_router(quick_replies_router, prefix="/api/v1")
 app.include_router(overview_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")
 

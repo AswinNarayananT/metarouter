@@ -68,7 +68,7 @@ export function NewBroadcast() {
     numbers, isLoadingNumbers, numbersError,
     templates, isLoadingTemplates, templatesError,
     preview, isPreviewing, previewError,
-    isCreating, createError,
+    isCreating,
   } = useAppSelector((state) => state.broadcast);
   const [step, setStep] = useState(1);
 
@@ -328,13 +328,7 @@ export function NewBroadcast() {
                   <MessagePreviewBubble text={preview.sample_message} label={`Example · ${preview.template.name}`} />
                 </div>
               ) : null}
-
-              {createError && (
-                <div role="alert" className="flex items-start gap-2 px-4 py-3 rounded-xl bg-error/10 text-sm text-error">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{createError}</span>
-                </div>
-              )}
+              {/* A failed send shows as a toast */}
             </section>
           )}
         </div>

@@ -7,7 +7,7 @@ from app.config import settings
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.knowledge_model import KnowledgeChunk
 from app.models.conversation_model import ChatMessage, Conversation
-from app.services.vector_service import search_organization_knowledge
+from app.services.vector_service import search_organization_knowledge, find_organization_chunks, format_knowledge_context
 
 # One request never hangs for minutes; the client's own retries are off so generate_with_backup decides
 client = genai.Client(
@@ -64,6 +64,8 @@ AI_HISTORY_MESSAGES = 10  # Most recent messages sent to Gemini as conversation 
 REPLY_MAX_OUTPUT_TOKENS = 2048
 HANDOVER_TEXT = "I am connecting you with a support representative who will assist you shortly."
 SENTENCE_ENDS = (".", "!", "?", "…")
+KNOWLEDGE_CHUNKS_PER_REPLY = 5  # Knowledge base passages given to the AI for each customer message
+NO_DOCUMENTS_TEXT = "No additional company documents provided."
 
 
 def finish_cut_reply(text: str) -> str:
@@ -82,31 +84,27 @@ def get_organization_knowledge_chunks(db: Session, organization_id: int, user_qu
     ).first()
 
     if not has_chunks:
-        return "No additional company documents provided."
+        return NO_DOCUMENTS_TEXT
 
     try:
-        return search_organization_knowledge(db, organization_id, user_query, limit=5)
+        return search_organization_knowledge(db, organization_id, user_query, limit=KNOWLEDGE_CHUNKS_PER_REPLY)
     except Exception as e:
         # Answer from rules alone rather than failing the whole reply
         print(f"Knowledge search error: {e}")
-        return "No additional company documents provided."
+        return NO_DOCUMENTS_TEXT
 
-def generate_ai_response(db: Session, conversation: Conversation, new_message: str) -> str:
-    """
-    Generates an organization-isolated response using Gemini.
-    """
-    org_id = conversation.organization_id
 
-    # 1. Fetch the Organization System Instructions
-    ai_settings = db.query(OrganizationAISettings).filter_by(organization_id=org_id).first()
+def organization_prompt_settings(db: Session, organization_id: int) -> tuple:
+    # Saved bot name and rules (what customers get)
+    ai_settings = db.query(OrganizationAISettings).filter_by(organization_id=organization_id).first()
     bot_name = ai_settings.bot_name if ai_settings else "Support Bot"
     custom_rules = ai_settings.system_instructions if ai_settings and ai_settings.system_instructions else "Be polite and helpful."
+    return bot_name, custom_rules
 
-    # 2. Retrieve the Organization Knowledge Base Chunks
-    knowledge_context = get_organization_knowledge_chunks(db, org_id, new_message)
 
-    # 3. Construct Strict Guardrails & Handover Rules
-    system_instruction = f"""
+def build_system_instruction(bot_name: str, custom_rules: str, knowledge_context: str) -> str:
+    # Strict guardrails & handover rules; the same prompt for live chats and the "Try it" simulator
+    return f"""
     You are {bot_name}, a customer service AI representing ONLY this organization.
 
     ORGANIZATION RULES & POLICIES:
@@ -149,6 +147,50 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
     3. Never use "[RESOLVED]" together with "[ESCALATE_TO_HUMAN]", and never while the customer still needs help.
     """
 
+
+def generate_reply(system_instruction: str, contents: list) -> str:
+    # Gemini with the chat model chain; raises if every model fails or the reply is unusable
+    response = generate_with_backup(
+        model_chain(settings.GEMINI_CHAT_MODEL, settings.GEMINI_CHAT_BACKUP_MODEL),
+        contents,
+        types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.2, # Low temperature ensures strict policy adherence
+            max_output_tokens=REPLY_MAX_OUTPUT_TOKENS,
+            # Gemini 3 ignores thinking_budget=0; "low" is the lowest level it accepts.
+            thinking_config=types.ThinkingConfig(thinking_level="low"),
+        ),
+        "customer reply",
+        timeout_seconds=settings.GEMINI_CHAT_TIMEOUT_SECONDS  # The customer is waiting: move to the backup sooner
+    )
+    if not response.text:
+        raise ValueError(f"Empty response from Gemini (finish reason: {response.candidates[0].finish_reason if response.candidates else 'unknown'})")
+
+    # Cut off by the token limit: finish at the last full sentence instead of sending half of one
+    reply = response.text.strip()
+    if response.candidates and response.candidates[0].finish_reason == types.FinishReason.MAX_TOKENS:
+        print(f"[GEMINI] customer reply hit the token limit; trimming to the last full sentence: {reply[-60:]!r}")
+        reply = finish_cut_reply(reply)
+        if not reply:
+            raise ValueError("Reply was cut off before its first sentence ended")
+    return reply
+
+
+def generate_ai_response(db: Session, conversation: Conversation, new_message: str) -> str:
+    """
+    Generates an organization-isolated response using Gemini.
+    """
+    org_id = conversation.organization_id
+
+    # 1. Fetch the Organization System Instructions
+    bot_name, custom_rules = organization_prompt_settings(db, org_id)
+
+    # 2. Retrieve the Organization Knowledge Base Chunks
+    knowledge_context = get_organization_knowledge_chunks(db, org_id, new_message)
+
+    # 3. Construct Strict Guardrails & Handover Rules
+    system_instruction = build_system_instruction(bot_name, custom_rules, knowledge_context)
+
     # 4. Fetch Chat History: the most recent messages, oldest first
     # Activity entries ("Aromal took this chat") are for the team, not part of the conversation with the customer
     recent_messages = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender != "system").order_by(ChatMessage.id.desc()).limit(AI_HISTORY_MESSAGES).all()
@@ -177,30 +219,50 @@ def generate_ai_response(db: Session, conversation: Conversation, new_message: s
 
     # 5. Call Gemini
     try:
-        response = generate_with_backup(
-            model_chain(settings.GEMINI_CHAT_MODEL, settings.GEMINI_CHAT_BACKUP_MODEL),
-            contents,
-            types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.2, # Low temperature ensures strict policy adherence
-                max_output_tokens=REPLY_MAX_OUTPUT_TOKENS,
-                # Gemini 3 ignores thinking_budget=0; "low" is the lowest level it accepts.
-                thinking_config=types.ThinkingConfig(thinking_level="low"),
-            ),
-            "customer reply",
-            timeout_seconds=settings.GEMINI_CHAT_TIMEOUT_SECONDS  # The customer is waiting: move to the backup sooner
-        )
-        if not response.text:
-            raise ValueError(f"Empty response from Gemini (finish reason: {response.candidates[0].finish_reason if response.candidates else 'unknown'})")
-
-        # Cut off by the token limit: finish at the last full sentence instead of sending half of one
-        reply = response.text.strip()
-        if response.candidates and response.candidates[0].finish_reason == types.FinishReason.MAX_TOKENS:
-            print(f"[GEMINI] customer reply hit the token limit; trimming to the last full sentence: {reply[-60:]!r}")
-            reply = finish_cut_reply(reply)
-            if not reply:
-                raise ValueError("Reply was cut off before its first sentence ended")
-        return reply
+        return generate_reply(system_instruction, contents)
     except Exception as e:
         print(f"Gemini Generation Error: {e}")
         return "[ESCALATE_TO_HUMAN] I am having trouble processing your request. Transferring you to an agent."
+
+
+def simulate_ai_response(db: Session, organization_id: int, history: list, new_message: str) -> dict:
+    # "Try it" on the AI Assistant page: the saved settings and knowledge base, the same prompt and models
+    # as live chats, but the conversation comes from the request and nothing is saved or sent
+    # 1. Saved bot name and rules
+    bot_name, custom_rules = organization_prompt_settings(db, organization_id)
+
+    # 2. Knowledge base passages with their match distance (to show as sources)
+    has_knowledge = db.query(KnowledgeChunk.id).filter(KnowledgeChunk.organization_id == organization_id).first() is not None
+    matches = []
+    knowledge_context = NO_DOCUMENTS_TEXT
+    if has_knowledge:
+        try:
+            matches = find_organization_chunks(db, organization_id, new_message, limit=KNOWLEDGE_CHUNKS_PER_REPLY)
+            knowledge_context = format_knowledge_context([chunk for chunk, _ in matches])
+        except Exception as e:
+            print(f"[AI SIMULATOR] Knowledge search error: {e}")
+
+    # 3. Earlier turns of the test chat, then the new question
+    contents = [
+        types.Content(role="user" if turn["role"] == "customer" else "model", parts=[types.Part.from_text(text=turn["text"])])
+        for turn in history
+    ]
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=new_message)]))
+
+    # 4. Same model call as a live chat; a failure is reported as one (not dressed up as a handover)
+    started = time.monotonic()
+    raw_reply = None
+    error = None
+    try:
+        raw_reply = generate_reply(build_system_instruction(bot_name, custom_rules, knowledge_context), contents)
+    except Exception as e:
+        print(f"[AI SIMULATOR] Gemini error: {e}")
+        error = str(e)
+
+    return {
+        "raw_reply": raw_reply,
+        "error": error,
+        "matches": matches,
+        "has_knowledge": has_knowledge,
+        "elapsed_ms": int((time.monotonic() - started) * 1000)
+    }

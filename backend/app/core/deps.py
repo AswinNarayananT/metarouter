@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt.exceptions import PyJWTError
@@ -14,6 +14,9 @@ from app.config import settings
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/login")
 
 WORKSPACE_SUSPENDED_ERROR = "This workspace is suspended. Contact support to restore access."
+READ_ONLY_SESSION_ERROR = "Read-only support session: changes are disabled."
+# The only write a support session may make: the live-updates socket ticket (it changes no workspace data)
+READ_ONLY_ALLOWED_WRITES = {"/api/v1/realtime/ticket"}
 
 def get_current_super_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> SuperAdmin:
     credentials_exception = HTTPException(
@@ -45,6 +48,7 @@ def get_current_super_admin(token: str = Depends(oauth2_scheme), db: Session = D
     return admin
 
 def get_current_workspace_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
@@ -102,6 +106,10 @@ def get_current_workspace_user(
 
     # A suspended workspace can't use the API
     ensure_workspace_active(db, user.organization_id)
+
+    # Super admin viewing as this user: look only, never change anything
+    if payload.get("impersonated_by") is not None and request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path not in READ_ONLY_ALLOWED_WRITES:
+        raise HTTPException(status_code=403, detail=READ_ONLY_SESSION_ERROR)
 
     return user
 

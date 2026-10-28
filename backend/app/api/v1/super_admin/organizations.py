@@ -1,3 +1,4 @@
+import json
 import math
 import re
 import secrets
@@ -10,6 +11,7 @@ from app.database import get_db
 from app.config import settings
 from app.core.deps import get_current_super_admin
 from app.core.security import hash_invite_token
+from app.core.redis_client import redis_client
 from app.services.audit_service import record_audit_log, get_client_ip
 from app.services.whatsapp_service import deregister_phone_number, unsubscribe_app_from_waba, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.models.admin_model import SuperAdmin
@@ -35,6 +37,7 @@ from app.schemas.organization_schema import (
     StuckTasksBreakdown,
     OrganizationInviteCreateRequest,
     OrganizationInviteResponse,
+    ImpersonateUserRequest,
 )
 
 router = APIRouter(
@@ -619,6 +622,59 @@ def get_organization(
         
     metrics = compute_organization_metrics(db, organization_id)
     return OrganizationDetail.from_orm_custom(org, metrics=metrics)
+
+
+@router.post("/{organization_id}/impersonate")
+def start_impersonation(organization_id: int, payload: ImpersonateUserRequest, request: Request, db: Session = Depends(get_db), current_admin: SuperAdmin = Depends(get_current_super_admin)):
+    # 1. Locate the user strictly within this organization
+    org = db.query(Organization).filter(Organization.id == organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    user = db.query(User).filter(
+        User.id == payload.user_id,
+        User.organization_id == organization_id
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found in this workspace")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="This user is deactivated")
+    if org.subscription_status != "active":
+        raise HTTPException(status_code=400, detail="This workspace is suspended. Activate it before logging in as a user.")
+
+    # 2. One-time code for the new workspace tab (the token is made only when that tab redeems it)
+    code = secrets.token_urlsafe(32)
+    session = {
+        "admin_id": current_admin.id,
+        "admin_email": current_admin.email,
+        "user_id": user.id,
+        "organization_id": org.id
+    }
+    redis_client.set(f"impersonation_code:{code}", json.dumps(session), ex=settings.IMPERSONATION_CODE_EXPIRE_SECONDS)
+
+    # 3. Every support session is on record, with the reason
+    record_audit_log(
+        db,
+        action="IMPERSONATION_STARTED",
+        category="security",
+        actor_type="super_admin",
+        actor_id=current_admin.id,
+        actor_email=current_admin.email,
+        target_type="user",
+        target_id=user.id,
+        target_name=user.email,
+        details={"organization_id": org.id, "organization_name": org.name, "role": user.role, "reason": payload.reason, "read_only": True, "expires_in_minutes": settings.IMPERSONATION_TOKEN_EXPIRE_MINUTES},
+        ip_address=get_client_ip(request),
+        status="warning",
+    )
+
+    # The code goes after "#" so it never reaches a server log
+    workspace_url = settings.WORKSPACE_URL_TEMPLATE.replace("{slug}", org.slug).rstrip("/")
+    return {
+        "redirect_url": f"{workspace_url}/impersonate#code={code}",
+        "expires_in": settings.IMPERSONATION_CODE_EXPIRE_SECONDS
+    }
 
 
 

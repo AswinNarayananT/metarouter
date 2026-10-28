@@ -12,7 +12,12 @@ from app.models.organization_model import User
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task
+from app.workers.tasks.chat_tasks import ESCALATION_TAG, RESOLVED_TAG, HANDOVER_FALLBACK_TEXT
 from app.core.features import require_feature
+from app.core.redis_client import redis_client
+from app.schemas.ai_simulator_schema import SimulateAIRequest
+from app.services.ai_service import simulate_ai_response
+from app.services.conversation_service import handover_roles
 
 router = APIRouter(
     prefix="/ai-settings",
@@ -91,6 +96,63 @@ async def save_ai_settings(
         "status": "success",
         "message": "AI settings updated successfully.",
         "settings": _serialize(settings_obj),
+    }
+
+
+@router.post("/simulate")
+def simulate_ai_reply(payload: SimulateAIRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    _require_admin(current_user)
+    organization_id = current_user.organization_id
+
+    # 1. Each test is a Gemini call: a limit per admin protects the quota
+    limit_key = f"ai_simulator:{current_user.id}"
+    used = redis_client.incr(limit_key)
+    if used == 1:
+        redis_client.expire(limit_key, 600)  # 10 minutes
+    if used > settings.AI_SIMULATOR_MAX_PER_10_MIN:
+        raise HTTPException(status_code=429, detail="You've run many tests in a short time. Try again in a few minutes.")
+
+    # 2. Same prompt, knowledge base and models as a live chat; nothing is saved or sent
+    result = simulate_ai_response(db, organization_id, [turn.model_dump() for turn in payload.history], payload.message)
+
+    sources = [
+        {
+            "title": chunk.title,
+            "document_id": chunk.document_id,
+            "score": max(0, round((1 - float(distance)) * 100)),  # Cosine similarity as a %
+            "preview": chunk.content[:300]
+        }
+        for chunk, distance in result["matches"]
+    ]
+
+    # 3. What a real chat would do with this reply (same tags as reply_with_ai)
+    raw_reply = (result["raw_reply"] or "").strip()
+    roles = ", ".join(sorted(handover_roles(db, organization_id)))
+    if result["error"]:
+        outcome = "error"
+        reply = ""
+        note = "The AI couldn't answer (the model was busy or timed out). In a real chat the customer would be handed to your team."
+    elif not raw_reply or ESCALATION_TAG in raw_reply:
+        outcome = "escalated"
+        reply = raw_reply.replace(ESCALATION_TAG, "").strip() or HANDOVER_FALLBACK_TEXT
+        note = f"The chat would move to your team ({roles} can take it), its ticket becomes a team ticket and they're notified."
+    elif RESOLVED_TAG in raw_reply:
+        outcome = "resolved"
+        reply = raw_reply.replace(RESOLVED_TAG, "").strip() or "Glad I could help! Have a great day."
+        note = "The customer needs nothing else: the AI would close the ticket."
+    else:
+        outcome = "answered"
+        reply = raw_reply
+        note = "The AI answers and keeps the chat."
+
+    return {
+        "reply": reply,
+        "outcome": outcome,
+        "outcome_note": note,
+        "sources": sources,
+        "best_score": sources[0]["score"] if sources else None,
+        "has_knowledge": result["has_knowledge"],
+        "elapsed_ms": result["elapsed_ms"]
     }
 
 

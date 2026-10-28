@@ -10,19 +10,18 @@ import type { BroadcastTemplate } from '@/types/broadcastTypes';
 /**
  * Pick an approved WhatsApp template, fill its {{1}}, {{2}} ... and send it to this customer.
  * Works outside the 24-hour window; the customer's reply reopens free text.
+ * A failed send shows as a toast and the dialog stays open.
  */
 export function TemplateDialog({
   conversationId,
   customerName,
   busy,
-  error,
   onCancel,
   onSend,
 }: {
   conversationId: number;
   customerName: string | null; // Pre-fills {{1}} (usually the greeting name)
   busy: boolean;
-  error: string | null;
   onCancel: () => void;
   onSend: (template: BroadcastTemplate, parameters: string[]) => void;
 }) {
@@ -107,7 +106,6 @@ export function TemplateDialog({
               <MessagePreviewBubble text={renderTemplateBody(template.body_text, values)} />
             </div>
           )}
-          {error && <p className="text-xs text-error">{error}</p>}
         </div>
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-outline-variant/30">

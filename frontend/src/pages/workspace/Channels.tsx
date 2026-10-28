@@ -6,6 +6,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { api } from '@/api/axios';
 import { getApiErrorMessage } from '@/api/errors';
+import { notifyError } from '@/utils/notify';
 import { runEmbeddedSignup } from '@/utils/metaEmbeddedSignup';
 import type { SignupConfig } from '@/utils/metaEmbeddedSignup';
 import { ComingSoonChannelCard } from '@/components/channels/ComingSoonChannelCard';
@@ -78,7 +79,8 @@ export function Channels() {
       dispatch(fetchWhatsAppNumbers());
       setNotice({ text: `${number.display_phone_number} is connected. Customer messages to it now arrive in Customer Chats.`, tone: 'success' });
     } catch (err) {
-      setNotice({ text: err instanceof Error && !('isAxiosError' in err) ? err.message : getApiErrorMessage(err, "Couldn't connect the number. Please try again."), tone: 'error' });
+      // Popup closed / Meta errors carry their own message; API errors carry the server's
+      notifyError(err instanceof Error && !('isAxiosError' in err) ? err.message : getApiErrorMessage(err, "Couldn't connect the number. Please try again."));
     } finally {
       setConnectLabel(null);
     }
@@ -94,7 +96,7 @@ export function Channels() {
         tone: 'info',
       });
     } catch (err) {
-      setNotice({ text: getApiErrorMessage(err, "Couldn't disconnect the number."), tone: 'error' });
+      notifyError(err, "Couldn't disconnect the number.");
     }
   };
 

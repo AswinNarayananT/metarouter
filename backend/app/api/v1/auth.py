@@ -1,16 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie, Header
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import json
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app.models.organization_model import Organization, User
-from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload
+from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload, decode_token_ignoring_expiry
 from app.core.deps import get_current_workspace_user, token_issued_after_reset, ensure_workspace_active, WORKSPACE_SUSPENDED_ERROR
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
 from app.core.token_blacklist import blacklist_token, is_token_revoked, rotation_marker
 from app.core.features import get_organization_features
-from app.schemas.auth_schema import WorkspaceLoginRequest, WorkspaceLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest
+from app.services.conversation_service import handover_roles
+from app.core.redis_client import redis_client
+from app.services.audit_service import record_audit_log, get_client_ip
+from app.schemas.auth_schema import WorkspaceLoginRequest, WorkspaceLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest, ImpersonationExchangeRequest
 
 router = APIRouter(prefix="/auth", tags=["Workspace Authentication"])
 
@@ -18,6 +22,17 @@ router = APIRouter(prefix="/auth", tags=["Workspace Authentication"])
 
 def _set_refresh_cookie(response: Response, refresh_token: str):
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=settings.COOKIE_SECURE, samesite="lax", max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)
+
+
+def _impersonation_info(payload: dict):
+    # Shown in the workspace banner: who is viewing and when the session ends
+    if payload.get("impersonated_by") is None:
+        return None
+    return {
+        "admin_email": payload.get("impersonated_by_email"),
+        "expires_at": payload.get("exp"),
+        "read_only": True
+    }
 
 @router.post("/login", response_model=WorkspaceLoginResponse)
 def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
@@ -46,9 +61,15 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
         User.organization_id == org.id
     ).first()
 
-    if not user or not verify_password(payload.password, user.hashed_password):
+    # Say which one is wrong so the user knows what to fix ("field" lets the form highlight it).
+    # Super admin login stays generic; the rate limit above slows down guessing which emails exist
+    if not user:
         record_failed_login("workspace", payload.email, request)
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail={"message": "No account found with this email. Check it, or ask your workspace admin for an invite.", "field": "email"})
+
+    if not verify_password(payload.password, user.hashed_password):
+        record_failed_login("workspace", payload.email, request)
+        raise HTTPException(status_code=401, detail={"message": "Incorrect password. Please try again.", "field": "password"})
 
     clear_failed_logins("workspace", payload.email, request)
 
@@ -84,6 +105,54 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
             "organization_id": org.id,
             "organization_name": org.name,
             "features": features,
+        }
+    }
+
+
+@router.post("/impersonate/exchange", response_model=WorkspaceLoginResponse)
+def exchange_impersonation_code(payload: ImpersonationExchangeRequest, db: Session = Depends(get_db)):
+    # 1. Redeem the one-time code from the super admin panel (GETDEL: it can only be used once)
+    raw_session = redis_client.getdel(f"impersonation_code:{payload.code}")
+    if not raw_session:
+        raise HTTPException(status_code=401, detail="This support link has expired or was already used. Start a new session from the admin panel.")
+    session = json.loads(raw_session)
+
+    # 2. The user may have been deactivated, or the workspace suspended, since the code was made
+    user = db.query(User).filter(
+        User.id == session["user_id"],
+        User.organization_id == session["organization_id"]
+    ).first()
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not authorized")
+
+    org = ensure_workspace_active(db, user.organization_id)
+
+    # 3. Short read-only access token naming the super admin. No refresh token: the session simply ends,
+    #    and the browser's own workspace login (refresh cookie) is never touched
+    token_payload = {
+        "sub": user.email,
+        "organization_id": org.id,
+        "role": user.role,
+        "impersonated_by": session["admin_id"],
+        "impersonated_by_email": session["admin_email"]
+    }
+    access_token = create_access_token(data=token_payload, expires_delta=timedelta(minutes=settings.IMPERSONATION_TOKEN_EXPIRE_MINUTES))
+
+    features = get_organization_features(db, org.id)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "organization_id": org.id,
+            "organization_name": org.name,
+            "features": features,
+            "impersonation": _impersonation_info(get_current_user_payload(access_token))
         }
     }
 
@@ -137,12 +206,35 @@ def refresh_access_token(response: Response, refresh_token: Optional[str] = Cook
 
 
 @router.post("/logout")
-def logout(response: Response, authorization: Optional[str] = Header(None), refresh_token: Optional[str] = Cookie(default=None)):
+def logout(request: Request, response: Response, authorization: Optional[str] = Header(None), refresh_token: Optional[str] = Cookie(default=None), db: Session = Depends(get_db)):
     # 1. Revoke the access token and the refresh token (an expired or invalid one needs nothing)
+    access_payload = None
+    session_payload = None
     if authorization and authorization.startswith("Bearer "):
-        access_payload = get_current_user_payload(authorization.replace("Bearer ", ""))
+        token = authorization.replace("Bearer ", "")
+        access_payload = get_current_user_payload(token)
         if access_payload:
             blacklist_token(access_payload)
+        # An expired token is still checked for being a support session
+        session_payload = access_payload or decode_token_ignoring_expiry(token)
+
+    # Support session ended (by the admin or by timing out): on record for the super admin.
+    # The refresh cookie belongs to the browser's own workspace login, so it is left alone
+    if session_payload and session_payload.get("impersonated_by") is not None:
+        record_audit_log(
+            db,
+            action="IMPERSONATION_ENDED",
+            category="security",
+            actor_type="super_admin",
+            actor_id=session_payload.get("impersonated_by"),
+            actor_email=session_payload.get("impersonated_by_email"),
+            target_type="user",
+            target_name=session_payload.get("sub"),
+            details={"organization_id": session_payload.get("organization_id"), "expired": access_payload is None},
+            ip_address=get_client_ip(request),
+            status="success",
+        )
+        return {"message": "Support session ended"}
 
     if refresh_token:
         refresh_payload = decode_refresh_token(refresh_token)
@@ -192,6 +284,9 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
             "organization_id": org.id if org else None,
             "organization_name": org.name if org else None,
             "features": features,
+            "impersonation": _impersonation_info(payload),
+            # AI settings "allowed roles for handover": may this member pick up / take over unassigned chats
+            "can_handle_chats": user.role in handover_roles(db, user.organization_id),
         }
     }
 

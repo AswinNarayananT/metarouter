@@ -6,6 +6,7 @@ import { Home } from '@/pages/Home';
 import { Login } from '@/pages/Login';
 import { AcceptInvitation } from '@/pages/workspace/AcceptInvitation';
 import { WorkspaceOnboarding } from '@/pages/auth/WorkspaceOnboarding';
+import { ImpersonationStart } from '@/pages/auth/ImpersonationStart';
 
 // Super Admin Pages & Components
 import { SuperAdminLogin } from '@/pages/SuperAdminLogin';
@@ -98,6 +99,9 @@ function App() {
             </PublicOnlyRoute>
           }
         />
+
+        {/* Super admin's read-only support session; no guard: a login already in this browser must not redirect it */}
+        <Route path="/impersonate" element={<ImpersonationStart />} />
 
         {/* ========================================== */}
         {/* Super Admin Portal Routes                  */}

@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import type { WorkspaceState, WorkspaceUser, VerifyInvitationResponse } from '@/types/workspaceTypes';
+import type { WorkspaceState, WorkspaceUser, VerifyInvitationResponse, LoginErrorPayload } from '@/types/workspaceTypes';
 import { 
   loginWorkspaceUser, 
   fetchCurrentUser,
@@ -17,7 +17,20 @@ import {
   acceptWorkspaceInvitation 
 } from './workspaceThunks';
 
-const tokenFromStorage = localStorage.getItem('workspace_token');
+// A support session (super admin viewing as a user) keeps its token in sessionStorage: it stays in that one tab,
+// ends when the tab closes, and never replaces the browser's own workspace login in localStorage
+export const IMPERSONATION_TOKEN_KEY = 'impersonation_token';
+
+export function isImpersonationTab(): boolean {
+  return sessionStorage.getItem(IMPERSONATION_TOKEN_KEY) !== null;
+}
+
+function saveToken(token: string) {
+  if (isImpersonationTab()) sessionStorage.setItem(IMPERSONATION_TOKEN_KEY, token);
+  else localStorage.setItem('workspace_token', token);
+}
+
+const tokenFromStorage = sessionStorage.getItem(IMPERSONATION_TOKEN_KEY) || localStorage.getItem('workspace_token');
 const initialState: WorkspaceState = {
   user: null,
   token: tokenFromStorage || null,
@@ -59,7 +72,14 @@ export const workspaceSlice = createSlice({
       state.token = action.payload.access_token;
       state.user = action.payload.user;
       state.features = action.payload.user?.features || {};
-      localStorage.setItem('workspace_token', action.payload.access_token);
+      saveToken(action.payload.access_token);
+    },
+    startImpersonation: (state, action: PayloadAction<{ user: WorkspaceUser; access_token: string }>) => {
+      state.token = action.payload.access_token;
+      state.user = action.payload.user;
+      state.features = action.payload.user.features || {};
+      state.organization = null;
+      sessionStorage.setItem(IMPERSONATION_TOKEN_KEY, action.payload.access_token);
     },
     logoutWorkspace: (state) => {
       state.user = null;
@@ -91,7 +111,9 @@ export const workspaceSlice = createSlice({
       state.isSavingAISettings = false;
       state.aiSettingsSaveSuccess = false;
       state.aiSettingsSaveError = null;
-      localStorage.removeItem('workspace_token');
+      // Ending a support session leaves the browser's own workspace login alone
+      if (isImpersonationTab()) sessionStorage.removeItem(IMPERSONATION_TOKEN_KEY);
+      else localStorage.removeItem('workspace_token');
     },
     resetSettingsSaveState: (state) => {
       state.settingsSaveSuccess = false;
@@ -134,7 +156,9 @@ export const workspaceSlice = createSlice({
       })
       .addCase(loginWorkspaceUser.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload as string;
+        // A wrong email / password is shown under that input (LoginForm); anything else in the banner
+        const payload = action.payload as LoginErrorPayload | undefined;
+        state.error = payload?.field ? null : payload?.message ?? 'Sign-in failed. Please try again.';
       })
       // Fetch Current User
       .addCase(fetchCurrentUser.pending, (state) => {
@@ -273,9 +297,9 @@ export const workspaceSlice = createSlice({
         state.inviteSuccess = true;
         state.lastInvitations = action.payload;
       })
-      .addCase(generateWorkspaceInvitations.rejected, (state, action) => {
+      // Shown as a toast (store/errorToastMiddleware)
+      .addCase(generateWorkspaceInvitations.rejected, (state) => {
         state.isInviting = false;
-        state.error = action.payload as string;
         state.inviteSuccess = false;
       })
       // Verify Invitation Token
@@ -302,9 +326,9 @@ export const workspaceSlice = createSlice({
         state.isAcceptingInvite = false;
         state.acceptSuccess = true;
       })
-      .addCase(acceptWorkspaceInvitation.rejected, (state, action) => {
+      // Shown as a toast; `error` stays for an invalid / expired link (verifyInvitationToken)
+      .addCase(acceptWorkspaceInvitation.rejected, (state) => {
         state.isAcceptingInvite = false;
-        state.error = action.payload as string;
         state.acceptSuccess = false;
       });
   },
@@ -312,6 +336,7 @@ export const workspaceSlice = createSlice({
 
 export const {
   setCredentials,
+  startImpersonation,
   logoutWorkspace,
   clearWorkspaceError,
   resetInviteState,

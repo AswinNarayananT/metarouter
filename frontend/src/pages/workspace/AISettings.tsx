@@ -1,12 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { AlertCircle, Bot, CheckCircle2, Save } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, FlaskConical, Save } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchAISettings, saveAISettings } from '@/store/workspace/workspaceThunks';
 import { resetAISettingsSaveState } from '@/store/workspace/workspaceSlice';
 import type { HandoverRole } from '@/types/workspaceTypes';
 import { KnowledgeBaseCard } from '@/components/knowledge/KnowledgeBaseCard';
+import { AISimulatorDrawer } from '@/components/ai/AISimulatorDrawer';
 
 const MAX_INSTRUCTIONS_LENGTH = 4000;
 
@@ -46,6 +47,9 @@ function fieldBorder(hasError: boolean) {
 
 export function AISettings() {
   const dispatch = useAppDispatch();
+  // "Try it" drawer: tests the saved settings and knowledge base
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
+  const closeSimulator = useCallback(() => setSimulatorOpen(false), []);
   const {
     aiSettings,
     isLoadingAISettings,
@@ -144,12 +148,24 @@ export function AISettings() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">AI Assistant</h1>
-        <p className="text-sm text-on-surface-variant">
-          Configure how your AI assistant responds to customers and when it hands over to your team.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-on-surface">AI Assistant</h1>
+          <p className="text-sm text-on-surface-variant">
+            Configure how your AI assistant responds to customers and when it hands over to your team.
+          </p>
+        </div>
+        {/* Test the saved rules and knowledge base like a customer would */}
+        <button
+          type="button"
+          onClick={() => setSimulatorOpen(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-semibold hover:bg-primary/15 transition-colors cursor-pointer shrink-0"
+        >
+          <FlaskConical className="w-4 h-4" />
+          Try it
+        </button>
       </div>
+      <AISimulatorDrawer open={simulatorOpen} onClose={closeSimulator} hasUnsavedChanges={dirty} />
 
       <form
         onSubmit={formik.handleSubmit}
@@ -179,15 +195,7 @@ export function AISettings() {
             </div>
           )}
 
-          {aiSettingsSaveError && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error-container/20 border border-error/30 text-sm text-error"
-            >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{aiSettingsSaveError}</span>
-            </div>
-          )}
+          {/* A failed save shows as a toast */}
 
           {/* Bot name */}
           <div className="space-y-1.5">

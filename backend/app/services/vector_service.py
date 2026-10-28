@@ -100,21 +100,29 @@ def embed_documents(texts: List[str]) -> List[List[float]]:
     return embeddings
 
 
-def search_organization_knowledge(db: Session, organization_id: int, query_text: str, limit: int = 3) -> str:
+def find_organization_chunks(db: Session, organization_id: int, query_text: str, limit: int = 3) -> List[tuple]:
     """
-    Performs lightning-fast vector similarity search strictly scoped to the organization using pgvector.
+    Closest knowledge chunks to the question, strictly scoped to the organization, as (chunk, cosine distance).
     """
     # 1. Embed incoming user question
     query_vector = _embed([query_text], task_type="RETRIEVAL_QUERY")[0]
 
     # 2. Query DB using pgvector cosine distance operator (<=>) strictly filtered by organization_id
-    results = db.query(KnowledgeChunk).filter(
+    distance = KnowledgeChunk.embedding.cosine_distance(query_vector)
+    return db.query(KnowledgeChunk, distance.label("distance")).filter(
         KnowledgeChunk.organization_id == organization_id
-    ).order_by(
-        KnowledgeChunk.embedding.cosine_distance(query_vector)
-    ).limit(limit).all()
+    ).order_by(distance).limit(limit).all()
 
-    if not results:
+
+def format_knowledge_context(chunks: List[KnowledgeChunk]) -> str:
+    # The text the AI reads (same for live chats and the "Try it" simulator)
+    if not chunks:
         return "No specific document context found."
+    return "\n\n".join([f"Source ({r.title}): {r.content}" for r in chunks])
 
-    return "\n\n".join([f"Source ({r.title}): {r.content}" for r in results])
+
+def search_organization_knowledge(db: Session, organization_id: int, query_text: str, limit: int = 3) -> str:
+    """
+    Performs lightning-fast vector similarity search strictly scoped to the organization using pgvector.
+    """
+    return format_knowledge_context([chunk for chunk, _ in find_organization_chunks(db, organization_id, query_text, limit)])

@@ -15,7 +15,7 @@ export function BroadcastDetail() {
   const dispatch = useAppDispatch();
   const { id } = useParams();
   const broadcastId = Number(id);
-  const { detail, isLoadingDetail, detailError, isResuming, resumeError } = useAppSelector((state) => state.broadcast);
+  const { detail, isLoadingDetail, detailError, isResuming } = useAppSelector((state) => state.broadcast);
   const [page, setPage] = useState(1);
 
   // Ignore a detail left over from another broadcast
@@ -121,13 +121,7 @@ export function BroadcastDetail() {
             </div>
           )}
 
-          {resumeError && (
-            <div role="alert" className="flex items-start gap-2 px-4 py-3 rounded-xl bg-error/10 text-sm text-error">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{resumeError}</span>
-            </div>
-          )}
-
+          {/* A failed resume shows as a toast */}
           <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
             <section className="bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-xl p-5 sm:p-6 space-y-4" aria-label="Delivery">
               <h2 className="text-sm font-semibold text-on-surface">Delivery</h2>

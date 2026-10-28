@@ -135,7 +135,7 @@ export function SuperAdminSettings() {
 
           <form onSubmit={profileForm.handleSubmit} noValidate className="space-y-4">
             {profileSuccess && <Banner type="success" message="Admin profile updated successfully." />}
-            {profileError && <Banner type="error" message={profileError} />}
+            {/* A failed save shows as a toast */}
 
             <div>
               <label htmlFor="sa-name" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
@@ -193,7 +193,7 @@ export function SuperAdminSettings() {
 
           <form onSubmit={passwordForm.handleSubmit} noValidate className="space-y-4">
             {passwordSuccess && <Banner type="success" message="Password changed successfully." />}
-            {passwordError && <Banner type="error" message={passwordError} />}
+            {/* A failed change shows as a toast */}
 
             <div>
               <label htmlFor="sa-current" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">

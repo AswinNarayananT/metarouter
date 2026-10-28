@@ -6,7 +6,7 @@ class WorkspaceLoginRequest(BaseModel):
     password: str
     org_slug: str  # Extracted from subdomain or input context
 
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 class WorkspaceUserResponse(BaseModel):
     id: int
@@ -16,6 +16,11 @@ class WorkspaceUserResponse(BaseModel):
     organization_name: str
     organization_id: Optional[int] = None
     features: Optional[Dict[str, bool]] = None
+    impersonation: Optional[Dict[str, Any]] = None  # Set only in a super admin's read-only support session
+
+class ImpersonationExchangeRequest(BaseModel):
+    # Sent in the body, not the URL, so the one-time code never lands in server access logs
+    code: str = Field(..., min_length=10, max_length=200)
 
 class WorkspaceLoginResponse(BaseModel):
     access_token: str

@@ -15,6 +15,8 @@ import { TicketChip } from '@/components/chat/TicketChip';
 import { TicketHint } from '@/components/chat/TicketHint';
 import { CloseTicketDialog } from '@/components/tickets/CloseTicketDialog';
 import { closeTicket } from '@/store/tickets/ticketThunks';
+import { fetchQuickReplies } from '@/store/quickReplies/quickRepliesThunks';
+import { fillPlaceholders } from '@/utils/quickReplies';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
 import { ContactPanel } from '@/components/chat/ContactPanel';
@@ -31,12 +33,14 @@ const COUNTS_REFRESH_MS = 1500;
 
 export function CustomerChats() {
   const dispatch = useAppDispatch();
-  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, actionError, updatingAssignmentId, listFilter, listSearch, listPage, hasMoreChats, isLoadingMore, tabCounts } = useAppSelector(
+  // Failed sends / assigns / takeovers show as toasts (store/errorToastMiddleware), so actionError isn't read here
+  const { conversations, threads, selectedId, isLoading, loadError, hasLoaded, sendingId, updatingAssignmentId, listFilter, listSearch, listPage, hasMoreChats, isLoadingMore, tabCounts } = useAppSelector(
     (state) => state.chat
   );
   const currentUser = useAppSelector((state) => state.workspace.user);
   const teamMembers = useAppSelector((state) => state.workspace.teamMembers);
   const notifications = useAppSelector((state) => state.notifications.items);
+  const quickReplies = useAppSelector((state) => state.quickReplies.items);
   const currentUserId = currentUser?.id ?? null;
   // Admins and managers supervise: they assign anyone and can reply to any chat
   const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -47,7 +51,7 @@ export function CustomerChats() {
   const [closingTicket, setClosingTicket] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null); // File waiting to be sent (the draft is its caption)
   const [templateOpen, setTemplateOpen] = useState(false);
-  const { savingId: savingTicketId, actionError: ticketError } = useAppSelector((state) => state.tickets);
+  const savingTicketId = useAppSelector((state) => state.tickets.savingId);
   const updatingStatusId = useAppSelector((state) => state.chat.updatingStatusId);
   // On small screens show either the list or the open chat (a handover alert arrives with a chat selected)
   const [mobileView, setMobileView] = useState<'list' | 'chat'>(() => (selectedId ? 'chat' : 'list'));
@@ -59,6 +63,7 @@ export function CustomerChats() {
   }, [dispatch, listFilter, listSearch]);
   useEffect(() => {
     dispatch(fetchConversationCounts());
+    dispatch(fetchQuickReplies()); // Saved replies for the reply box ("/" or the ⚡ button)
   }, [dispatch]);
 
   // Search on the server once the agent stops typing (it covers every chat, not just the loaded ones)
@@ -204,6 +209,12 @@ export function CustomerChats() {
 
   // Someone else owns the chat: only they (or a supervisor) can reply
   const ownedByOther = Boolean(selected?.assignedTo && selected.assignedTo.id !== currentUserId && !isSupervisor);
+  // Same rule as the server's can_reply: the owner always can; otherwise the role must be allowed to handle chats
+  // (AI settings "allowed roles for handover"). Controls this member can't use are hidden, not shown to fail
+  const canHandleChats = currentUser?.can_handle_chats ?? true;
+  const isMine = Boolean(selected?.assignedTo && selected.assignedTo.id === currentUserId);
+  const roleCantPickUp = !isMine && !ownedByOther && !canHandleChats;
+  const canActOnChat = !ownedByOther && !roleCantPickUp;
 
   const showDocument = (messageId: number) => setPanel({ type: 'document', messageId });
 
@@ -238,10 +249,10 @@ export function CustomerChats() {
               conversation={selected}
               contactOpen={panel?.type === 'contact'}
               onBack={() => setMobileView('list')}
-              onToggleTakeover={toggleTakeover}
+              onToggleTakeover={canActOnChat ? toggleTakeover : undefined}
               onToggleContact={() => setPanel((p) => (p?.type === 'contact' ? null : { type: 'contact' }))}
               onOpenTemplates={
-                ownedByOther
+                !canActOnChat
                   ? undefined
                   : () => {
                       dispatch(clearChatActionError());
@@ -256,6 +267,7 @@ export function CustomerChats() {
                   members={teamMembers}
                   currentUserId={currentUserId}
                   isSupervisor={isSupervisor}
+                  canPickUp={canHandleChats}
                   busy={updatingAssignmentId === selected.id}
                   onAssign={assign}
                 />
@@ -281,7 +293,7 @@ export function CustomerChats() {
             <WindowNoticeBanner
               windowOpen={selected.windowOpen}
               windowExpiresAt={selected.windowExpiresAt}
-              disabled={ownedByOther}
+              disabled={!canActOnChat}
               onOpenTemplates={() => {
                 dispatch(clearChatActionError());
                 setTemplateOpen(true);
@@ -299,24 +311,33 @@ export function CustomerChats() {
               disabledReason={
                 ownedByOther
                   ? `${selected.assignedTo?.name} is handling this chat. Ask them or a manager to reassign it to you.`
+                  : roleCantPickUp
+                  ? "Your role can't pick up chats. Ask an admin or manager to assign this chat to you."
                   : windowClosed
                   ? "It's been over 24 hours since the customer's last message. WhatsApp only allows a template now, so replying here opens again when they write back."
                   : null
               }
               sending={sendingId === selected.id}
-              error={templateOpen ? null : actionError}
               file={pendingFile}
               onFileChange={(file) => {
                 setPendingFile(file);
                 dispatch(clearChatActionError());
               }}
               onOpenTemplates={
-                ownedByOther
+                !canActOnChat
                   ? undefined
                   : () => {
                       dispatch(clearChatActionError());
                       setTemplateOpen(true);
                     }
+              }
+              quickReplies={quickReplies}
+              fillQuickReply={(content) =>
+                fillPlaceholders(content, {
+                  customerName: selected.hasName ? selected.name : null,
+                  agentName: currentUser?.name,
+                  businessName: currentUser?.organization_name,
+                })
               }
             />
           </>
@@ -345,7 +366,6 @@ export function CustomerChats() {
           conversationId={selected.id}
           customerName={selected.hasName ? selected.name : null}
           busy={sendingId === selected.id}
-          error={actionError}
           onCancel={() => setTemplateOpen(false)}
           onSend={sendTemplate}
         />
@@ -355,7 +375,6 @@ export function CustomerChats() {
         <CloseTicketDialog
           ticketNumber={selected.openTicket.number}
           busy={savingTicketId === selected.openTicket.id}
-          error={ticketError}
           onCancel={() => setClosingTicket(false)}
           onConfirm={confirmCloseTicket}
         />

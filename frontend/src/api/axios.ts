@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { store } from '@/store';
 import { API_BASE_URL } from '@/api/config';
+import { isImpersonationTab } from '@/store/workspace/workspaceSlice';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -56,7 +57,15 @@ api.interceptors.response.use(
     const isAuthRoute =
       originalRequest.url?.includes('/auth/refresh-token') ||
       originalRequest.url?.includes('/auth/login') ||
-      originalRequest.url?.includes('/auth/logout');
+      originalRequest.url?.includes('/auth/logout') ||
+      originalRequest.url?.includes('/auth/impersonate');
+
+    // Support session expired or ended: never refresh, the shared refresh cookie belongs to the browser's own login
+    if (error.response?.status === 401 && !isAuthRoute && isImpersonationTab()) {
+      store.dispatch({ type: 'workspace/logoutWorkspace' });
+      window.location.href = '/impersonate?ended=1';
+      return Promise.reject(error);
+    }
 
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       originalRequest._retry = true;

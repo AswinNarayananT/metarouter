@@ -15,7 +15,9 @@ export function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
     }
   }, [token, user, dispatch]);
 
-  if (isLoading) {
+  // Only while checking a saved session. Not while signing in: swapping the form out remounts it,
+  // which cleared the "Invalid email or password" error and what was typed
+  if (token && !user && isLoading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 

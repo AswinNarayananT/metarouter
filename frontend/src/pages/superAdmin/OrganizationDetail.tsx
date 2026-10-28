@@ -9,6 +9,7 @@ import {
   Check,
   Clock,
   Copy,
+  Eye,
   HardDrive,
   Headphones,
   KeyRound,
@@ -34,6 +35,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchOrganization, updateOrganizationStatus, deleteOrganization } from '@/store/superAdmin/organizationThunks';
 import { superAdminApi } from '@/api/superAdminApi';
 import { getApiErrorMessage } from '@/api/errors';
+import { notifyError } from '@/utils/notify';
 import type { OrganizationFeatureItem, OrganizationFeaturesResponse } from '@/types/moduleTypes';
 
 function formatBytes(bytes: number, decimals = 1): string {
@@ -110,7 +112,41 @@ export function OrganizationDetailPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
   const [isDeletingOrg, setIsDeletingOrg] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // "Log in as user": read-only support session in a new tab
+  const [impersonateTarget, setImpersonateTarget] = useState<{ id: number; name: string; email: string; role: string } | null>(null);
+  const [impersonateReason, setImpersonateReason] = useState('');
+  const [isStartingImpersonation, setIsStartingImpersonation] = useState(false);
+
+  const openImpersonateModal = (member: { id: number; name: string; email: string; role: string }) => {
+    setImpersonateTarget(member);
+    setImpersonateReason('');
+  };
+
+  const handleStartImpersonation = async () => {
+    if (!id || !impersonateTarget) return;
+    // Open the tab now, inside the click: a tab opened after the request returns is caught by popup blockers
+    const tab = window.open('', '_blank');
+    setIsStartingImpersonation(true);
+    try {
+      const res = await superAdminApi.post<{ redirect_url: string }>(
+        `/api/v1/superadmin/organizations/${id}/impersonate`,
+        { user_id: impersonateTarget.id, reason: impersonateReason.trim() }
+      );
+      if (tab) {
+        tab.opener = null; // The workspace tab gets no handle on this admin page
+        tab.location.href = res.data.redirect_url;
+      } else {
+        window.open(res.data.redirect_url, '_blank', 'noopener');
+      }
+      setImpersonateTarget(null);
+    } catch (err) {
+      tab?.close();
+      notifyError(err, 'Failed to start the support session');
+    } finally {
+      setIsStartingImpersonation(false);
+    }
+  };
 
   const loadOrgFeatures = async () => {
     if (!id) return;
@@ -145,7 +181,6 @@ export function OrganizationDetailPage() {
       [key]: nextVal,
     }));
     setSavingKey(key);
-    setFeaturesError(null);
 
     try {
       await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/features`, {
@@ -160,7 +195,7 @@ export function OrganizationDetailPage() {
         ...prev,
         [key]: currentVal,
       }));
-      setFeaturesError(getApiErrorMessage(err, `Failed to update ${key}`));
+      notifyError(err, `Failed to update ${key}`);
     } finally {
       setSavingKey(null);
     }
@@ -169,7 +204,6 @@ export function OrganizationDetailPage() {
   const handleSaveFeatures = async () => {
     if (!id) return;
     setIsSavingFeatures(true);
-    setFeaturesError(null);
     setFeaturesSaveSuccess(false);
     try {
       await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/features`, {
@@ -179,7 +213,7 @@ export function OrganizationDetailPage() {
       await loadOrgFeatures();
       setTimeout(() => setFeaturesSaveSuccess(false), 3000);
     } catch (err) {
-      setFeaturesError(getApiErrorMessage(err, 'Failed to save organization features'));
+      notifyError(err, 'Failed to save organization features');
     } finally {
       setIsSavingFeatures(false);
     }
@@ -193,7 +227,6 @@ export function OrganizationDetailPage() {
     });
     setFeatureOverrides(map);
     setIsSavingFeatures(true);
-    setFeaturesError(null);
     try {
       await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/features`, {
         features: map,
@@ -202,7 +235,7 @@ export function OrganizationDetailPage() {
       await loadOrgFeatures();
       setTimeout(() => setFeaturesSaveSuccess(false), 3000);
     } catch (err) {
-      setFeaturesError(getApiErrorMessage(err, 'Failed to reset features to defaults'));
+      notifyError(err, 'Failed to reset features to defaults');
     } finally {
       setIsSavingFeatures(false);
     }
@@ -230,8 +263,8 @@ export function OrganizationDetailPage() {
     try {
       await dispatch(updateOrganizationStatus({ id: Number(id), status: pendingStatus })).unwrap();
       setIsModalOpen(false);
-    } catch (err) {
-      console.error('Failed to update status:', err);
+    } catch {
+      // Shown as a toast (store/errorToastMiddleware); the dialog stays open
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -240,13 +273,12 @@ export function OrganizationDetailPage() {
   const handleDeleteOrganization = async () => {
     if (!id || !current) return;
     setIsDeletingOrg(true);
-    setDeleteError(null);
     try {
       await dispatch(deleteOrganization(Number(id))).unwrap();
       setIsDeleteModalOpen(false);
       navigate('/admin/organizations');
-    } catch (err: unknown) {
-      setDeleteError(typeof err === 'string' ? err : 'Failed to delete organization');
+    } catch {
+      // Shown as a toast (store/errorToastMiddleware); the dialog stays open
       setIsDeletingOrg(false);
     }
   };
@@ -357,6 +389,17 @@ export function OrganizationDetailPage() {
             <span className={clsx('size-1.5 rounded-full', isActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500')} />
             {current.subscription_status}
           </span>
+          {current.admin?.is_active && isActive && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => current.admin && openImpersonateModal(current.admin)}
+              className="cursor-pointer flex items-center gap-1.5"
+            >
+              <Eye className="size-3.5" />
+              <span>Log in as admin</span>
+            </Button>
+          )}
           <Button
             variant={isActive ? 'secondary' : 'primary'}
             size="sm"
@@ -371,7 +414,6 @@ export function OrganizationDetailPage() {
             size="sm"
             onClick={() => {
               setDeleteConfirmationText('');
-              setDeleteError(null);
               setIsDeleteModalOpen(true);
             }}
             className="text-rose-600 hover:bg-rose-500/10 hover:border-rose-500/40 border border-outline-variant/40 cursor-pointer flex items-center gap-1.5"
@@ -948,6 +990,19 @@ export function OrganizationDetailPage() {
                           })}
                         </span>
                       )}
+
+                      {/* Read-only support session as this member */}
+                      {member.is_active && isActive && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openImpersonateModal(member)}
+                          className="cursor-pointer flex items-center gap-1.5 text-xs"
+                        >
+                          <Eye className="size-3.5" />
+                          <span>Log in as</span>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -1196,7 +1251,6 @@ export function OrganizationDetailPage() {
                 size="sm"
                 onClick={() => {
                   setDeleteConfirmationText('');
-                  setDeleteError(null);
                   setIsDeleteModalOpen(true);
                 }}
                 className="bg-rose-600 text-white hover:bg-rose-700 border-transparent shrink-0 cursor-pointer"
@@ -1246,6 +1300,70 @@ export function OrganizationDetailPage() {
         </div>
       )}
 
+      {/* Log in as user: read-only support session */}
+      {impersonateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="size-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-600">
+                  <Eye className="size-4" />
+                </div>
+                <h3 className="text-lg font-bold text-on-surface">Log in as user</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImpersonateTarget(null)}
+                className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-on-surface-variant leading-relaxed">
+              <p>
+                Opens <strong className="text-on-surface">{current.name}</strong> as{' '}
+                <strong className="text-on-surface">{impersonateTarget.name}</strong> ({impersonateTarget.email},{' '}
+                <span className="capitalize">{impersonateTarget.role}</span>) in a new tab for 30 minutes.
+              </p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>
+                  <strong className="text-on-surface">Read-only:</strong> you see what this user sees, but nothing can be sent to customers or changed.
+                </li>
+                <li>The session and your reason are recorded in the audit log.</li>
+              </ul>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="block text-[11px] font-semibold text-on-surface">
+                  Reason (ticket number or the issue reported)
+                </label>
+                <input
+                  type="text"
+                  value={impersonateReason}
+                  onChange={(e) => setImpersonateReason(e.target.value)}
+                  maxLength={200}
+                  placeholder="e.g. Client reports chats not loading (ticket #482)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant/50 bg-surface text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" size="sm" onClick={() => setImpersonateTarget(null)} disabled={isStartingImpersonation}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleStartImpersonation}
+                disabled={impersonateReason.trim().length < 5 || isStartingImpersonation}
+              >
+                {isStartingImpersonation ? 'Starting...' : 'Open workspace'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Permanent Delete Confirmation Modal */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
@@ -1268,13 +1386,6 @@ export function OrganizationDetailPage() {
                 <X className="size-5" />
               </button>
             </div>
-
-            {deleteError && (
-              <div className="p-3 rounded-xl bg-error/10 border border-error/20 text-error text-xs flex items-center gap-2">
-                <AlertCircle className="size-4 shrink-0" />
-                <span>{deleteError}</span>
-              </div>
-            )}
 
             <div className="space-y-3 text-xs text-on-surface-variant">
               <p className="leading-relaxed">

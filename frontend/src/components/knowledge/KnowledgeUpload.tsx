@@ -7,8 +7,7 @@ import { MAX_KNOWLEDGE_PDF_BYTES, MAX_KNOWLEDGE_PDF_MB } from '@/utils/knowledge
 interface KnowledgeUploadProps {
   isUploading: boolean;
   disabled: boolean; // Document limit reached
-  serverError: string | null;
-  onUpload: (file: File) => Promise<boolean>;
+  onUpload: (file: File) => Promise<boolean>; // A failed upload shows as a toast
 }
 
 const validationSchema = Yup.object({
@@ -21,7 +20,7 @@ const validationSchema = Yup.object({
 });
 
 // Picking a PDF uploads it right away; processing continues in the background
-export function KnowledgeUpload({ isUploading, disabled, serverError, onUpload }: KnowledgeUploadProps) {
+export function KnowledgeUpload({ isUploading, disabled, onUpload }: KnowledgeUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const formik = useFormik<{ file: File | null }>({
@@ -42,7 +41,7 @@ export function KnowledgeUpload({ isUploading, disabled, serverError, onUpload }
     formik.submitForm();
   };
 
-  const error = (formik.touched.file && formik.errors.file) || serverError;
+  const error = formik.touched.file && formik.errors.file; // Wrong type / too large; server errors are toasts
 
   return (
     <div className="space-y-1.5">

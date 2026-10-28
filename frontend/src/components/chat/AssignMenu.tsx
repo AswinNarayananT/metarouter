@@ -5,13 +5,14 @@ import type { TeamMember } from '@/types/workspaceTypes';
 
 /**
  * Who owns the chat. Admins / managers pick any member from a dropdown;
- * everyone else can take an unassigned chat or let go of their own.
+ * everyone else can take an unassigned chat (if their role may) or let go of their own.
  */
 export function AssignMenu({
   conversation,
   members,
   currentUserId,
   isSupervisor,
+  canPickUp,
   busy,
   onAssign,
 }: {
@@ -19,6 +20,7 @@ export function AssignMenu({
   members: TeamMember[];
   currentUserId: number | null;
   isSupervisor: boolean;
+  canPickUp: boolean; // Role allowed to take unassigned chats (AI settings "allowed roles for handover")
   busy: boolean;
   onAssign: (userId: number | null) => void;
 }) {
@@ -59,6 +61,8 @@ export function AssignMenu({
         </span>
       );
     }
+    // Unassigned, and this role can't pick chats up: nothing to offer (an admin or manager assigns it)
+    if (!owner && !canPickUp) return null;
     return (
       <button
         type="button"

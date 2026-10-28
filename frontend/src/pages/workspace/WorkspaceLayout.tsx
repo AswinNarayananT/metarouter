@@ -22,6 +22,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { logoutWorkspaceSession, fetchCurrentUser, fetchOrganization } from '@/store/workspace/workspaceThunks';
 import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { DisconnectedNumberBanner } from '@/components/channels/DisconnectedNumberBanner';
+import { ImpersonationBanner } from '@/components/workspace/ImpersonationBanner';
 import { LiveStatus } from '@/components/realtime/LiveStatus';
 import { HandoverAlerts } from '@/components/realtime/HandoverAlerts';
 import { NotificationBell } from '@/components/realtime/NotificationBell';
@@ -69,8 +70,10 @@ export function WorkspaceLayout() {
   const setMobileOpen = (open: boolean) => setMobileOpenPath(open ? location.pathname : null);
 
   const handleLogout = async () => {
+    // A support session goes back to its "ended" page, not the client's login form
+    const wasSupportSession = Boolean(user?.impersonation);
     await dispatch(logoutWorkspaceSession());
-    navigate('/login');
+    navigate(wasSupportSession ? '/impersonate?ended=1' : '/login');
   };
 
   const allNavItems = [
@@ -155,6 +158,8 @@ export function WorkspaceLayout() {
 
   return (
     <div className="h-screen bg-surface text-on-surface flex flex-col overflow-hidden">
+      <ImpersonationBanner />
+
       {/* Top Navbar */}
       <header className="h-16 shrink-0 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between px-4 sm:px-6 z-30">
         <div className="flex items-center gap-3 min-w-0">

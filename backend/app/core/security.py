@@ -55,6 +55,13 @@ def decode_refresh_token(token: str) -> Optional[Dict[str, Any]]:
     except jwt.PyJWTError:
         return None
 
+def decode_token_ignoring_expiry(token: str) -> Optional[Dict[str, Any]]:
+    # Signature still checked; only used to tell what kind an expired token was (a support session at logout)
+    try:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
+    except jwt.PyJWTError:
+        return None
+
 def get_current_user_payload(token: str) -> Optional[Dict[str, Any]]:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

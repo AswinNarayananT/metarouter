@@ -1,7 +1,8 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api } from '@/api/axios';
+import { isAxiosError } from 'axios';
 import { getApiErrorMessage } from '@/api/errors';
-import type { LoginCredentials, VerifyInvitationResponse,
+import type { LoginCredentials, LoginErrorPayload, VerifyInvitationResponse,
   AcceptInvitationPayload, TeamMember, PaginatedInvitations,
   FetchInvitationsParams, ChangePasswordPayload, AISettings,
   SaveAISettingsPayload, InvitePayloadItem, InvitationItemResult,
@@ -15,7 +16,11 @@ export const loginWorkspaceUser = createAsyncThunk(
       const response = await api.post('/api/v1/auth/login', credentials);
       return response.data;
     } catch (err) {
-      return rejectWithValue(getApiErrorMessage(err, 'Invalid login credentials'));
+      // The server says which input is wrong (email / password) so the form can point at it
+      const detail = isAxiosError(err) ? err.response?.data?.detail : undefined;
+      const field = detail?.field === 'email' || detail?.field === 'password' ? detail.field : null;
+      const payload: LoginErrorPayload = { message: getApiErrorMessage(err, 'Sign-in failed. Please try again.'), field };
+      return rejectWithValue(payload);
     }
   }
 );

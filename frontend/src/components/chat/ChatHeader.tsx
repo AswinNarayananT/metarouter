@@ -18,7 +18,7 @@ export function ChatHeader({
   conversation: ChatConversation;
   contactOpen: boolean;
   onBack: () => void;
-  onToggleTakeover: () => void;
+  onToggleTakeover?: () => void; // Left out when this member can't handle the chat (button hidden)
   onToggleContact: () => void;
   assignControl?: ReactNode; // Owner picker (AssignMenu)
   onOpenTemplates?: () => void;
@@ -55,27 +55,29 @@ export function ChatHeader({
       />
 
       {assignControl}
-      <button
-        type="button"
-        onClick={onToggleTakeover}
-        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-          isHuman
-            ? 'bg-primary/10 text-primary hover:bg-primary/15'
-            : 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/15'
-        }`}
-      >
-        {isHuman ? (
-          <>
-            <Bot className="w-4 h-4" />
-            <span className="hidden sm:inline">Hand back to AI</span>
-          </>
-        ) : (
-          <>
-            <Hand className="w-4 h-4" />
-            <span className="hidden sm:inline">Take over</span>
-          </>
-        )}
-      </button>
+      {onToggleTakeover && (
+        <button
+          type="button"
+          onClick={onToggleTakeover}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+            isHuman
+              ? 'bg-primary/10 text-primary hover:bg-primary/15'
+              : 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/15'
+          }`}
+        >
+          {isHuman ? (
+            <>
+              <Bot className="w-4 h-4" />
+              <span className="hidden sm:inline">Hand back to AI</span>
+            </>
+          ) : (
+            <>
+              <Hand className="w-4 h-4" />
+              <span className="hidden sm:inline">Take over</span>
+            </>
+          )}
+        </button>
+      )}
       <button
         type="button"
         onClick={onToggleContact}
