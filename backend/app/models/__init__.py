@@ -15,3 +15,4 @@ from app.models.organization_invitation_model import OrganizationInvitation
 from app.models.audit_log_model import AuditLog
 from app.models.platform_module_model import PlatformModule
 from app.models.quick_reply_model import QuickReply
+from app.models.password_reset_model import PasswordResetToken

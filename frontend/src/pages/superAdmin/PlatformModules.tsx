@@ -27,7 +27,7 @@ import { Card, Container } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { superAdminApi } from '@/api/superAdminApi';
 import { getApiErrorMessage } from '@/api/errors';
-import { notifyError } from '@/utils/notify';
+import { notifyError, notifySuccess } from '@/utils/notify';
 import type { PlatformModule, CreateModulePayload, UpdateModulePayload } from '@/types/moduleTypes';
 
 // Available icons for selection
@@ -163,10 +163,12 @@ export function PlatformModulesPage() {
         };
         await superAdminApi.patch(`/api/v1/superadmin/modules/${editingModule.id}`, payload);
         setEditingModule(null);
+        notifySuccess(`Module "${formData.name}" saved`);
       } else {
         // Create
         await superAdminApi.post('/api/v1/superadmin/modules', formData);
         setIsAddModalOpen(false);
+        notifySuccess(`Module "${formData.name}" added`);
       }
       await loadModules();
     } catch (err) {
@@ -184,6 +186,7 @@ export function PlatformModulesPage() {
       setModules((prev) =>
         prev.map((item) => (item.id === m.id ? { ...item, is_active: !item.is_active } : item)),
       );
+      notifySuccess(`"${m.name}" ${m.is_active ? 'turned off for every workspace' : 'turned on'}`);
     } catch (err) {
       notifyError(err, 'Failed to toggle module status');
     }
@@ -194,6 +197,7 @@ export function PlatformModulesPage() {
     setIsSaving(true);
     try {
       await superAdminApi.delete(`/api/v1/superadmin/modules/${deletingModule.id}`);
+      notifySuccess(`Module "${deletingModule.name}" deleted`);
       setDeletingModule(null);
       await loadModules();
     } catch (err) {

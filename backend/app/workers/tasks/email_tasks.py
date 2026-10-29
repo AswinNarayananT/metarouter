@@ -61,6 +61,51 @@ def send_invitation_email_task(self, to_email: str, name: str, org_name: str, in
         raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
 
 
+@celery_app.task(name="send_password_reset_email_task", bind=True, max_retries=3)
+def send_password_reset_email_task(self, to_email: str, name: str, reset_link: str, expires_minutes: int):
+    """
+    Celery background task to send a "forgot password" link.
+    """
+    subject = "Reset your MetaRouter password"
+    safe_name = html.escape(name)
+    safe_link = html.escape(reset_link, quote=True)
+
+    html_content = f"""
+    <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px; background-color: #f9fafb;">
+        <h2 style="color: #111827;">Hi {safe_name},</h2>
+        <p style="color: #374151; font-size: 14px;">We received a request to reset your MetaRouter password.</p>
+        <p style="color: #374151; font-size: 14px;">Click the button below to choose a new password. This link works once and expires in {expires_minutes} minutes.</p>
+        <div style="margin: 30px 0;">
+            <a href="{safe_link}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 14px;">Reset password</a>
+        </div>
+        <p style="color: #6b7280; font-size: 12px;">If you didn't ask for this, you can ignore this email. Your password won't change.</p>
+    </div>
+    """
+
+    text_content = (
+        f"Hi {name},\n\n"
+        "We received a request to reset your MetaRouter password.\n"
+        f"Open the link below to choose a new password. It works once and expires in {expires_minutes} minutes.\n\n"
+        f"{reset_link}\n\n"
+        "If you didn't ask for this, you can ignore this email. Your password won't change.\n"
+    )
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = settings.EMAILS_FROM_EMAIL
+    message["To"] = to_email
+    message.attach(MIMEText(text_content, "plain"))
+    message.attach(MIMEText(html_content, "html"))
+
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.EMAILS_FROM_EMAIL, to_email, message.as_string())
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
+
+
 @celery_app.task(name="send_organization_onboarding_email_task", bind=True, max_retries=3)
 def send_organization_onboarding_email_task(
     self, to_email: str, org_name: str | None, invite_link: str, expires_days: int = 3

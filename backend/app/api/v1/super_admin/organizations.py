@@ -59,7 +59,7 @@ def organization_stats(db: Session = Depends(get_db), _: SuperAdmin = Depends(ge
         .scalar()
         or 0
     )
-    user_count = db.query(func.count(User.id)).scalar() or 0
+    user_count = db.query(func.count(User.id)).filter(User.removed_at == None).scalar() or 0
     whatsapp_count = db.query(func.count(WhatsAppNumber.id)).scalar() or 0
 
     # 1. Numbers disconnected across all workspaces
@@ -265,8 +265,8 @@ def create_organization_invitation(
             detail="Super admin email cannot be invited as a workspace admin"
         )
 
-    # Check if already a registered user in any workspace
-    if db.query(User.id).filter(func.lower(User.email) == email).first():
+    # Check if already a registered user in any workspace (a removed member's archived row doesn't count)
+    if db.query(User.id).filter(func.lower(User.email) == email, User.removed_at == None).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A user with this email already exists"

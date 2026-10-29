@@ -14,6 +14,8 @@ from app.config import settings
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/login")
 
 WORKSPACE_SUSPENDED_ERROR = "This workspace is suspended. Contact support to restore access."
+MEMBER_REMOVED_ERROR = "Your access to this workspace was removed. Contact your workspace admin."
+MEMBER_LEFT_ERROR = "You left this workspace. Ask your workspace admin to add you back."
 READ_ONLY_SESSION_ERROR = "Read-only support session: changes are disabled."
 # The only write a support session may make: the live-updates socket ticket (it changes no workspace data)
 READ_ONLY_ALLOWED_WRITES = {"/api/v1/realtime/ticket"}
@@ -93,6 +95,10 @@ def get_current_workspace_user(
 
     if user is None:
         raise credentials_exception
+
+    # Removed by an admin: 401 so an open tab fails to refresh and lands on the login page
+    if user.removed_at:
+        raise HTTPException(status_code=401, detail=MEMBER_REMOVED_ERROR, headers={"WWW-Authenticate": "Bearer"})
 
     if not user.is_active:
         raise HTTPException(

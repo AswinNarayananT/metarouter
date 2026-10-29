@@ -14,7 +14,6 @@ import {
   EyeOff,
   Check,
   Circle,
-  CheckCircle2,
   Lock,
   Webhook,
   Copy,
@@ -27,6 +26,7 @@ import {
 import { useAppSelector, useAppDispatch } from '@/store';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { QuickRepliesManager } from '@/components/settings/QuickRepliesManager';
+import { LeaveWorkspaceCard } from '@/components/settings/LeaveWorkspaceCard';
 import {
   fetchOrganization,
   changePassword,
@@ -198,8 +198,6 @@ export function WorkspaceSettings() {
     isChangingPassword,
     changePasswordSuccess,
     changePasswordError,
-    settingsSaveSuccess,
-    settingsSaveError,
   } = useAppSelector((state) => state.workspace);
   const isAdmin = user?.role === 'admin';
   const hasChats = useFeatureFlag('customer_chats'); // Quick replies are used in Customer Chats
@@ -426,16 +424,7 @@ export function WorkspaceSettings() {
 
         {/* Section content */}
         <div className="flex-1 min-w-0 space-y-6">
-          {/* A failed save shows as a toast */}
-          {settingsSaveSuccess && !settingsSaveError && (
-            <div
-              role="status"
-              className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-sm text-on-surface"
-            >
-              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-              <span>Changes saved successfully.</span>
-            </div>
-          )}
+          {/* Saving shows a success or error toast (store/errorToastMiddleware) */}
 
           {/* ---------- Workspace (admin only) ---------- */}
           {activeTab === 'workspace' && isAdmin && (
@@ -594,6 +583,9 @@ export function WorkspaceSettings() {
             </SectionCard>
           )}
 
+          {/* Leaving: not in a read-only support session */}
+          {activeTab === 'profile' && !user?.impersonation && <LeaveWorkspaceCard />}
+
           {/* ---------- Security (all users) ---------- */}
           {activeTab === 'security' && (
             <SectionCard
@@ -601,15 +593,6 @@ export function WorkspaceSettings() {
               title="Change password"
               description="Use a strong password you don't use anywhere else."
             >
-              {changePasswordSuccess && (
-                <div
-                  role="status"
-                  className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-sm text-on-surface"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-                  <span>Password updated successfully.</span>
-                </div>
-              )}
 
               {/* A failed change (e.g. wrong current password) shows as a toast */}
               <form onSubmit={passwordForm.handleSubmit} noValidate className="space-y-5">

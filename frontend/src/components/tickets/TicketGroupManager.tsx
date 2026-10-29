@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, GitMerge, Loader2, Pencil, X } from 'lucide-react';
 import { api } from '@/api/axios';
-import { notifyError } from '@/utils/notify';
+import { notifyError, notifySuccess } from '@/utils/notify';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchTicketGroups, fetchTickets } from '@/store/tickets/ticketThunks';
 import type { TicketGroupNode } from '@/types/ticketTypes';
@@ -21,8 +21,13 @@ export function TicketGroupManager() {
     if (!editing || !editing.value) return;
     setBusy(true);
     try {
-      if (editing.mode === 'rename') await api.patch(`/api/v1/tickets/groups/${editing.id}`, { name: editing.value.trim() });
-      else await api.post(`/api/v1/tickets/groups/${editing.id}/merge`, { into_id: Number(editing.value) });
+      if (editing.mode === 'rename') {
+        await api.patch(`/api/v1/tickets/groups/${editing.id}`, { name: editing.value.trim() });
+        notifySuccess(`Renamed to "${editing.value.trim()}"`);
+      } else {
+        await api.post(`/api/v1/tickets/groups/${editing.id}/merge`, { into_id: Number(editing.value) });
+        notifySuccess('Merged. Its tickets moved over.');
+      }
       setEditing(null);
       dispatch(fetchTicketGroups());
       dispatch(fetchTickets({ page: 1 })); // Moved tickets show their new labels

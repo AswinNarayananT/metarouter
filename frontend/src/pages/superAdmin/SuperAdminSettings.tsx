@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { User, Shield, KeyRound, Save, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { User, Shield, KeyRound, Save, Lock } from 'lucide-react';
 import { Card, Container } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAppDispatch, useAppSelector } from '@/store';
@@ -43,21 +43,6 @@ const inputClass =
 
 function borderClass(hasError: boolean) {
   return hasError ? 'border-error focus:ring-error/40' : 'border-outline-variant/50 focus:ring-primary/50';
-}
-
-function Banner({ type, message }: { type: 'success' | 'error'; message: string }) {
-  const isError = type === 'error';
-  return (
-    <div
-      role={isError ? 'alert' : 'status'}
-      className={`p-3 rounded-xl flex items-center gap-2 text-xs font-medium border ${
-        isError ? 'bg-error/10 text-error border-error/20' : 'bg-primary/10 text-primary border-primary/20'
-      }`}
-    >
-      {isError ? <AlertCircle className="size-4 shrink-0" /> : <CheckCircle2 className="size-4 shrink-0" />}
-      <span>{message}</span>
-    </div>
-  );
 }
 
 export function SuperAdminSettings() {
@@ -134,8 +119,7 @@ export function SuperAdminSettings() {
           </div>
 
           <form onSubmit={profileForm.handleSubmit} noValidate className="space-y-4">
-            {profileSuccess && <Banner type="success" message="Admin profile updated successfully." />}
-            {/* A failed save shows as a toast */}
+            {/* Saving shows a success or error toast */}
 
             <div>
               <label htmlFor="sa-name" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
@@ -192,8 +176,7 @@ export function SuperAdminSettings() {
           </div>
 
           <form onSubmit={passwordForm.handleSubmit} noValidate className="space-y-4">
-            {passwordSuccess && <Banner type="success" message="Password changed successfully." />}
-            {/* A failed change shows as a toast */}
+            {/* Changing it shows a success or error toast */}
 
             <div>
               <label htmlFor="sa-current" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">

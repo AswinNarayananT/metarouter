@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,15 +47,21 @@ class OrganizationProfile(Base):
 
 class User(Base):
     __tablename__ = "users"
+    # An email belongs to one workspace at a time; a removed member's row is kept (their history stays) and frees the email
+    __table_args__ = (
+        Index("uq_users_email_current", "email", unique=True, postgresql_where=text("removed_at IS NULL")),
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False)  # admin, manager, service
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tokens_valid_after = Column(DateTime(timezone=True), nullable=True)  # Set on password change; older access / refresh tokens stop working
+    tokens_valid_after = Column(DateTime(timezone=True), nullable=True)
+    removed_at = Column(DateTime(timezone=True), nullable=True)  # No longer in the workspace (None = current member)
+    removal_type = Column(String(10), nullable=True)  # removed (by an admin) or left (themselves)
 
     organization = relationship("Organization", back_populates="users")

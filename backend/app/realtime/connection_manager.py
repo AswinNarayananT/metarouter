@@ -9,6 +9,10 @@ from fastapi import WebSocket
 #   user:{user_id}          that user's tabs            -> notifications
 
 
+# Sent to user:{id}; the sockets in that group are closed right after
+SESSION_ENDING_EVENTS = {"member.removed"}
+
+
 def org_group(organization_id: int) -> str:
     return f"org:{organization_id}"
 
@@ -97,6 +101,15 @@ class ConnectionManager:
         results = await asyncio.gather(*(ws.send_json(event) for ws in members), return_exceptions=True)
         for websocket, result in zip(members, results):
             if isinstance(result, Exception):
+                await self.disconnect(websocket)
+
+        # 3. Removed from the workspace: their tabs were told, now they stop getting its live events
+        if event.get("type") in SESSION_ENDING_EVENTS:
+            for websocket in members:
+                try:
+                    await websocket.close(code=4001)
+                except Exception:
+                    pass  # Already closed
                 await self.disconnect(websocket)
 
     def connection_count(self) -> int:

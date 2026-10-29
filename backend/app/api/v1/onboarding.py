@@ -54,7 +54,7 @@ def verify_organization_invitation(payload: VerifyOrganizationInviteRequest, db:
 
     # Check if this email is already registered
     email = invitation.email.lower()
-    if db.query(User.id).filter(func.lower(User.email) == email).first():
+    if db.query(User.id).filter(func.lower(User.email) == email, User.removed_at == None).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email has already been registered. Please log in directly."
@@ -93,8 +93,8 @@ def complete_organization_onboarding(
 
     email = invitation.email.lower().strip()
 
-    # Re-check user email availability
-    if db.query(User.id).filter(func.lower(User.email) == email).first():
+    # Re-check user email availability (a removed member's archived row doesn't count)
+    if db.query(User.id).filter(func.lower(User.email) == email, User.removed_at == None).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email already exists. Log in instead."

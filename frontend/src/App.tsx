@@ -7,6 +7,8 @@ import { Login } from '@/pages/Login';
 import { AcceptInvitation } from '@/pages/workspace/AcceptInvitation';
 import { WorkspaceOnboarding } from '@/pages/auth/WorkspaceOnboarding';
 import { ImpersonationStart } from '@/pages/auth/ImpersonationStart';
+import { ForgotPassword } from '@/pages/auth/ForgotPassword';
+import { ResetPassword } from '@/pages/auth/ResetPassword';
 
 // Super Admin Pages & Components
 import { SuperAdminLogin } from '@/pages/SuperAdminLogin';
@@ -87,6 +89,24 @@ function App() {
           element={
             <PublicOnlyRoute>
               <AcceptInvitation />
+            </PublicOnlyRoute>
+          }
+        />
+
+        <Route
+          path="/forgot-password"
+          element={
+            <PublicOnlyRoute>
+              <ForgotPassword />
+            </PublicOnlyRoute>
+          }
+        />
+
+        <Route
+          path="/reset-password"
+          element={
+            <PublicOnlyRoute>
+              <ResetPassword />
             </PublicOnlyRoute>
           }
         />

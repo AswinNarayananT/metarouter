@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchWhatsAppNumbers } from '@/store/broadcast/broadcastThunks';
 import { api } from '@/api/axios';
 import { getApiErrorMessage } from '@/api/errors';
-import { notifyError } from '@/utils/notify';
+import { notifyError, notifySuccess } from '@/utils/notify';
 import { runEmbeddedSignup } from '@/utils/metaEmbeddedSignup';
 import type { SignupConfig } from '@/utils/metaEmbeddedSignup';
 import { ComingSoonChannelCard } from '@/components/channels/ComingSoonChannelCard';
@@ -77,7 +77,7 @@ export function Channels() {
         business_id: result.businessId,
       });
       dispatch(fetchWhatsAppNumbers());
-      setNotice({ text: `${number.display_phone_number} is connected. Customer messages to it now arrive in Customer Chats.`, tone: 'success' });
+      notifySuccess(`${number.display_phone_number} is connected. Customer messages to it now arrive in Customer Chats.`);
     } catch (err) {
       // Popup closed / Meta errors carry their own message; API errors carry the server's
       notifyError(err instanceof Error && !('isAxiosError' in err) ? err.message : getApiErrorMessage(err, "Couldn't connect the number. Please try again."));

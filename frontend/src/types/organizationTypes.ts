@@ -63,6 +63,7 @@ export interface OrganizationMemberPublic {
   role: string;
   is_active: boolean;
   created_at?: string | null;
+  removed_at?: string | null; // Removed by a workspace admin (row kept for history)
 }
 
 export interface OrganizationDetail {

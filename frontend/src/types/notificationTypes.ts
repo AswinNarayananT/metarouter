@@ -1,6 +1,9 @@
 /* Notifications — mirror GET /api/v1/notifications (backend notification_service.serialize_notification) */
 
-export type NotificationType = 'handover' | 'assigned' | 'ticket_assigned' | 'reminder'; // reminder = a handed-over chat still nobody's
+// reminder = a handed-over chat still nobody's; role_changed = an admin changed your role (no chat attached);
+// member_left = a member left the workspace and their chats went back to the queue (admins / managers, no chat attached);
+// member_joined = someone accepted an invite (admins, no chat attached)
+export type NotificationType = 'handover' | 'assigned' | 'ticket_assigned' | 'reminder' | 'role_changed' | 'member_left' | 'member_joined';
 
 export interface AppNotification {
   id: number;

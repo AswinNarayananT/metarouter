@@ -3,7 +3,7 @@ from app.schemas.auth_schema import check_password_strength
 from datetime import datetime
 from typing import List, Literal, Optional
 
-InvitationStatus = Literal["pending", "accepted", "expired"]
+InvitationStatus = Literal["pending", "accepted", "expired", "revoked"]
 # Only workspace roles can be invited (never "super_admin" or anything else)
 WorkspaceRole = Literal["admin", "manager", "service"]
 
@@ -11,14 +11,26 @@ WorkspaceRole = Literal["admin", "manager", "service"]
 # Request Schemas
 # ------------------------------------------------------------------
 
+MAX_INVITES_PER_REQUEST = 50
+
+
 class InviteItem(BaseModel):
-    name: str
+    name: str = Field(..., min_length=2, max_length=120)
     email: EmailStr
     role: WorkspaceRole
 
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Name must be at least 2 characters")
+        return value
+
 
 class BulkInviteRequest(BaseModel):
-    members: List[InviteItem]
+    # Capped so one request can't send (or probe) hundreds of emails
+    members: List[InviteItem] = Field(..., min_length=1, max_length=MAX_INVITES_PER_REQUEST)
 
 
 class SingleInviteRequest(BaseModel):
@@ -55,6 +67,7 @@ class InvitationDetail(BaseModel):
     email: str
     role: str
     invite_link: str
+    resent: bool = False  # Replaced a pending invite: the old link no longer works
 
     class Config:
         from_attributes = True
@@ -90,6 +103,7 @@ class InvitationListItem(BaseModel):
     status: InvitationStatus
     expires_at: datetime
     created_at: Optional[datetime] = None
+    invite_link: Optional[str] = None  # Pending invites only, for "Copy link"
 
 
 class PaginatedInvitationsResponse(BaseModel):

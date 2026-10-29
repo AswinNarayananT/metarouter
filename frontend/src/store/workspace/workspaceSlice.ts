@@ -8,6 +8,9 @@ import {
   updateCurrentUser,
   updateOrganization,
   fetchTeamMembers,
+  updateMemberRole,
+  removeMember,
+  restoreMember,
   fetchInvitations,
   changePassword,
   fetchAISettings,
@@ -294,8 +297,20 @@ export const workspaceSlice = createSlice({
       })
       .addCase(generateWorkspaceInvitations.fulfilled, (state, action) => {
         state.isInviting = false;
-        state.inviteSuccess = true;
-        state.lastInvitations = action.payload;
+        // Only a success when someone was actually invited (the page shows why the others weren't)
+        state.inviteSuccess = action.payload.invitations.length > 0;
+        state.lastInvitations = action.payload.invitations;
+      })
+      // Role changed on Team Members
+      .addCase(updateMemberRole.fulfilled, (state, action) => {
+        state.teamMembers = state.teamMembers.map((m) => (m.id === action.payload.id ? action.payload : m));
+      })
+      // Removed members leave the list (and every assign menu); restored ones come back
+      .addCase(removeMember.fulfilled, (state, action) => {
+        state.teamMembers = state.teamMembers.filter((m) => m.id !== action.payload.id);
+      })
+      .addCase(restoreMember.fulfilled, (state, action) => {
+        state.teamMembers = [...state.teamMembers.filter((m) => m.id !== action.payload.id), action.payload];
       })
       // Shown as a toast (store/errorToastMiddleware)
       .addCase(generateWorkspaceInvitations.rejected, (state) => {

@@ -13,4 +13,5 @@ class Invitation(Base):
     token = Column(String, unique=True, index=True, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_used = Column(Boolean, default=False, nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)  # Cancelled by an admin: the link stops working
     created_at = Column(DateTime(timezone=True), server_default=func.now())

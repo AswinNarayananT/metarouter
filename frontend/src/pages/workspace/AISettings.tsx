@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { AlertCircle, Bot, CheckCircle2, FlaskConical, Save } from 'lucide-react';
+import { AlertCircle, Bot, FlaskConical, Save } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchAISettings, saveAISettings } from '@/store/workspace/workspaceThunks';
 import { resetAISettingsSaveState } from '@/store/workspace/workspaceSlice';
@@ -185,16 +185,7 @@ export function AISettings() {
         </div>
 
         <div className="p-6 space-y-6">
-          {aiSettingsSaveSuccess && (
-            <div
-              role="status"
-              className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-primary/10 border border-primary/30 text-sm text-on-surface"
-            >
-              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-              <span>AI assistant settings saved successfully.</span>
-            </div>
-          )}
-
+          {/* Saving shows a success or error toast (store/errorToastMiddleware) */}
           {/* A failed save shows as a toast */}
 
           {/* Bot name */}

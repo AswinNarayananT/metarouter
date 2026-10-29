@@ -6,6 +6,9 @@ import { notificationReceived, notificationsReadElsewhere } from '@/store/notifi
 import { fetchNotifications } from '@/store/notifications/notificationThunks';
 import { ticketReceived } from '@/store/tickets/ticketSlice';
 import { fetchTicketDetail, fetchTickets } from '@/store/tickets/ticketThunks';
+import { fetchCurrentUser } from '@/store/workspace/workspaceThunks';
+import { logoutWorkspace } from '@/store/workspace/workspaceSlice';
+import { notifyError, notifySuccess } from '@/utils/notify';
 import { useConversationSubscription, useRealtimeEvent, useRealtimeReconnect } from './useRealtime';
 
 const REFETCH_DEBOUNCE_MS = 1000; // A broadcast sends one "changed" per batch; batches can come close together
@@ -72,10 +75,24 @@ export function useNotificationsRealtimeSync() {
   }, [dispatch]);
 
   // 2. New ones, and ones read in another tab
-  useRealtimeEvent('notification.new', (notification) => dispatch(notificationReceived(notification)));
+  useRealtimeEvent('notification.new', (notification) => {
+    dispatch(notificationReceived(notification));
+    // An admin changed this user's role: reload it so the menu and permissions match right away
+    if (notification.type === 'role_changed') {
+      dispatch(fetchCurrentUser());
+      notifySuccess(notification.title);
+    }
+  });
   useRealtimeEvent('notifications.read', (update) => dispatch(notificationsReadElsewhere(update)));
 
-  // 3. Back from offline: reload to pick up what was missed
+  // 3. Removed by an admin, or left (in this tab or another): sign out now (the route guard sends them to the login page)
+  useRealtimeEvent('member.removed', ({ message, reason }) => {
+    if (reason === 'left') notifySuccess(message);
+    else notifyError(message);
+    dispatch(logoutWorkspace());
+  });
+
+  // 4. Back from offline: reload to pick up what was missed
   useRealtimeReconnect(() => dispatch(fetchNotifications()));
 }
 

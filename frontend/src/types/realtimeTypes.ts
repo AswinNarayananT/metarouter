@@ -81,6 +81,7 @@ export interface RealtimeEventMap {
   'ticket.updated': Ticket; // A ticket was opened, changed or closed
   'notifications.read': { ids: number[]; conversation_id: number | null; unread_count: number }; // Read in another tab
   'conversation.read': { conversation_id: number }; // This user opened the chat in another tab
+  'member.removed': { message: string; reason: 'removed' | 'left' }; // Removed by an admin or left; the server closes the socket right after
   // Replies to what this tab sent
   subscribed: { conversation_id: number };
   unsubscribed: { conversation_id: number };

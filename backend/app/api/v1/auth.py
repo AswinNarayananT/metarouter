@@ -2,22 +2,29 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 import json
+import hashlib
+import secrets
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app.models.organization_model import Organization, User
+from app.models.password_reset_model import PasswordResetToken
+from app.workers.tasks.email_tasks import send_password_reset_email_task
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload, decode_token_ignoring_expiry
-from app.core.deps import get_current_workspace_user, token_issued_after_reset, ensure_workspace_active, WORKSPACE_SUSPENDED_ERROR
+from app.core.deps import get_current_workspace_user, token_issued_after_reset, ensure_workspace_active, WORKSPACE_SUSPENDED_ERROR, MEMBER_REMOVED_ERROR, MEMBER_LEFT_ERROR
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
 from app.core.token_blacklist import blacklist_token, is_token_revoked, rotation_marker
 from app.core.features import get_organization_features
 from app.services.conversation_service import handover_roles
 from app.core.redis_client import redis_client
 from app.services.audit_service import record_audit_log, get_client_ip
-from app.schemas.auth_schema import WorkspaceLoginRequest, WorkspaceLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest, ImpersonationExchangeRequest
+from app.schemas.auth_schema import WorkspaceLoginRequest, WorkspaceLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest, ImpersonationExchangeRequest, ForgotPasswordRequest, ResetTokenRequest, ResetPasswordRequest
 
 router = APIRouter(prefix="/auth", tags=["Workspace Authentication"])
 
+INVALID_LOGIN_ERROR = "Incorrect email or password. Please try again."
+_DUMMY_PASSWORD_HASH = get_password_hash("not-a-real-password")  # Checked for unknown emails, to match the time of a real check
 
 
 def _set_refresh_cookie(response: Response, refresh_token: str):
@@ -43,7 +50,8 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
     
     # 1. Fallback handling for local development (localhost without subdomain)
     if payload.org_slug == "default" or not payload.org_slug:
-        user_check = db.query(User).filter(User.email == payload.email.lower()).first()
+        # The current account first; a removed member's archived row only when there is no other
+        user_check = db.query(User).filter(User.email == payload.email.lower()).order_by(User.removed_at.isnot(None)).first()
         if user_check:
             org = db.query(Organization).filter(Organization.id == user_check.organization_id).first()
         
@@ -61,17 +69,18 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
         User.organization_id == org.id
     ).first()
 
-    # Say which one is wrong so the user knows what to fix ("field" lets the form highlight it).
-    # Super admin login stays generic; the rate limit above slows down guessing which emails exist
-    if not user:
+    # One answer for a wrong email or a wrong password, so the login page can't be used to find out who has an account.
+    # An unknown email still runs a password check (against a dummy hash), so it takes as long as a real one
+    password_ok = verify_password(payload.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
+    if not user or not password_ok:
         record_failed_login("workspace", payload.email, request)
-        raise HTTPException(status_code=401, detail={"message": "No account found with this email. Check it, or ask your workspace admin for an invite.", "field": "email"})
-
-    if not verify_password(payload.password, user.hashed_password):
-        record_failed_login("workspace", payload.email, request)
-        raise HTTPException(status_code=401, detail={"message": "Incorrect password. Please try again.", "field": "password"})
+        raise HTTPException(status_code=401, detail=INVALID_LOGIN_ERROR)
 
     clear_failed_logins("workspace", payload.email, request)
+
+    # Removed by a workspace admin (checked after the password, so it isn't revealed to guessers)
+    if user.removed_at:
+        raise HTTPException(status_code=403, detail=MEMBER_LEFT_ERROR if user.removal_type == "left" else MEMBER_REMOVED_ERROR)
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
@@ -314,6 +323,120 @@ def change_password(
     _set_refresh_cookie(response, create_refresh_token(data=token_payload))
 
     return {"message": "Password updated successfully", "access_token": create_access_token(data=token_payload)}
+
+
+FORGOT_PASSWORD_MESSAGE = f"If an account exists for this email, we've sent a link to reset the password. It works once and expires in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes. Check your inbox and spam folder."
+RESET_LINK_INVALID = "This reset link has expired or was already used. Request a new one."
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    email = payload.email.lower()
+
+    # 1. Each request sends a real email: a few per address and per IP each hour
+    ip = request.client.host if request.client else "unknown"
+    for key, limit in ((f"pw-reset:email:{email}", settings.PASSWORD_RESET_MAX_PER_EMAIL_PER_HOUR), (f"pw-reset:ip:{ip}", settings.PASSWORD_RESET_MAX_PER_IP_PER_HOUR)):
+        count = redis_client.incr(key)
+        if count == 1:
+            redis_client.expire(key, 3600)
+        if count > limit:
+            raise HTTPException(status_code=429, detail="Too many reset requests. Try again in an hour.")
+
+    # 2. Only current, active members get a link; the answer is the same either way, so nobody learns who has an account
+    user = db.query(User).filter(func.lower(User.email) == email, User.removed_at == None, User.is_active == True).first()
+    if not user:
+        return {"message": FORGOT_PASSWORD_MESSAGE}
+
+    # 3. One valid link at a time: older unused links stop working
+    now = datetime.now(timezone.utc)
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at == None).update({"used_at": now})
+
+    token = secrets.token_urlsafe(32)
+    db.add(PasswordResetToken(user_id=user.id, token_hash=_hash_reset_token(token), expires_at=now + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)))
+    db.commit()
+
+    # 4. Email the link
+    send_password_reset_email_task.delay(
+        to_email=user.email,
+        name=user.name,
+        reset_link=f"{settings.FRONTEND_BASE_URL}/reset-password?token={token}",
+        expires_minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES
+    )
+
+    record_audit_log(
+        db,
+        action="PASSWORD_RESET_REQUESTED",
+        category="security",
+        actor_email=user.email,
+        actor_type="user",
+        actor_id=user.id,
+        target_type="user",
+        target_id=user.id,
+        target_name=user.email,
+        details={"organization_id": user.organization_id},
+        ip_address=get_client_ip(request)
+    )
+
+    return {"message": FORGOT_PASSWORD_MESSAGE}
+
+
+@router.post("/reset-password/verify")
+def verify_reset_token(payload: ResetTokenRequest, db: Session = Depends(get_db)):
+    # Checked when the reset page opens, so an old link says so before the user types a new password
+    _, user = _find_reset_token(db, payload.token)
+    return {"email": user.email}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    # 1. A valid, unused link for a current member
+    reset_token, user = _find_reset_token(db, payload.token)
+
+    # 2. New password; every session from before now is signed out
+    now = datetime.now(timezone.utc)
+    user.hashed_password = get_password_hash(payload.password)
+    user.tokens_valid_after = now
+
+    # 3. This link and any other unused one stop working
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at == None).update({"used_at": now})
+    db.commit()
+
+    # 4. Failed logins from before the reset no longer lock them out
+    clear_failed_logins("workspace", user.email, request)
+
+    record_audit_log(
+        db,
+        action="PASSWORD_RESET",
+        category="security",
+        actor_email=user.email,
+        actor_type="user",
+        actor_id=user.id,
+        target_type="user",
+        target_id=user.id,
+        target_name=user.email,
+        details={"organization_id": user.organization_id, "reset_token_id": reset_token.id},
+        ip_address=get_client_ip(request)
+    )
+
+    return {"message": "Your password was reset. Log in with your new password."}
+
+
+def _hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _find_reset_token(db: Session, token: str):
+    now = datetime.now(timezone.utc)
+    reset_token = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == _hash_reset_token(token), PasswordResetToken.used_at == None).first()
+    if not reset_token or reset_token.expires_at < now:
+        raise HTTPException(status_code=400, detail=RESET_LINK_INVALID)
+
+    # Removed or deactivated since the link was sent
+    user = db.query(User).filter(User.id == reset_token.user_id, User.removed_at == None, User.is_active == True).first()
+    if not user:
+        raise HTTPException(status_code=400, detail=RESET_LINK_INVALID)
+
+    return reset_token, user
 
 
 @router.patch("/me")

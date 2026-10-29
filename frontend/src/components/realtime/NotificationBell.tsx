@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlarmClock, Bell, CheckCheck, Hand, Loader2, Ticket as TicketIcon, UserPlus } from 'lucide-react';
+import { AlarmClock, Bell, CheckCheck, Hand, Loader2, ShieldCheck, Ticket as TicketIcon, UserCheck, UserMinus, UserPlus } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { selectConversation } from '@/store/chat/chatSlice';
 import { selectTicket } from '@/store/tickets/ticketSlice';
@@ -29,6 +29,9 @@ const TYPE_ICONS = {
   assigned: { icon: UserPlus, className: 'bg-primary/10 text-primary' },
   ticket_assigned: { icon: TicketIcon, className: 'bg-primary/10 text-primary' },
   reminder: { icon: AlarmClock, className: 'bg-amber-500/15 text-amber-700' },
+  role_changed: { icon: ShieldCheck, className: 'bg-primary/10 text-primary' },
+  member_left: { icon: UserMinus, className: 'bg-amber-500/15 text-amber-700' },
+  member_joined: { icon: UserCheck, className: 'bg-green-500/15 text-green-700' },
 };
 
 /** Header bell: unread badge and the newest notifications, so a missed pop-up alert is still here later. */
@@ -75,11 +78,13 @@ export function NotificationBell() {
     };
   }, [open]);
 
-  // Open the chat it's about, and mark it read
+  // Open the chat it's about (or Team Members for a member joining / leaving), and mark it read
   const openNotification = (notification: AppNotification) => {
     setOpen(false);
     if (!notification.read_at) dispatch(markNotificationRead(notification.id));
-    if (notification.ticket) {
+    if (notification.type === 'member_joined' || notification.type === 'member_left') {
+      navigate('/dashboard/members');
+    } else if (notification.ticket) {
       dispatch(selectTicket(notification.ticket.id));
       dispatch(fetchTicketDetail(notification.ticket.id));
       navigate('/dashboard/tickets');

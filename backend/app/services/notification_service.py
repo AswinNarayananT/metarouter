@@ -63,6 +63,79 @@ def create_notifications(db: Session, conversation: Conversation, user_ids: list
     return notifications
 
 
+ROLE_LABELS = {"admin": "Administrator", "manager": "Manager", "service": "Service"}
+
+
+def notify_role_changed(db: Session, member: User, actor: User, new_role: str) -> Notification:
+    # The member hears it from the bell (no chat attached); their screen updates on its next /auth/me
+    notification = Notification(
+        organization_id=member.organization_id,
+        user_id=member.id,
+        type="role_changed",
+        title=f"Your role is now {ROLE_LABELS.get(new_role, new_role)}",
+        body=f"Changed by {first_name(actor.name)}",
+        actor_user_id=actor.id
+    )
+    db.add(notification)
+    db.commit()
+    db.refresh(notification)
+    publish_event(user_group(member.id), "notification.new", serialize_notification(notification))
+    return notification
+
+
+def notify_member_left(db: Session, member: User, open_chats: int) -> list:
+    # Admins and managers hear it from the bell (no chat attached), so the chats put back in the queue get picked up
+    recipients = db.query(User.id).filter(
+        User.organization_id == member.organization_id,
+        User.is_active == True,
+        User.removed_at == None,
+        User.role.in_(SUPERVISOR_ROLES),
+        User.id != member.id
+    ).all()
+
+    body = f"{open_chats} open chat{'' if open_chats == 1 else 's'} went back to the unassigned queue" if open_chats else "They had no open chats"
+    notifications = [
+        Notification(organization_id=member.organization_id, user_id=r.id, type="member_left", title=f"{member.name} left the workspace", body=body, actor_user_id=member.id)
+        for r in recipients
+    ]
+    if not notifications:
+        return []
+    db.add_all(notifications)
+    db.commit()
+
+    for notification in notifications:
+        db.refresh(notification)
+        publish_event(user_group(notification.user_id), "notification.new", serialize_notification(notification))
+    return notifications
+
+
+def notify_member_joined(db: Session, member: User, rejoined: bool) -> list:
+    # Admins (who send the invites) hear it from the bell (no chat attached)
+    recipients = db.query(User.id).filter(
+        User.organization_id == member.organization_id,
+        User.is_active == True,
+        User.removed_at == None,
+        User.role == "admin",
+        User.id != member.id
+    ).all()
+
+    title = f"{member.name} joined as {ROLE_LABELS.get(member.role, member.role)}"
+    body = "Rejoined the workspace. Their past chats and tickets are linked again" if rejoined else "Accepted their invite"
+    notifications = [
+        Notification(organization_id=member.organization_id, user_id=r.id, type="member_joined", title=title, body=body, actor_user_id=member.id)
+        for r in recipients
+    ]
+    if not notifications:
+        return []
+    db.add_all(notifications)
+    db.commit()
+
+    for notification in notifications:
+        db.refresh(notification)
+        publish_event(user_group(notification.user_id), "notification.new", serialize_notification(notification))
+    return notifications
+
+
 def notify_team_of_handover(db: Session, conversation: Conversation, preview: Optional[str]) -> list:
     # Everyone who can act on an unassigned chat: admins, managers and roles allowed to pick up chats
     roles = handover_roles(db, conversation.organization_id) | SUPERVISOR_ROLES

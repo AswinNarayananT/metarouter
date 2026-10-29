@@ -14,6 +14,11 @@ class AdminUserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def current_users(org) -> list:
+    # Removed members' archived rows are kept for history but don't count as members
+    return [u for u in (org.users or []) if not u.removed_at]
+
+
 class OrganizationListItem(BaseModel):
     id: int
     name: str
@@ -30,7 +35,8 @@ class OrganizationListItem(BaseModel):
 
     @classmethod
     def from_orm_custom(cls, org) -> "OrganizationListItem":
-        admin = next((u for u in org.users if u.role == "admin"), org.users[0] if org.users else None)
+        users = current_users(org)
+        admin = next((u for u in users if u.role == "admin"), users[0] if users else None)
         return cls(
             id=org.id,
             name=org.name,
@@ -41,7 +47,7 @@ class OrganizationListItem(BaseModel):
             support_phone=org.profile.support_phone if org.profile else None,
             admin_name=admin.name if admin else None,
             admin_email=admin.email if admin else None,
-            user_count=len(org.users),
+            user_count=len(users),
         )
 
 
@@ -90,6 +96,7 @@ class OrganizationMemberPublic(BaseModel):
     role: str
     is_active: bool
     created_at: Optional[datetime] = None
+    removed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,7 +120,8 @@ class OrganizationDetail(BaseModel):
 
     @classmethod
     def from_orm_custom(cls, org, metrics: Optional[OrganizationMetrics] = None) -> "OrganizationDetail":
-        admin = next((u for u in org.users if u.role == "admin"), org.users[0] if org.users else None)
+        users = current_users(org)
+        admin = next((u for u in users if u.role == "admin"), users[0] if users else None)
         members_list = [
             OrganizationMemberPublic(
                 id=u.id,
@@ -122,6 +130,7 @@ class OrganizationDetail(BaseModel):
                 role=u.role or "agent",
                 is_active=bool(u.is_active),
                 created_at=u.created_at,
+                removed_at=u.removed_at,
             )
             for u in (org.users or [])
         ]
@@ -151,7 +160,7 @@ class OrganizationDetail(BaseModel):
             support_email=org.profile.support_email if org.profile else "",
             support_phone=org.profile.support_phone if org.profile else "",
             admin=AdminUserPublic.model_validate(admin) if admin else None,
-            user_count=len(org.users) if org.users else 0,
+            user_count=len(users),
             whatsapp_count=len(org.whatsapp_numbers) if org.whatsapp_numbers else 0,
             whatsapp_numbers=wa_numbers,
             members=members_list,

@@ -50,6 +50,21 @@ class ChangePasswordRequest(BaseModel):
     def validate_password_strength(cls, value: str) -> str:
         return check_password_strength(value)
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetTokenRequest(BaseModel):
+    # In the body, not the URL, so the token never lands in server access logs
+    token: str = Field(..., min_length=10, max_length=200)
+
+class ResetPasswordRequest(ResetTokenRequest):
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        return check_password_strength(value)
+
 class UpdateNameRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
 

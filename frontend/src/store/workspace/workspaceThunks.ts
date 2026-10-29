@@ -3,9 +3,11 @@ import { api } from '@/api/axios';
 import { isAxiosError } from 'axios';
 import { getApiErrorMessage } from '@/api/errors';
 import type { LoginCredentials, LoginErrorPayload, VerifyInvitationResponse,
-  AcceptInvitationPayload, TeamMember, PaginatedInvitations,
+  AcceptInvitationPayload, TeamMember, MemberOpenWork, PaginatedInvitations,
+  PaginatedTeamMembers, FetchMembersPageParams,
   FetchInvitationsParams, ChangePasswordPayload, AISettings,
-  SaveAISettingsPayload, InvitePayloadItem, InvitationItemResult,
+  SaveAISettingsPayload, InvitePayloadItem, BulkInvitationResult,
+  InvitationListItem, InvitationItemResult,
   WorkspaceUser, CurrentOrganization } from '@/types/workspaceTypes';
 
 // Async Thunk for Workspace Login
@@ -103,6 +105,98 @@ export const fetchTeamMembers = createAsyncThunk(
   }
 );
 
+// Admin changes a member's role (Team Members page); a failure shows as a toast
+export const updateMemberRole = createAsyncThunk(
+  'workspace/updateMemberRole',
+  async ({ userId, role }: { userId: number; role: TeamMember['role'] }, { rejectWithValue }) => {
+    try {
+      const response = await api.patch<TeamMember>(`/api/v1/organizations/members/${userId}/role`, { role });
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't change the role"));
+    }
+  }
+);
+
+// Team Members page: current or removed members (removed = admin only), searched and paginated by the server
+export const fetchMembersPage = createAsyncThunk(
+  'workspace/fetchMembersPage',
+  async (params: FetchMembersPageParams, { rejectWithValue }) => {
+    try {
+      const response = await api.get<PaginatedTeamMembers>('/api/v1/organizations/members/page', { params });
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't load team members"));
+    }
+  }
+);
+
+// Admin: the member's open chats and tickets, shown before removing them
+export const fetchMemberOpenWork = createAsyncThunk(
+  'workspace/fetchMemberOpenWork',
+  async (userId: number, { rejectWithValue }) => {
+    try {
+      const response = await api.get<MemberOpenWork>(`/api/v1/organizations/members/${userId}/open-work`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't check their open chats"));
+    }
+  }
+);
+
+// Admin removes a member; their open chats and tickets go to reassignTo (null = the unassigned queue)
+export const removeMember = createAsyncThunk(
+  'workspace/removeMember',
+  async ({ userId, reassignTo }: { userId: number; reassignTo: number | null }, { rejectWithValue }) => {
+    try {
+      const response = await api.post<TeamMember>(`/api/v1/organizations/members/${userId}/remove`, { reassign_to_user_id: reassignTo });
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't remove the member"));
+    }
+  }
+);
+
+// The signed-in member's own open chats and tickets (leave dialog)
+export const fetchMyOpenWork = createAsyncThunk(
+  'workspace/fetchMyOpenWork',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get<MemberOpenWork>('/api/v1/organizations/members/me/open-work');
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't check your open chats"));
+    }
+  }
+);
+
+// The member leaves the workspace (password confirms it); their chats go back to the queue and they're signed out
+export const leaveWorkspace = createAsyncThunk(
+  'workspace/leave',
+  async (password: string, { dispatch, rejectWithValue }) => {
+    try {
+      const response = await api.post<{ message: string }>('/api/v1/organizations/members/me/leave', { password });
+      dispatch({ type: 'workspace/logoutWorkspace' });
+      return response.data.message;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't leave the workspace"));
+    }
+  }
+);
+
+// Admin brings a removed member back (same account, role and history)
+export const restoreMember = createAsyncThunk(
+  'workspace/restoreMember',
+  async (userId: number, { rejectWithValue }) => {
+    try {
+      const response = await api.post<TeamMember>(`/api/v1/organizations/members/${userId}/restore`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't restore the member"));
+    }
+  }
+);
+
 // Async Thunk to fetch invitations sent by the organization (admin only, paginated)
 export const fetchInvitations = createAsyncThunk(
   'workspace/fetchInvitations',
@@ -112,6 +206,70 @@ export const fetchInvitations = createAsyncThunk(
       return response.data;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch invitations'));
+    }
+  }
+);
+
+// Admin cancels a pending invite: its link stops working
+export const revokeInvitation = createAsyncThunk(
+  'workspace/revokeInvitation',
+  async (invitationId: number, { rejectWithValue }) => {
+    try {
+      const response = await api.post<InvitationListItem>(`/api/v1/invitations/${invitationId}/revoke`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't revoke the invitation"));
+    }
+  }
+);
+
+// Admin emails a fresh 3-day link (pending, expired or revoked invites); the old link stops working
+export const resendInvitation = createAsyncThunk(
+  'workspace/resendInvitation',
+  async (invitationId: number, { rejectWithValue }) => {
+    try {
+      const response = await api.post<InvitationItemResult>(`/api/v1/invitations/${invitationId}/resend`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't resend the invitation"));
+    }
+  }
+);
+
+// "Forgot password": the server answers the same whether or not the email has an account
+export const requestPasswordReset = createAsyncThunk(
+  'workspace/requestPasswordReset',
+  async (email: string, { rejectWithValue }) => {
+    try {
+      const response = await api.post<{ message: string }>('/api/v1/auth/forgot-password', { email });
+      return response.data.message;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't send the reset link. Please try again."));
+    }
+  }
+);
+
+// The reset page checks its link first, so an old link says so before a new password is typed
+export const verifyPasswordResetToken = createAsyncThunk(
+  'workspace/verifyPasswordResetToken',
+  async (token: string, { rejectWithValue }) => {
+    try {
+      const response = await api.post<{ email: string }>('/api/v1/auth/reset-password/verify', { token });
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, 'This reset link has expired or was already used. Request a new one.'));
+    }
+  }
+);
+
+export const resetPassword = createAsyncThunk(
+  'workspace/resetPassword',
+  async (payload: { token: string; password: string }, { rejectWithValue }) => {
+    try {
+      const response = await api.post<{ message: string }>('/api/v1/auth/reset-password', payload);
+      return response.data.message;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't reset the password. Please try again."));
     }
   }
 );
@@ -175,11 +333,13 @@ export const generateWorkspaceInvitations = createAsyncThunk(
   'workspace/generateInvitations',
   async (members: InvitePayloadItem[], { rejectWithValue }) => {
     try {
-      const response = await api.post<{ invitations: InvitationItemResult[] }>(
+      const response = await api.post<BulkInvitationResult>(
         '/api/v1/invitations/generate',
         { members }
       );
-      return response.data.invitations; // Returns array of generated invite links
+      // The invite links, plus the emails that weren't invited and why
+      const result: BulkInvitationResult = { invitations: response.data.invitations, skipped: response.data.skipped ?? [] };
+      return result;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to generate invitation links'));
     }

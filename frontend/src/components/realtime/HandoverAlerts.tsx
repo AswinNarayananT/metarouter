@@ -56,6 +56,7 @@ export function HandoverAlerts() {
   // Assignments and "still waiting" reminders: same title and text as the bell ("Aromal assigned you ticket #12 · John Doe")
   useRealtimeEvent('notification.new', (notification) => {
     if (notification.type === 'handover') return; // Shown from conversation.handover above
+    if (notification.type === 'role_changed' || notification.type === 'member_left' || notification.type === 'member_joined') return; // Bell only, no chat to open
     if (notification.conversation_id === null) return;
     push({
       key: notification.ticket ? `ticket-${notification.ticket.id}` : `chat-${notification.conversation_id}`,

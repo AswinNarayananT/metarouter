@@ -1,26 +1,31 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { Check, Copy, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { Check, Copy, AlertCircle, Plus, Trash2, Ban, Loader2, Search, Send, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { fetchInvitations, generateWorkspaceInvitations } from '@/store/workspace/workspaceThunks';
+import { fetchInvitations, generateWorkspaceInvitations, resendInvitation, revokeInvitation } from '@/store/workspace/workspaceThunks';
 import { resetInviteState, clearWorkspaceError } from '@/store/workspace/workspaceSlice';
-import type { InvitationStatus } from '@/types/workspaceTypes';
+import type { InvitationSkipped, InvitationStatus } from '@/types/workspaceTypes';
 import { emailField, nameField } from '@/validation/schemas';
 
 const INVITATIONS_PAGE_SIZE = 10;
+const MAX_INVITES_PER_REQUEST = 50; // Same cap as the server (invitation_schema.BulkInviteRequest)
+const SEARCH_DELAY_MS = 300;
 
 const STATUS_FILTERS: { label: string; value: InvitationStatus | undefined }[] = [
   { label: 'All', value: undefined },
   { label: 'Pending', value: 'pending' },
   { label: 'Accepted', value: 'accepted' },
   { label: 'Expired', value: 'expired' },
+  { label: 'Revoked', value: 'revoked' },
 ];
 
 const STATUS_BADGE_STYLES: Record<InvitationStatus, string> = {
   pending: 'bg-amber-500/10 text-amber-600',
   accepted: 'bg-green-500/10 text-green-600',
   expired: 'bg-error/10 text-error',
+  revoked: 'bg-surface-container text-on-surface-variant',
 };
 
 function formatDate(value: string | null) {
@@ -72,7 +77,8 @@ export function InviteMembers() {
   const { isInviting, inviteSuccess, lastInvitations, user } = useAppSelector((state) => state.workspace);
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [submittedCount, setSubmittedCount] = useState(0);
+  // Emails the server didn't invite, with the reason (shown under that email, or in the "Not invited" list)
+  const [skipped, setSkipped] = useState<InvitationSkipped[]>([]);
 
   // Start fresh when entering the page
   useEffect(() => {
@@ -90,10 +96,15 @@ export function InviteMembers() {
         email: m.email.trim().toLowerCase(),
         role: m.role,
       }));
-      setSubmittedCount(members.length);
-      await dispatch(generateWorkspaceInvitations(members));
+      setSkipped([]);
+      const result = await dispatch(generateWorkspaceInvitations(members));
+      if (generateWorkspaceInvitations.fulfilled.match(result)) setSkipped(result.payload.skipped);
     },
   });
+
+  // Why the server refused this row's email; shown until the email is changed
+  const skippedReason = (index: number): string | undefined =>
+    skipped.find((s) => s.email.toLowerCase() === formik.values.members[index]?.email.trim().toLowerCase())?.reason;
 
   const { values, setFieldValue } = formik;
 
@@ -131,9 +142,8 @@ export function InviteMembers() {
     dispatch(clearWorkspaceError());
     formik.resetForm();
     setCopiedIndex(null);
+    setSkipped([]);
   };
-
-  const skippedCount = Math.max(0, submittedCount - lastInvitations.length);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -151,12 +161,20 @@ export function InviteMembers() {
           </div>
         )}
 
+        {/* Nobody could be invited: the reasons are under the emails */}
+        {!inviteSuccess && skipped.length > 0 && (
+          <div role="alert" className="flex items-center gap-2 p-3 bg-error/10 text-error rounded-xl text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>No invites were sent. Check the highlighted {skipped.length === 1 ? 'email' : 'emails'}.</span>
+          </div>
+        )}
+
         {!inviteSuccess ? (
           <form onSubmit={formik.handleSubmit} noValidate className="space-y-4">
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
               {values.members.map((_, index) => {
                 const nameErr = memberError(index, 'name');
-                const emailErr = memberError(index, 'email');
+                const emailErr = memberError(index, 'email') || skippedReason(index);
                 const roleErr = memberError(index, 'role');
                 return (
                   <div
@@ -238,7 +256,9 @@ export function InviteMembers() {
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="flex items-center gap-1.5 px-3 py-2 bg-surface-container text-on-surface rounded-xl text-xs font-medium hover:bg-surface-container-high transition-colors cursor-pointer"
+                disabled={values.members.length >= MAX_INVITES_PER_REQUEST}
+                title={values.members.length >= MAX_INVITES_PER_REQUEST ? `Up to ${MAX_INVITES_PER_REQUEST} people at a time` : undefined}
+                className="flex items-center gap-1.5 px-3 py-2 bg-surface-container text-on-surface rounded-xl text-xs font-medium hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Another</span>
@@ -260,19 +280,20 @@ export function InviteMembers() {
               <p className="text-[11px] text-on-surface-variant leading-relaxed">
                 Copy and share each unique link with the respective member. Each link is valid for 3 days and can only be used once.
               </p>
-              {skippedCount > 0 && (
-                <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                  {skippedCount} {skippedCount === 1 ? 'person was' : 'people were'} skipped because they
-                  already belong to this workspace.
-                </p>
-              )}
 
               <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                 {lastInvitations.map((invite, index) => (
                   <div key={index} className="p-2.5 bg-surface border border-outline-variant/30 rounded-lg space-y-1">
                     <div className="flex justify-between items-center text-xs">
                       <span className="font-semibold text-on-surface">{invite.name} <span className="text-[10px] text-on-surface-variant font-normal">({invite.email})</span></span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary uppercase">{invite.role}</span>
+                      <span className="flex items-center gap-1.5">
+                        {invite.resent && (
+                          <span title="They had a pending invite; that old link no longer works" className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-700 uppercase">
+                            Re-sent
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary uppercase">{invite.role}</span>
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 pt-1">
                       <input
@@ -293,6 +314,28 @@ export function InviteMembers() {
                 ))}
               </div>
             </div>
+
+            {/* Some people couldn't be invited: who and why */}
+            {skipped.length > 0 && (
+              <div className="p-3.5 bg-error/5 border border-error/20 rounded-xl space-y-2">
+                <p className="text-xs font-medium text-on-surface">Not invited ({skipped.length})</p>
+                <ul className="space-y-1.5">
+                  {skipped.map((s) => (
+                    <li key={s.email} className="text-[11px] text-on-surface-variant">
+                      <span className="font-semibold text-on-surface">{s.email}</span>: {s.reason}
+                      {s.reason.includes('Team Members') && (
+                        <>
+                          {' '}
+                          <Link to="/dashboard/members" className="font-semibold text-primary hover:underline">
+                            Go to Team Members
+                          </Link>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="flex justify-end pt-2">
               <button
@@ -318,18 +361,56 @@ function InvitationsList() {
   );
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<InvitationStatus | undefined>(undefined);
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState(''); // The search, sent once typing pauses
 
   const loadInvitations = () =>
-    dispatch(fetchInvitations({ page, page_size: INVITATIONS_PAGE_SIZE, status: statusFilter }));
+    dispatch(fetchInvitations({ page, page_size: INVITATIONS_PAGE_SIZE, status: statusFilter, search: query || undefined }));
+
+  // Search on the server once typing pauses, from the first page
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(search.trim());
+      setPage(1);
+    }, SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     loadInvitations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, page, statusFilter, inviteSuccess]);
+  }, [dispatch, page, statusFilter, query, inviteSuccess]);
 
   const handleFilterChange = (value: InvitationStatus | undefined) => {
     setStatusFilter(value);
     setPage(1);
+  };
+
+  // Row actions: the invite in progress, the one asking "revoke?", and the one whose link was just copied
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [confirmRevokeId, setConfirmRevokeId] = useState<number | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  const handleCopy = (id: number, link: string) => {
+    navigator.clipboard.writeText(link);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 3000);
+  };
+
+  // Success and failure toasts come from store/errorToastMiddleware; the list reloads to show the new status
+  const handleRevoke = async (id: number) => {
+    setBusyId(id);
+    const result = await dispatch(revokeInvitation(id));
+    setBusyId(null);
+    setConfirmRevokeId(null);
+    if (revokeInvitation.fulfilled.match(result)) loadInvitations();
+  };
+
+  const handleResend = async (id: number) => {
+    setBusyId(id);
+    const result = await dispatch(resendInvitation(id));
+    setBusyId(null);
+    if (resendInvitation.fulfilled.match(result)) loadInvitations();
   };
 
   const items = invitations?.items ?? [];
@@ -345,7 +426,35 @@ function InvitationsList() {
           <h2 className="text-lg font-semibold tracking-tight text-on-surface">Invitations</h2>
           <p className="text-sm text-on-surface-variant">Track invitations sent to your workspace.</p>
         </div>
-        <div className="flex gap-1 p-1 rounded-full bg-surface-container-low border border-outline-variant/30">
+        <div className="relative w-full sm:w-64 sm:ml-auto">
+          {isLoadingInvitations && query && search.trim() === query ? (
+            <Loader2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant animate-spin" />
+          ) : (
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+          )}
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setSearch('')}
+            placeholder="Search by name or email"
+            aria-label="Search invitations"
+            maxLength={100}
+            className="w-full pl-9 pr-9 py-2 bg-surface border border-outline/30 rounded-xl text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none focus:border-primary"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+              title="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-on-surface-variant hover:bg-surface-container cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1 p-1 rounded-full bg-surface-container-low border border-outline-variant/30">
           {STATUS_FILTERS.map((filter) => (
             <button
               key={filter.label}
@@ -378,7 +487,9 @@ function InvitationsList() {
             </button>
           </div>
         ) : items.length === 0 ? (
-          <p className="p-6 text-sm text-on-surface-variant text-center">No invitations found.</p>
+          <p className="p-6 text-sm text-on-surface-variant text-center">
+            {query ? `No invitations match "${query}".` : 'No invitations found.'}
+          </p>
         ) : (
           <div className={`divide-y divide-outline-variant/30 ${isLoadingInvitations ? 'opacity-60' : ''}`}>
             {items.map((invite) => (
@@ -396,7 +507,7 @@ function InvitationsList() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary uppercase">
                     {invite.role}
                   </span>
@@ -405,6 +516,64 @@ function InvitationsList() {
                   >
                     {invite.status}
                   </span>
+
+                  {/* Accepted invites are members now: nothing to do here */}
+                  {invite.status !== 'accepted' &&
+                    (confirmRevokeId === invite.id ? (
+                      <span className="flex items-center gap-1.5 text-xs text-on-surface">
+                        Revoke this invite?
+                        <button
+                          type="button"
+                          onClick={() => handleRevoke(invite.id)}
+                          disabled={busyId === invite.id}
+                          className="px-2.5 py-1 rounded-lg bg-error text-on-error font-medium hover:bg-error/90 disabled:opacity-50 cursor-pointer"
+                        >
+                          {busyId === invite.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Revoke'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRevokeId(null)}
+                          disabled={busyId === invite.id}
+                          className="px-2.5 py-1 rounded-lg text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                        >
+                          Keep
+                        </button>
+                      </span>
+                    ) : (
+                      <>
+                        {invite.invite_link && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(invite.id, invite.invite_link!)}
+                            title="Copy the invite link"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-outline-variant/40 text-xs font-medium text-on-surface hover:bg-surface-container cursor-pointer"
+                          >
+                            {copiedId === invite.id ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedId === invite.id ? 'Copied' : 'Copy link'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleResend(invite.id)}
+                          disabled={busyId === invite.id}
+                          title="Email a fresh 3-day link; the old link stops working"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-outline-variant/40 text-xs font-medium text-on-surface hover:bg-surface-container disabled:opacity-50 cursor-pointer"
+                        >
+                          {busyId === invite.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          {invite.status === 'pending' ? 'Resend' : 'Send again'}
+                        </button>
+                        {invite.status === 'pending' && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRevokeId(invite.id)}
+                            title="Cancel this invite: its link stops working"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-error/30 text-xs font-medium text-error hover:bg-error/10 cursor-pointer"
+                          >
+                            <Ban className="w-3.5 h-3.5" /> Revoke
+                          </button>
+                        )}
+                      </>
+                    ))}
                 </div>
               </div>
             ))}

@@ -31,9 +31,37 @@ export interface TeamMember {
   email: string;
   role: string;
   is_active: boolean;
+  removed_at?: string | null; // Set for removed members (Team Members' "Former" tab)
+  removal_type?: 'removed' | 'left' | null; // Removed by an admin, or left themselves
 }
 
-export type InvitationStatus = 'pending' | 'accepted' | 'expired';
+export type MemberListStatus = 'current' | 'removed';
+
+// Team Members page: one tab, searched and paginated by the server
+export interface PaginatedTeamMembers {
+  items: TeamMember[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  current_count: number; // Tab counts, ignoring the search
+  removed_count: number;
+}
+
+export interface FetchMembersPageParams {
+  status: MemberListStatus;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+// Shown in the remove dialog: what needs a new owner
+export interface MemberOpenWork {
+  open_chats: number;
+  open_tickets: number;
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
 
 export interface InvitationListItem {
   id: number;
@@ -41,6 +69,7 @@ export interface InvitationListItem {
   email: string;
   role: string;
   status: InvitationStatus;
+  invite_link?: string | null; // Pending invites only, for "Copy link"
   expires_at: string;
   created_at: string | null;
 }
@@ -57,6 +86,7 @@ export interface FetchInvitationsParams {
   page?: number;
   page_size?: number;
   status?: InvitationStatus;
+  search?: string; // Name or email
 }
 
 export interface InvitePayloadItem {
@@ -70,6 +100,18 @@ export interface InvitationItemResult {
   email: string;
   role: string;
   invite_link: string;
+  resent?: boolean; // Replaced a pending invite: the old link no longer works
+}
+
+// Emails the server didn't invite, and why (already a member, account in another workspace…)
+export interface InvitationSkipped {
+  email: string;
+  reason: string;
+}
+
+export interface BulkInvitationResult {
+  invitations: InvitationItemResult[];
+  skipped: InvitationSkipped[];
 }
 
 export interface VerifyInvitationResponse {

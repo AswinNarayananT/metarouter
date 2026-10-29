@@ -11,7 +11,7 @@ import chatReducer from './chat/chatSlice';
 import notificationReducer from './notifications/notificationSlice';
 import ticketReducer from './tickets/ticketSlice';
 import quickRepliesReducer from './quickReplies/quickRepliesSlice';
-import { errorToastMiddleware } from './errorToastMiddleware';
+import { toastMiddleware } from './errorToastMiddleware';
 
 export const store = configureStore({
   reducer: {
@@ -26,8 +26,8 @@ export const store = configureStore({
     tickets: ticketReducer,
     quickReplies: quickRepliesReducer,
   },
-  // Failed actions show as error toasts (see errorToastMiddleware for the ones shown in place instead)
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(errorToastMiddleware),
+  // Success and error toasts for actions (see errorToastMiddleware.ts for which ones)
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(toastMiddleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

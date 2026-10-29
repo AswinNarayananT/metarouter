@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = ""
     FRONTEND_BASE_URL: str = "http://localhost:5173"
+    INVITES_MAX_PER_ORG_PER_HOUR: int = 100  # Invite emails (new + resent) a workspace can send each hour
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30  # A "forgot password" link works this long, and only once
+    PASSWORD_RESET_MAX_PER_EMAIL_PER_HOUR: int = 3  # Reset emails per address each hour (each one is a real email)
+    PASSWORD_RESET_MAX_PER_IP_PER_HOUR: int = 10
     WORKSPACE_URL_TEMPLATE: str = "http://localhost:5173"  # Where a workspace opens; "{slug}" is replaced, e.g. https://{slug}.metarouter.ai
 
     GOOGLE_API_KEY: str = ""

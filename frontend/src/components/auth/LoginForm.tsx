@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { Lock, Mail, AlertCircle } from 'lucide-react';
@@ -7,7 +7,6 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { loginWorkspaceUser } from '@/store/workspace/workspaceThunks';
 import { clearWorkspaceError } from '@/store/workspace/workspaceSlice';
 import { emailField, fieldError } from '@/validation/schemas';
-import type { LoginErrorPayload } from '@/types/workspaceTypes';
 
 interface LoginFormValues {
   email: string;
@@ -34,8 +33,6 @@ export function LoginForm() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { isLoading, error } = useAppSelector((state) => state.workspace);
-  // Server said this input is wrong; shown under it until its value is changed
-  const [rejected, setRejected] = useState<{ field: 'email' | 'password'; message: string; value: string } | null>(null);
 
   useEffect(() => {
     dispatch(clearWorkspaceError());
@@ -45,7 +42,6 @@ export function LoginForm() {
     initialValues: { email: '', password: '' },
     validationSchema: loginSchema,
     onSubmit: async (values) => {
-      setRejected(null);
       const resultAction = await dispatch(
         loginWorkspaceUser({
           email: values.email.trim(),
@@ -56,21 +52,17 @@ export function LoginForm() {
 
       if (loginWorkspaceUser.fulfilled.match(resultAction)) {
         navigate('/dashboard');
-      } else if (loginWorkspaceUser.rejected.match(resultAction)) {
-        // Point at the wrong input and put the cursor there
-        const failure = resultAction.payload as LoginErrorPayload | undefined;
-        if (failure?.field) {
-          setRejected({ field: failure.field, message: failure.message, value: values[failure.field] });
-          document.getElementById(failure.field)?.focus();
-        }
+      } else {
+        // The banner says "Incorrect email or password" (the server doesn't say which); clear the password to retype it
+        formik.setFieldValue('password', '', false);
+        formik.setFieldTouched('password', false, false);
+        document.getElementById('password')?.focus();
       }
     },
   });
 
-  const serverErrorFor = (field: 'email' | 'password') =>
-    rejected?.field === field && formik.values[field] === rejected.value ? rejected.message : undefined;
-  const emailError = fieldError(formik, 'email') || serverErrorFor('email');
-  const passwordError = fieldError(formik, 'password') || serverErrorFor('password');
+  const emailError = fieldError(formik, 'email');
+  const passwordError = fieldError(formik, 'password');
 
   return (
     <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-8 shadow-xl relative z-10">
@@ -107,9 +99,14 @@ export function LoginForm() {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-xs font-medium text-on-surface-variant uppercase mb-1">
-            Password
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="password" className="block text-xs font-medium text-on-surface-variant uppercase">
+              Password
+            </label>
+            <Link to="/forgot-password" className="text-xs font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
           <div className="relative">
             <Lock className="absolute left-3 top-3 w-4 h-4 text-on-surface-variant/60" />
             <input

@@ -35,7 +35,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchOrganization, updateOrganizationStatus, deleteOrganization } from '@/store/superAdmin/organizationThunks';
 import { superAdminApi } from '@/api/superAdminApi';
 import { getApiErrorMessage } from '@/api/errors';
-import { notifyError } from '@/utils/notify';
+import { notifyError, notifySuccess } from '@/utils/notify';
 import type { OrganizationFeatureItem, OrganizationFeaturesResponse } from '@/types/moduleTypes';
 
 function formatBytes(bytes: number, decimals = 1): string {
@@ -100,7 +100,6 @@ export function OrganizationDetailPage() {
   const [isLoadingFeatures, setIsLoadingFeatures] = useState(false);
   const [isSavingFeatures, setIsSavingFeatures] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [featuresSaveSuccess, setFeaturesSaveSuccess] = useState(false);
   const [featuresError, setFeaturesError] = useState<string | null>(null);
 
   // Modal State for Status Change Confirmation
@@ -139,6 +138,7 @@ export function OrganizationDetailPage() {
       } else {
         window.open(res.data.redirect_url, '_blank', 'noopener');
       }
+      notifySuccess(`Support session opened in a new tab as ${impersonateTarget.name} (read-only, 30 minutes)`);
       setImpersonateTarget(null);
     } catch (err) {
       tab?.close();
@@ -186,9 +186,9 @@ export function OrganizationDetailPage() {
       await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/features`, {
         features: { [key]: nextVal },
       });
-      setFeaturesSaveSuccess(true);
+      const moduleName = orgFeatures.find((m) => m.key === key)?.name ?? key;
+      notifySuccess(`${moduleName} ${nextVal ? 'enabled' : 'disabled'} for this workspace`);
       await loadOrgFeatures();
-      setTimeout(() => setFeaturesSaveSuccess(false), 2500);
     } catch (err) {
       // Revert optimistic update on failure
       setFeatureOverrides((prev) => ({
@@ -204,14 +204,12 @@ export function OrganizationDetailPage() {
   const handleSaveFeatures = async () => {
     if (!id) return;
     setIsSavingFeatures(true);
-    setFeaturesSaveSuccess(false);
     try {
       await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/features`, {
         features: featureOverrides,
       });
-      setFeaturesSaveSuccess(true);
+      notifySuccess('Module settings saved');
       await loadOrgFeatures();
-      setTimeout(() => setFeaturesSaveSuccess(false), 3000);
     } catch (err) {
       notifyError(err, 'Failed to save organization features');
     } finally {
@@ -231,9 +229,8 @@ export function OrganizationDetailPage() {
       await superAdminApi.patch(`/api/v1/superadmin/organizations/${id}/features`, {
         features: map,
       });
-      setFeaturesSaveSuccess(true);
+      notifySuccess('Modules reset to the platform defaults');
       await loadOrgFeatures();
-      setTimeout(() => setFeaturesSaveSuccess(false), 3000);
     } catch (err) {
       notifyError(err, 'Failed to reset features to defaults');
     } finally {
@@ -976,7 +973,7 @@ export function OrganizationDetailPage() {
                         <span
                           className={clsx('size-1.5 rounded-full', member.is_active ? 'bg-emerald-500' : 'bg-outline')}
                         />
-                        {member.is_active ? 'Active' : 'Inactive'}
+                        {member.is_active ? 'Active' : member.removed_at ? 'Removed' : 'Inactive'}
                       </span>
 
                       {/* Joined Date */}
@@ -1059,13 +1056,7 @@ export function OrganizationDetailPage() {
             </div>
           </div>
 
-          {/* Feedback Banners */}
-          {featuresSaveSuccess && (
-            <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 text-xs flex items-center gap-2 animate-in fade-in">
-              <Check className="size-4 shrink-0" />
-              <span>Workspace feature flags saved successfully! An audit log has been recorded.</span>
-            </div>
-          )}
+          {/* Saving shows a success or error toast */}
 
           {featuresError && (
             <div className="mb-6 p-4 rounded-xl bg-error-container/30 border border-error/30 text-error text-xs flex items-center justify-between">
