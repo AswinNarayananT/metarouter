@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app.config import settings
 from app.models.conversation_model import Conversation, ChatMessage
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.whatsapp_model import WhatsAppNumber
@@ -137,6 +138,41 @@ def handover_roles(db: Session, organization_id: int) -> set:
     # Roles the admin allowed to take over chats (AI settings); admins always can
     roles = db.query(OrganizationAISettings.allowed_roles_for_handover).filter(OrganizationAISettings.organization_id == organization_id).scalar()
     return {r.strip() for r in (roles or DEFAULT_HANDOVER_ROLES).split(",") if r.strip()} | {"admin"}
+
+
+AI_AUTO_REPLY_OFF_ERROR = "AI auto-reply is off. Turn it on in AI Assistant to hand chats back."
+
+
+def ai_auto_reply_on(db: Session, organization_id: int) -> bool:
+    # AI settings switch (on until the admin turns it off); off = every new chat goes straight to the team
+    active = db.query(OrganizationAISettings.is_active).filter(OrganizationAISettings.organization_id == organization_id).scalar()
+    return active is not False
+
+
+def last_conversation_activity_at(db: Session, conversation_id: int) -> Optional[datetime]:
+    # Newest message between the customer and us (AI or team); broadcasts and activity lines don't count
+    created_at = db.query(func.max(ChatMessage.created_at)).filter(ChatMessage.conversation_id == conversation_id, ChatMessage.sender.in_(("user", "model", "human"))).scalar()
+    return as_utc(created_at)
+
+
+def begin_visit_if_new(db: Session, conversation: Conversation, previous_activity_at: Optional[datetime], message: ChatMessage) -> bool:
+    # A first message, or one after VISIT_GAP_HOURS of silence on both sides, starts a new visit: what the customer wants is asked again
+    # (a customer answering our reply hours later is still in the same visit); previous_activity_at is read before `message` was saved
+    if previous_activity_at and as_utc(previous_activity_at) > as_utc(message.created_at) - timedelta(hours=settings.VISIT_GAP_HOURS):
+        return False
+    conversation.visit_started_at = as_utc(message.created_at)
+    conversation.intent = None
+    conversation.menu_sent_at = None
+    db.commit()
+    return True
+
+
+def visit_first_message_id(db: Session, conversation: Conversation) -> Optional[int]:
+    # The customer's first message of this visit (where a ticket's transcript starts)
+    query = db.query(func.min(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user")
+    if conversation.visit_started_at:
+        query = query.filter(ChatMessage.created_at >= as_utc(conversation.visit_started_at).replace(tzinfo=None))
+    return query.scalar()
 
 
 def record_activity(db: Session, conversation: Conversation, text: str, user=None) -> ChatMessage:

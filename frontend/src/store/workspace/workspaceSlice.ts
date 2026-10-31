@@ -7,6 +7,7 @@ import {
   fetchOrganization,
   updateCurrentUser,
   updateOrganization,
+  setAiAutoReply,
   fetchTeamMembers,
   updateMemberRole,
   removeMember,
@@ -214,12 +215,16 @@ export const workspaceSlice = createSlice({
         state.settingsSaveError = null;
       })
       .addCase(updateOrganization.fulfilled, (state, action) => {
-        state.organization = action.payload;
+        // Merged: the save answer has no features / supported currencies
+        state.organization = { ...state.organization, ...action.payload };
         if (state.user) state.user.organization_name = action.payload.name;
         state.settingsSaveSuccess = true;
       })
       .addCase(updateOrganization.rejected, (state, action) => {
         state.settingsSaveError = action.payload as string;
+      })
+      .addCase(setAiAutoReply.fulfilled, (state, action) => {
+        if (state.organization) state.organization.ai_auto_reply = action.payload;
       })
       // Fetch Team Members
       .addCase(fetchTeamMembers.pending, (state) => {

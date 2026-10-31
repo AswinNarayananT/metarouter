@@ -10,3 +10,4 @@ class OrganizationAISettings(Base):
     system_instructions = Column(Text, nullable=True)
     allowed_roles_for_handover = Column(String(255), default="admin,manager") # Comma separated roles
     is_active = Column(Boolean, default=True)
+    greeting_message = Column(Text, nullable=True)  # Text of the greeting menu at the start of a visit (None = the default greeting)

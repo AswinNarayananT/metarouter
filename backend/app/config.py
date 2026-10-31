@@ -65,7 +65,9 @@ class Settings(BaseSettings):
     STUCK_MEDIA_MAX_AGE_HOURS: int = 24  # Customer media still pending after this is marked failed instead of retried
     BROADCAST_CHECK_INTERVAL_SECONDS: int = 60  # Restart tier-paused broadcasts that are due
     TICKET_IDLE_CLOSE_HOURS: int = 4  # An AI-handled ticket with no new message for this long is closed (no reply)
+    TICKET_TEAM_IDLE_CLOSE_HOURS: int = 48  # With AI auto-reply off, a team ticket with no new message for this long is closed (no reply)
     TICKET_SWEEP_INTERVAL_MINUTES: int = 10  # How often idle tickets are checked
+    VISIT_GAP_HOURS: int = 4  # A customer message after this much silence starts a new visit (greeting menu asked again)
     UNASSIGNED_REMINDER_MINUTES: str = "5,15"  # Remind about a handed-over chat nobody took after these minutes (first: the team, later: admins / managers)
     UNASSIGNED_REMINDER_CHECK_SECONDS: int = 60  # How often waiting chats are checked
     NOTIFICATION_RETENTION_DAYS: int = 60  # Read notifications older than this are deleted (unread ones are kept)

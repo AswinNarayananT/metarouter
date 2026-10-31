@@ -22,7 +22,7 @@ export interface ApiChatMessage {
   id: number;
   conversation_id: number;
   sender: MessageSender;
-  message_type: 'text' | 'template' | 'event' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'location' | 'contacts' | 'unsupported';
+  message_type: 'text' | 'template' | 'event' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'location' | 'contacts' | 'interactive' | 'unsupported';
   content: string;
   template_data: Record<string, unknown> | null;
   status: MessageDeliveryStatus | null; // null for customer messages

@@ -38,6 +38,10 @@ class Conversation(Base):
     # Team member responsible for the chat (None = unassigned queue); cleared when the chat goes back to the AI
     assigned_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     assigned_at = Column(DateTime(timezone=True), nullable=True)
+    # Visit: starts with a customer message after VISIT_GAP_HOURS of silence; what the customer came for is asked once per visit
+    visit_started_at = Column(DateTime(timezone=True), nullable=True)
+    intent = Column(String(20), nullable=True)  # order, support, other (None = not known yet)
+    menu_sent_at = Column(DateTime(timezone=True), nullable=True)  # Greeting menu sent in this visit
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")

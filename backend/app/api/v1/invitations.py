@@ -26,7 +26,6 @@ from app.core.security import  get_password_hash
 from app.core.deps import get_current_workspace_user
 from app.config import settings
 from app.workers.tasks.email_tasks import send_invitation_email_task
-from app.core.features import require_feature
 from app.services.notification_service import notify_member_joined
 
 router = APIRouter(prefix="/invitations", tags=["Workspace Invitations"])
@@ -47,7 +46,7 @@ def _invitation_status(invitation: Invitation, now: datetime) -> str:
 
 
 # List invitations sent by the organization (admin only, paginated)
-@router.get("", response_model=PaginatedInvitationsResponse, dependencies=[Depends(require_feature("invite_members"))])
+@router.get("", response_model=PaginatedInvitationsResponse)
 def list_invitations(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -92,7 +91,7 @@ def list_invitations(
         "total_pages": max(1, math.ceil(total / page_size)),
     }
 
-@router.post("/generate", response_model=BulkInvitationResponse, dependencies=[Depends(require_feature("invite_members"))])
+@router.post("/generate", response_model=BulkInvitationResponse)
 def generate_invitations(
     payload: BulkInviteRequest,
     db: Session = Depends(get_db),
@@ -127,7 +126,7 @@ def generate_invitations(
     }
 
 
-@router.post("/{invitation_id}/revoke", response_model=InvitationListItem, dependencies=[Depends(require_feature("invite_members"))])
+@router.post("/{invitation_id}/revoke", response_model=InvitationListItem)
 def revoke_invitation(invitation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Admins only
     if current_user.role != "admin":
@@ -149,7 +148,7 @@ def revoke_invitation(invitation_id: int, db: Session = Depends(get_db), current
     return _invitation_list_item(invitation, datetime.now(timezone.utc))
 
 
-@router.post("/{invitation_id}/resend", response_model=InvitationDetail, dependencies=[Depends(require_feature("invite_members"))])
+@router.post("/{invitation_id}/resend", response_model=InvitationDetail)
 def resend_invitation(invitation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Admins only
     if current_user.role != "admin":

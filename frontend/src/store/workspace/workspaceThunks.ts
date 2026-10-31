@@ -79,15 +79,28 @@ export const fetchOrganization = createAsyncThunk(
   }
 );
 
-// Async Thunk to rename the current organization (admin only)
+// Async Thunk to rename the current organization or change its currency (admin only); only the fields sent change
 export const updateOrganization = createAsyncThunk(
   'workspace/updateOrganization',
-  async (payload: { name: string }, { rejectWithValue }) => {
+  async (payload: { name?: string; currency?: string }, { rejectWithValue }) => {
     try {
       const response = await api.patch<CurrentOrganization>('/api/v1/organizations/current', payload);
       return response.data;
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Failed to update organization'));
+    }
+  }
+);
+
+// AI auto-reply on / off (admin only); off = every new chat goes straight to the team
+export const setAiAutoReply = createAsyncThunk(
+  'workspace/setAiAutoReply',
+  async (enabled: boolean, { rejectWithValue }) => {
+    try {
+      const response = await api.patch<{ auto_reply: boolean }>('/api/v1/ai-settings/auto-reply', { enabled });
+      return response.data.auto_reply;
+    } catch (err) {
+      return rejectWithValue(getApiErrorMessage(err, "Couldn't change AI auto-reply"));
     }
   }
 );
@@ -314,6 +327,7 @@ export const saveAISettings = createAsyncThunk(
     formData.append('bot_name', payload.bot_name);
     formData.append('system_instructions', payload.system_instructions);
     formData.append('allowed_roles_for_handover', payload.allowed_roles_for_handover.join(','));
+    formData.append('greeting_message', payload.greeting_message);
 
     try {
       // Override the instance's JSON default so axios sends multipart with a boundary

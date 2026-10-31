@@ -18,6 +18,8 @@ from app.services.whatsapp_service import (
     message_id_from_callback_data,
     send_text,
     send_template,
+    send_interactive,
+    interactive_payload,
     upload_media,
     send_media,
 )
@@ -169,6 +171,8 @@ def send_whatsapp_message_task(self, message_id: int):
                     db.commit()
                 caption = None if message.content.startswith("[Sent ") else message.content
                 wamid = send_media(number.phone_number_id, number.access_token, conversation.customer_phone, message.message_type, attachment.media_id, caption, attachment.file_name, callback_data=callback_data)
+            elif message.message_type == "interactive":
+                wamid = send_interactive(number.phone_number_id, number.access_token, conversation.customer_phone, interactive_payload(message.content, message.template_data or {}), callback_data=callback_data)
             else:
                 wamid = send_text(number.phone_number_id, number.access_token, conversation.customer_phone, message.content, callback_data=callback_data)
         except WhatsAppTokenError as exc:

@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { selectConversation } from '@/store/chat/chatSlice';
 import { formatPhone } from '@/store/chat/chatMappers';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { ActivityChart } from '@/components/overview/ActivityChart';
 import type { OverviewData, OverviewPeriod } from '@/types/overviewTypes';
 
@@ -50,6 +51,9 @@ export function WorkspaceOverview() {
   const navigate = useNavigate();
   const user = useAppSelector((state) => state.workspace.user);
   const isSupervisor = user?.role === 'admin' || user?.role === 'manager';
+  // Overview is always on: chat, AI and ticket numbers only show with Customer Chats, the latest broadcast with Broadcasts
+  const hasChats = useFeatureFlag('customer_chats');
+  const hasBroadcasts = useFeatureFlag('broadcasts');
   const [period, setPeriod] = useState<OverviewPeriod>('today');
   const [state, setState] = useState<{ forPeriod: OverviewPeriod | null; data: OverviewData | null; error: string | null }>({ forPeriod: null, data: null, error: null });
   const liveTimer = useRef<number | null>(null);
@@ -122,7 +126,7 @@ export function WorkspaceOverview() {
       {state.error && <p className="text-sm text-error">{state.error}</p>}
       {!data && !state.error && <p className="text-sm text-on-surface-variant">Loading the overview…</p>}
 
-      {data && (
+      {data && hasChats && (
         <>
           {/* 1. Headline numbers */}
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -248,9 +252,13 @@ export function WorkspaceOverview() {
               </button>
             </Card>
           </div>
+        </>
+      )}
 
+      {data && (
+        <>
           {/* 6. Channels */}
-          <Card title="Channels" subtitle="Your WhatsApp numbers and the latest broadcast.">
+          <Card title="Channels" subtitle={hasBroadcasts ? 'Your WhatsApp numbers and the latest broadcast.' : 'Your WhatsApp numbers.'}>
             {data.channels.numbers.length === 0 ? (
               <p className="text-sm text-on-surface-variant">No WhatsApp number connected yet.</p>
             ) : (
@@ -275,7 +283,7 @@ export function WorkspaceOverview() {
                 })}
               </ul>
             )}
-            {data.channels.latest_broadcast && (
+            {hasBroadcasts && data.channels.latest_broadcast && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-3 border-t border-outline-variant/20 text-sm">
                 <Send className="w-4 h-4 text-on-surface-variant" aria-hidden="true" />
                 <span className="font-medium text-on-surface">{data.channels.latest_broadcast.template_name}</span>

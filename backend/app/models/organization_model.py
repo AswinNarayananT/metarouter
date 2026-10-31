@@ -4,18 +4,16 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
 
+# Modules a workspace can have switched on or off (customer_chats includes the AI assistant and tickets).
+# Overview, Channels, Settings and Team are always on: see CORE_FEATURES in app/core/features.py
 DEFAULT_ORGANIZATION_FEATURES = {
-    "overview": True,
-    "channels": True,
-    "ai_assistant": True,
     "customer_chats": True,
     "broadcasts": True,
-    "team_members": True,
-    "invite_members": True,
-    "settings": True,
-    "tickets": True,
     "orders": False,
 }
+
+# Currencies a workspace can price its products in (ISO 4217)
+SUPPORTED_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SAR", "QAR", "KWD", "OMR", "BHD", "SGD", "MYR", "AUD", "CAD"]
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -26,6 +24,7 @@ class Organization(Base):
     subscription_status = Column(String, default="active")
     # Only this workspace's overrides ({"orders": true}); every other module follows its platform default
     features = Column(JSONB, nullable=False, default=dict, server_default='{}')
+    currency = Column(String(3), nullable=False, default="INR", server_default="INR")  # Product prices are in this currency
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     profile = relationship("OrganizationProfile", back_populates="organization", uselist=False, cascade="all, delete-orphan")

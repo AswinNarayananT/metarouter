@@ -12,17 +12,19 @@ from app.models.organization_model import User
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.knowledge_model import KnowledgeDocument
 from app.workers.tasks.knowledge_tasks import process_knowledge_document_task
-from app.workers.tasks.chat_tasks import ESCALATION_TAG, RESOLVED_TAG, HANDOVER_FALLBACK_TEXT
+from app.workers.tasks.chat_tasks import ESCALATION_TAG, RESOLVED_TAG, ISSUE_TAG, HANDOVER_FALLBACK_TEXT
 from app.core.features import require_feature
 from app.core.redis_client import redis_client
 from app.schemas.ai_simulator_schema import SimulateAIRequest
+from app.schemas.ai_settings_schema import AutoReplyRequest
 from app.services.ai_service import simulate_ai_response
 from app.services.conversation_service import handover_roles
+from app.services.intent_service import GREETING_MAX_CHARS
 
 router = APIRouter(
     prefix="/ai-settings",
     tags=["AI Settings & Knowledge"],
-    dependencies=[Depends(require_feature("ai_assistant"))]
+    dependencies=[Depends(require_feature("customer_chats"))]  # The AI assistant is part of Customer Chats
 )
 
 VALID_HANDOVER_ROLES = {"admin", "manager", "service"}
@@ -42,6 +44,8 @@ def _serialize(settings_obj: Optional[OrganizationAISettings]) -> dict:
         "system_instructions": (settings_obj.system_instructions if settings_obj else None) or "",
         "allowed_roles_for_handover": [r for r in (roles or "").split(",") if r],
         "is_active": settings_obj.is_active if settings_obj else True,
+        "auto_reply": settings_obj.is_active is not False if settings_obj else True,
+        "greeting_message": (settings_obj.greeting_message if settings_obj else None) or "",
     }
 
 
@@ -60,6 +64,7 @@ async def save_ai_settings(
     bot_name: str = Form(...),
     system_instructions: str = Form(""),
     allowed_roles_for_handover: str = Form(...),
+    greeting_message: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_workspace_user)
 ):
@@ -72,6 +77,8 @@ async def save_ai_settings(
         raise HTTPException(status_code=422, detail="Bot name must be between 2 and 100 characters")
     if len(system_instructions) > 4000:
         raise HTTPException(status_code=422, detail="Instructions must be 4000 characters or less")
+    if greeting_message is not None and len(greeting_message.strip()) > GREETING_MAX_CHARS:
+        raise HTTPException(status_code=422, detail=f"Greeting must be {GREETING_MAX_CHARS} characters or less")
 
     roles = [r.strip().lower() for r in allowed_roles_for_handover.split(",") if r.strip()]
     if not roles:
@@ -89,6 +96,9 @@ async def save_ai_settings(
     settings_obj.bot_name = bot_name
     settings_obj.system_instructions = system_instructions.strip()
     settings_obj.allowed_roles_for_handover = ",".join(dict.fromkeys(roles))
+    # Not sent = unchanged (older forms); empty = back to the default greeting
+    if greeting_message is not None:
+        settings_obj.greeting_message = greeting_message.strip() or None
     db.commit()
     db.refresh(settings_obj)
 
@@ -97,6 +107,23 @@ async def save_ai_settings(
         "message": "AI settings updated successfully.",
         "settings": _serialize(settings_obj),
     }
+
+
+@router.patch("/auto-reply")
+def set_ai_auto_reply(payload: AutoReplyRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # Off: the AI stops answering and every new chat goes straight to the team (tickets still open and are filed)
+    _require_admin(current_user)
+
+    settings_obj = db.query(OrganizationAISettings).filter_by(organization_id=current_user.organization_id).first()
+    if not settings_obj:
+        settings_obj = OrganizationAISettings(organization_id=current_user.organization_id, bot_name=DEFAULT_BOT_NAME, allowed_roles_for_handover=DEFAULT_HANDOVER_ROLES)
+        db.add(settings_obj)
+
+    settings_obj.is_active = payload.enabled
+    db.commit()
+    db.refresh(settings_obj)
+
+    return _serialize(settings_obj)
 
 
 @router.post("/simulate")
@@ -127,6 +154,8 @@ def simulate_ai_reply(payload: SimulateAIRequest, db: Session = Depends(get_db),
 
     # 3. What a real chat would do with this reply (same tags as reply_with_ai)
     raw_reply = (result["raw_reply"] or "").strip()
+    reported_issue = ISSUE_TAG in raw_reply
+    raw_reply = raw_reply.replace(ISSUE_TAG, "").strip()
     roles = ", ".join(sorted(handover_roles(db, organization_id)))
     if result["error"]:
         outcome = "error"
@@ -143,7 +172,7 @@ def simulate_ai_reply(payload: SimulateAIRequest, db: Session = Depends(get_db),
     else:
         outcome = "answered"
         reply = raw_reply
-        note = "The AI answers and keeps the chat."
+        note = "The customer reported a problem: a ticket opens to track it, and the AI keeps helping." if reported_issue else "The AI answers and keeps the chat."
 
     return {
         "reply": reply,

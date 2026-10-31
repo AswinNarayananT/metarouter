@@ -7,7 +7,7 @@ from app.models.conversation_model import Conversation, ChatMessage, Conversatio
 from app.models.ticket_model import Ticket, TicketActivity, TicketGroup
 from app.realtime.connection_manager import org_group
 from app.realtime.events import publish_event
-from app.services.conversation_service import as_utc, first_name, record_activity, conversation_payload
+from app.services.conversation_service import as_utc, first_name, record_activity, conversation_payload, visit_first_message_id
 from app.services.ticket_ai_service import label_ticket, TicketLabelError
 
 # A ticket = one support session of a chat: it starts with the customer's first message
@@ -81,6 +81,10 @@ def start_ticket_session(db: Session, conversation: Conversation, first_message_
     for _ in range(3):
         next_number = (db.query(func.max(Ticket.number)).filter(Ticket.organization_id == conversation.organization_id).scalar() or 0) + 1
         ticket = Ticket(organization_id=conversation.organization_id, number=next_number, conversation_id=conversation.id, first_message_id=first_message_id, assigned_user_id=conversation.assigned_user_id)
+        # The team already handles this chat (taken over, or AI auto-reply off): a team ticket from the start
+        if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
+            ticket.status = "open"
+            ticket.handled_by = "human"
         db.add(ticket)
         try:
             db.commit()
@@ -179,23 +183,29 @@ def apply_ai_labels(db: Session, ticket: Ticket, include_resolution: bool, relab
     return True
 
 
-def escalate_ticket(db: Session, conversation: Conversation, user=None) -> Ticket:
+def escalate_ticket(db: Session, conversation: Conversation, user=None, note: Optional[str] = None) -> Ticket:
     # The AI (or an agent taking over) hands the session to the team: the ticket becomes a team ticket
+    # note: the timeline text when it isn't the AI's own handover (e.g. AI auto-reply is off)
     ticket = get_open_ticket(db, conversation.id)
+    # A ticket opened just now for this handover counts as coming from the AI (it starts as a team ticket in a taken-over chat)
+    created_now = ticket is None
     if not ticket:
-        last_customer_id = db.query(func.max(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user").scalar()
-        ticket = start_ticket_session(db, conversation, last_customer_id)
+        # The ticket covers this visit from its first message (or the last customer message for chats from before visits)
+        first_id = visit_first_message_id(db, conversation) or db.query(func.max(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user").scalar()
+        ticket = start_ticket_session(db, conversation, first_id)
 
-    was_ai = ticket.status == "ai_handling"
+    was_ai = created_now or ticket.status == "ai_handling"
     ticket.status = "open" if was_ai else ticket.status
     ticket.handled_by = "human"
     db.commit()
 
-    # Only the AI's escalation fills in the details now (an agent's takeover is labelled when it closes)
-    if user is None:
+    # Only the AI's own escalation fills in the details now: an agent's takeover, or a chat sent straight to the team
+    # (AI auto-reply off, often just "Hi" so far), is labelled when it closes, from the whole session
+    if user is None and note is None:
         apply_ai_labels(db, ticket, include_resolution=False)
     if was_ai:
-        add_ticket_activity(db, ticket, "escalated", f"{first_name(user.name)} moved it from the AI to the team" if user else "The AI handed this ticket to the team", user)
+        text = f"{first_name(user.name)} moved it from the AI to the team" if user else note or "The AI handed this ticket to the team"
+        add_ticket_activity(db, ticket, "escalated", text, user)
         record_activity(db, conversation, f"Ticket #{ticket.number} opened for the team", user)
     db.refresh(ticket)
     publish_ticket(ticket)
@@ -317,6 +327,18 @@ def add_ticket_note(db: Session, ticket: Ticket, content: str, user) -> TicketAc
     db.refresh(note)
     publish_ticket(ticket)
     return note
+
+
+def release_chat_after_close(db: Session, conversation: Conversation):
+    # AI auto-reply off: the closed ticket's chat leaves the team's hands, so the customer's next message
+    # goes through the handover again (new team ticket, alert, reminders) instead of silently joining a taken-over chat
+    if conversation.status == ConversationStatus.ACTIVE and conversation.assigned_user_id is None:
+        return
+    conversation.status = ConversationStatus.ACTIVE
+    conversation.assigned_user_id = None
+    conversation.assigned_at = None
+    db.commit()
+    publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_payload(db, conversation))
 
 
 def hand_chat_back_after_close(db: Session, conversation: Conversation, user):

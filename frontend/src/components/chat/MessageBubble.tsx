@@ -107,6 +107,16 @@ export function MessageBubble({
               <MapPin className="w-3.5 h-3.5" /> Open in Maps
             </a>
           )}
+          {/* Tap message: the options the customer saw (not clickable here) */}
+          {message.options && message.options.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {message.options.map((option, index) => (
+                <span key={index} className="px-2 py-0.5 rounded-full border border-current/30 text-xs opacity-90">
+                  {option}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {message.reaction && (
           <span className="-mt-2 mx-2 px-1.5 py-0.5 rounded-full bg-surface-container-low border border-outline-variant/40 text-sm leading-none shadow-sm" aria-label={`Reaction ${message.reaction}`}>

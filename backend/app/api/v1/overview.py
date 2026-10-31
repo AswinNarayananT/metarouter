@@ -11,9 +11,8 @@ from app.models.ticket_model import Ticket, TicketActivity, TicketGroup
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.services.conversation_service import as_utc, SUPERVISOR_ROLES
-from app.core.features import require_feature
 
-router = APIRouter(prefix="/overview", tags=["Overview"], dependencies=[Depends(require_feature("overview"))])
+router = APIRouter(prefix="/overview", tags=["Overview"])  # Always available (core)
 
 PERIOD_DAYS = {"today": 1, "7d": 7, "30d": 30}
 WAITING_LIST_LIMIT = 10  # "Needs attention" shows the chats waiting longest

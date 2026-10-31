@@ -19,9 +19,11 @@ from app.workers.tasks.knowledge_tasks import process_knowledge_document_task, k
 from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import download_whatsapp_media_task, parse_document_task, media_retry_marker_key
 from app.models.ticket_model import Ticket, TicketActivity
-from app.services.ticket_service import close_ticket
+from app.services.ticket_service import close_ticket, release_chat_after_close
+from app.models.ai_settings_model import OrganizationAISettings
 from app.models.notification_model import Notification
 from app.services.notification_service import notify_unassigned_reminder
+from app.core.features import is_feature_enabled
 
 REMINDER_KEY_EXPIRE_SECONDS = 2 * 24 * 3600  # Long after the last reminder could be due
 
@@ -280,10 +282,32 @@ def close_idle_tickets_task():
             .all()
         )
 
-        # 2. File and close each one (one failing doesn't stop the rest)
-        for ticket in tickets:
+        # 2. Team tickets silent for longer, only in workspaces with AI auto-reply off (nothing else ever closes them there)
+        #    Filtered in SQL, so other workspaces' old team tickets can't fill the batch
+        team_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=settings.TICKET_TEAM_IDLE_CLOSE_HOURS)
+        room = IDLE_TICKETS_PER_SWEEP - len(tickets)
+        team_tickets = (
+            db.query(Ticket)
+            .join(last_activity, last_activity.c.conversation_id == Ticket.conversation_id)
+            .join(Organization, Ticket.organization_id == Organization.id)
+            .join(OrganizationAISettings, OrganizationAISettings.organization_id == Ticket.organization_id)
+            .filter(
+                Ticket.status.in_(("open", "in_progress", "waiting")),
+                last_activity.c.last_at < team_cutoff,
+                Organization.subscription_status == "active",
+                OrganizationAISettings.is_active.is_(False)
+            )
+            .order_by(Ticket.id)
+            .limit(room)
+            .all()
+        ) if room > 0 else []
+
+        # 3. File and close each one (one failing doesn't stop the rest); a team ticket's chat is released for the next message
+        for ticket in tickets + team_tickets:
             try:
                 close_ticket(db, ticket, "no_reply")
+                if ticket in team_tickets:
+                    release_chat_after_close(db, ticket.conversation)
                 print(f"[TICKETS] closed idle ticket #{ticket.number} (org {ticket.organization_id})")
             except Exception as e:
                 db.rollback()
@@ -319,7 +343,14 @@ def remind_unassigned_chats_task():
         )
 
         now = datetime.now(timezone.utc)
+        chats_on = {}  # Per workspace, for this run: with Customer Chats off the team can't open the chat
         for conversation, activity_id, handed_over_at in rows:
+            org_id = conversation.organization_id
+            if org_id not in chats_on:
+                chats_on[org_id] = is_feature_enabled(db, org_id, "customer_chats")
+            if not chats_on[org_id]:
+                continue
+
             # 2. Reminders now due; each is sent once per handover (Redis remembers, so every-minute runs don't repeat it)
             waited_minutes = (now - handed_over_at).total_seconds() / 60
             due = [m for m in thresholds if waited_minutes >= m]

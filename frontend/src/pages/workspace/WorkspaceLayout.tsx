@@ -17,6 +17,7 @@ import {
   X,
   Route,
   ShoppingBag,
+  Package,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { logoutWorkspaceSession, fetchCurrentUser, fetchOrganization } from '@/store/workspace/workspaceThunks';
@@ -44,9 +45,7 @@ export function WorkspaceLayout() {
 
   // Sync workspace numbers and feature flags on mount and whenever user switches back to this tab
   useEffect(() => {
-    if (features.channels !== false) {
-      dispatch(fetchWhatsAppNumbers());
-    }
+    dispatch(fetchWhatsAppNumbers());
     dispatch(fetchCurrentUser());
     dispatch(fetchOrganization());
 
@@ -55,7 +54,7 @@ export function WorkspaceLayout() {
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [dispatch, features.channels]);
+  }, [dispatch]);
 
   // One live-updates socket for every workspace page (closed on logout), keeping the chat list current
   useRealtimeConnection();
@@ -76,17 +75,21 @@ export function WorkspaceLayout() {
     navigate(wasSupportSession ? '/impersonate?ended=1' : '/login');
   };
 
+  // Items without a feature are core (always on); one module can show several pages
   const allNavItems = [
-    { label: 'Overview', path: '/dashboard', icon: LayoutDashboard, feature: 'overview' },
-    { label: 'Orders', path: '/dashboard/orders', icon: ShoppingBag, feature: 'orders' },
-    { label: 'Channels', path: '/dashboard/channels', icon: Cable, feature: 'channels', adminOnly: true },
-    { label: 'AI Assistant', path: '/dashboard/ai-settings', icon: Bot, feature: 'ai_assistant', adminOnly: true },
+    { label: 'Overview', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Channels', path: '/dashboard/channels', icon: Cable, adminOnly: true },
+    // Customer Chats module: AI assistant, chats and tickets
+    { label: 'AI Assistant', path: '/dashboard/ai-settings', icon: Bot, feature: 'customer_chats', adminOnly: true },
     { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare, feature: 'customer_chats' },
-    { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket, feature: 'tickets' },
+    { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket, feature: 'customer_chats' },
     { label: 'Broadcast', path: '/dashboard/broadcast', icon: Send, feature: 'broadcasts', adminOnly: true },
-    { label: 'Team Members', path: '/dashboard/members', icon: Users, feature: 'team_members' },
-    { label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus, feature: 'invite_members', adminOnly: true },
-    { label: 'Settings', path: '/dashboard/settings', icon: Settings, feature: 'settings' },
+    // Orders module: orders and products
+    { label: 'Orders', path: '/dashboard/orders', icon: ShoppingBag, feature: 'orders' },
+    { label: 'Products', path: '/dashboard/products', icon: Package, feature: 'orders' },
+    { label: 'Team Members', path: '/dashboard/members', icon: Users },
+    { label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus, adminOnly: true },
+    { label: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 
   const navItems = allNavItems.filter((item) => {

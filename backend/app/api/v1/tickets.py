@@ -10,8 +10,8 @@ from app.models.organization_model import User
 from app.models.conversation_model import Conversation, ChatMessage
 from app.models.ticket_model import Ticket, TicketGroup
 from app.schemas.ticket_schema import UpdateTicketRequest, TicketNoteRequest, CloseTicketRequest, AssignTicketRequest, RenameTicketGroupRequest, MergeTicketGroupRequest
-from app.services.conversation_service import serialize_message, can_reply, SUPERVISOR_ROLES
-from app.services.ticket_service import serialize_ticket, serialize_activity, update_ticket, add_ticket_note, close_ticket, hand_chat_back_after_close, OPEN_STATUSES
+from app.services.conversation_service import serialize_message, can_reply, SUPERVISOR_ROLES, ai_auto_reply_on
+from app.services.ticket_service import serialize_ticket, serialize_activity, update_ticket, add_ticket_note, close_ticket, hand_chat_back_after_close, release_chat_after_close, OPEN_STATUSES
 from app.services.assignment_service import check_assign_permission, assign_owner
 from app.workers.tasks.ticket_tasks import relabel_ticket_task, file_closed_ticket_task
 from app.core.features import require_feature
@@ -19,7 +19,7 @@ from app.core.features import require_feature
 router = APIRouter(
     prefix="/tickets",
     tags=["Tickets"],
-    dependencies=[Depends(require_feature("tickets"))]
+    dependencies=[Depends(require_feature("customer_chats"))]  # Tickets are part of Customer Chats
 )
 
 SESSION_MESSAGES_LIMIT = 200  # Messages of the session shown on the ticket
@@ -360,7 +360,10 @@ def close_ticket_by_agent(ticket_id: int, payload: CloseTicketRequest, db: Sessi
         file_closed_ticket_task.delay(ticket.id)
 
     # 3. Usually the chat goes back to the AI too (it answers the customer's next message)
-    if payload.hand_back_to_ai:
+    #    AI auto-reply off: no AI to hand it to; the next message reaches the team as a new ticket instead
+    if not ai_auto_reply_on(db, current_user.organization_id):
+        release_chat_after_close(db, ticket.conversation)
+    elif payload.hand_back_to_ai:
         hand_chat_back_after_close(db, ticket.conversation, current_user)
 
     return serialize_ticket(ticket)

@@ -61,12 +61,14 @@ def _describe_message(message: dict) -> dict:
     if msg_type == "text":
         body = message.get("text", {}).get("body", "")
         return {"text": body, "message_type": "text", "ai_reply": not _is_emoji_only(body)}
+    # Taps on our buttons / menu rows: the title is what the chat shows, the id tells the bot which option it was
     if msg_type == "button":
-        return {"text": message.get("button", {}).get("text", ""), "message_type": "text"}
+        button = message.get("button", {})
+        return {"text": button.get("text", ""), "message_type": "text", "message_data": {"reply_id": button.get("payload")}}
     if msg_type == "interactive":
         interactive = message.get("interactive", {})
         reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
-        return {"text": reply.get("title", ""), "message_type": "text"}
+        return {"text": reply.get("title", ""), "message_type": "text", "message_data": {"reply_id": reply.get("id")}}
 
     if msg_type == "location":
         # "📍 Shared location: Brototype, Infopark Rd (10.0159, 76.3419)" - the AI can answer about it

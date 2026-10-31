@@ -4,6 +4,7 @@ import type { ChatConversation } from '@/types/chatTypes';
 import { Avatar } from './Avatar';
 import { StatusBadge } from './StatusBadge';
 import { WindowTimerBadge } from './WindowTimerBadge';
+import { useAiAutoReply } from '@/hooks/useAiAutoReply';
 
 /** Top bar of the open conversation: customer, status, takeover and details toggles. */
 export function ChatHeader({
@@ -24,6 +25,9 @@ export function ChatHeader({
   onOpenTemplates?: () => void;
 }) {
   const isHuman = conversation.status === 'human_takeover';
+  // With AI auto-reply off there's no AI to hand the chat back to
+  const aiAutoReply = useAiAutoReply();
+  const showTakeover = onToggleTakeover && (!isHuman || aiAutoReply);
 
   return (
     <header className="h-16 shrink-0 px-3 sm:px-5 flex items-center gap-2.5 sm:gap-3 border-b border-outline-variant/30 bg-surface-container-low">
@@ -55,7 +59,7 @@ export function ChatHeader({
       />
 
       {assignControl}
-      {onToggleTakeover && (
+      {showTakeover && (
         <button
           type="button"
           onClick={onToggleTakeover}

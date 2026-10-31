@@ -130,6 +130,40 @@ def send_template(phone_number_id: str, access_token: str, to: str, template_dat
     return _post_message(url, access_token, payload)
 
 
+def send_interactive(phone_number_id: str, access_token: str, to: str, interactive: dict, callback_data: Optional[str] = None) -> str:
+    # Reply buttons, a list menu or a location request (built by interactive_payload)
+    url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive
+    }
+    if callback_data:
+        payload["biz_opaque_callback_data"] = callback_data
+
+    return _post_message(url, access_token, payload)
+
+
+def interactive_payload(body: str, template_data: dict) -> dict:
+    # Saved interactive message (template_data from queue_interactive_message) -> Meta's "interactive" object
+    if template_data.get("buttons"):
+        return {
+            "type": "button",
+            "body": {"text": body},
+            "action": {"buttons": [{"type": "reply", "reply": {"id": b["id"], "title": b["title"]}} for b in template_data["buttons"]]}
+        }
+    if template_data.get("menu"):
+        menu = template_data["menu"]
+        return {
+            "type": "list",
+            "body": {"text": body},
+            "action": {"button": menu["button"], "sections": menu["sections"]}
+        }
+    return {"type": "location_request_message", "body": {"text": body}, "action": {"name": "send_location"}}
+
+
 def upload_media(phone_number_id: str, access_token: str, content: bytes, mime_type: str, file_name: str) -> str:
     # 1. Files an agent sends are uploaded to Meta first; the message then refers to the returned media id
     url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{phone_number_id}/media"

@@ -8,13 +8,12 @@ from app.config import settings
 from app.core.deps import get_db, get_current_workspace_user, MEMBER_REMOVED_ERROR
 from app.core.security import verify_password
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
-from app.models.organization_model import Organization, User
-from app.schemas.workspace_schema import TeamMemberResponse, PaginatedTeamMembersResponse, UpdateMemberRoleRequest, RemoveMemberRequest, MemberOpenWorkResponse, LeaveWorkspaceRequest
-from app.schemas.auth_schema import UpdateNameRequest
-from app.core.features import require_feature
+from app.models.organization_model import Organization, User, SUPPORTED_CURRENCIES
+from app.schemas.workspace_schema import TeamMemberResponse, PaginatedTeamMembersResponse, UpdateMemberRoleRequest, RemoveMemberRequest, MemberOpenWorkResponse, LeaveWorkspaceRequest, UpdateOrganizationRequest
 from app.services.notification_service import notify_role_changed, notify_member_left
 from app.services.member_service import archive_member, assigned_chats_query, assigned_tickets_query, other_active_admins, MEMBER_LEFT_MESSAGE
 from app.services.audit_service import record_audit_log, get_client_ip
+from app.services.conversation_service import ai_auto_reply_on
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
@@ -52,6 +51,9 @@ def get_current_organization(
         "slug": organization.slug,
         "created_at": organization.created_at,
         "features": features,
+        "currency": organization.currency,
+        "supported_currencies": SUPPORTED_CURRENCIES,
+        "ai_auto_reply": ai_auto_reply_on(db, organization.id),
     }
 
 
@@ -330,14 +332,14 @@ def _find_current_member(db: Session, user_id: int, organization_id: int) -> Use
     return member
 
 
-@router.patch("/current", response_model=dict, dependencies=[Depends(require_feature("settings"))])
+@router.patch("/current", response_model=dict)
 def update_current_organization(
-    payload: UpdateNameRequest,
+    payload: UpdateOrganizationRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_workspace_user)
 ):
     """
-    Rename the current user's organization (admin only).
+    Rename the current user's organization or change its currency (admin only).
     """
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can update the workspace")
@@ -346,7 +348,13 @@ def update_current_organization(
     if not organization:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    organization.name = payload.name
+    # Only the fields sent; changing the currency doesn't convert existing prices
+    changes = payload.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    for field, value in changes.items():
+        setattr(organization, field, value)
     db.commit()
     db.refresh(organization)
 
@@ -354,5 +362,6 @@ def update_current_organization(
         "id": organization.id,
         "name": organization.name,
         "slug": organization.slug,
-        "created_at": organization.created_at
+        "created_at": organization.created_at,
+        "currency": organization.currency
     }

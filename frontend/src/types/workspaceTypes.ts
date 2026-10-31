@@ -23,6 +23,9 @@ export interface CurrentOrganization {
   slug: string;
   created_at: string | null;
   features?: Record<string, boolean>;
+  currency?: string; // Product prices are in this currency (ISO code)
+  supported_currencies?: string[];
+  ai_auto_reply?: boolean; // False: the AI doesn't answer, every new chat goes straight to the team
 }
 
 export interface TeamMember {
@@ -174,12 +177,14 @@ export interface AISettings {
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
   is_active: boolean;
+  greeting_message: string; // Empty = the default greeting
 }
 
 export interface SaveAISettingsPayload {
   bot_name: string;
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
+  greeting_message: string;
 }
 
 export interface ChangePasswordPayload {

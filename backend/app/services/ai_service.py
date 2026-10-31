@@ -130,6 +130,12 @@ def build_system_instruction(bot_name: str, custom_rules: str, knowledge_context
     If escalating, write a polite note following the tag:
     Example: "[ESCALATE_TO_HUMAN] I am connecting you with a support representative who will assist you shortly."
 
+    PROBLEM PROTOCOL:
+    If the customer reports a problem (something went wrong with an order, product, delivery, payment or
+    service, or a complaint), put the string "[ISSUE]" at the beginning of your response, then help as usual.
+    Plain questions (prices, timings, availability, how something works) are not problems.
+    Example: "[ISSUE] Sorry to hear your parcel arrived damaged. Could you share a photo of it?"
+
     REPLY STYLE:
     Keep replies short and conversational, like a WhatsApp message: at most about 80 words unless the customer
     asks for details. Always finish your sentences.

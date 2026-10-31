@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import SessionLocal
-from app.core.init_db import init_super_admin
+from app.core.init_db import init_super_admin, init_platform_modules
 from app.api.v1.super_admin.auth import router as super_admin_auth_router
 from app.api.v1.super_admin.organizations import router as super_admin_organizations_router
 from app.api.v1.super_admin.audit_logs import router as super_admin_audit_logs_router
@@ -22,6 +22,7 @@ from app.api.v1.conversations import router as conversations_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.tickets import router as tickets_router
 from app.api.v1.quick_replies import router as quick_replies_router
+from app.api.v1.products import router as products_router
 from app.api.v1.overview import router as overview_router
 from app.api.v1.onboarding import router as onboarding_router
 from app.realtime.events import listen_for_events
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         init_super_admin(db)
+        init_platform_modules(db)
     finally:
         db.close()
 
@@ -80,6 +82,7 @@ app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
 app.include_router(tickets_router, prefix="/api/v1")
 app.include_router(quick_replies_router, prefix="/api/v1")
+app.include_router(products_router, prefix="/api/v1")
 app.include_router(overview_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")
 

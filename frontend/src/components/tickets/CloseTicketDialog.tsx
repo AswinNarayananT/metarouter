@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, X } from 'lucide-react';
+import { useAiAutoReply } from '@/hooks/useAiAutoReply';
 
 /** Close a ticket from the dashboard: how it was solved (required) and whether the AI takes the chat back.
  *  A failed close shows as a toast and the dialog stays open. */
@@ -16,6 +17,8 @@ export function CloseTicketDialog({
 }) {
   const [resolution, setResolution] = useState('');
   const [handBack, setHandBack] = useState(true);
+  // With AI auto-reply off the chat stays with the team (the option is hidden)
+  const aiAutoReply = useAiAutoReply();
   const valid = resolution.trim().length >= 3;
 
   useEffect(() => {
@@ -49,13 +52,15 @@ export function CloseTicketDialog({
             />
           </label>
 
-          <label className="flex items-start gap-2 text-sm text-on-surface cursor-pointer">
-            <input type="checkbox" checked={handBack} onChange={(e) => setHandBack(e.target.checked)} className="mt-0.5 accent-primary" />
-            <span>
-              Hand the chat back to the AI
-              <span className="block text-xs text-on-surface-variant">The AI answers the customer's next message, which starts a new ticket.</span>
-            </span>
-          </label>
+          {aiAutoReply && (
+            <label className="flex items-start gap-2 text-sm text-on-surface cursor-pointer">
+              <input type="checkbox" checked={handBack} onChange={(e) => setHandBack(e.target.checked)} className="mt-0.5 accent-primary" />
+              <span>
+                Hand the chat back to the AI
+                <span className="block text-xs text-on-surface-variant">The AI answers the customer's next message, which starts a new ticket.</span>
+              </span>
+            </label>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-outline-variant/30">
@@ -64,7 +69,7 @@ export function CloseTicketDialog({
           </button>
           <button
             type="button"
-            onClick={() => onConfirm(resolution.trim(), handBack)}
+            onClick={() => onConfirm(resolution.trim(), aiAutoReply && handBack)}
             disabled={!valid || busy}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >

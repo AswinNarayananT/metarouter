@@ -40,6 +40,7 @@ export interface ChatMessage {
   messageType?: string;           // text, template, image, audio, location ...
   reaction?: string | null;       // Customer's emoji reaction to this message
   location?: { latitude: number; longitude: number; name: string | null; address: string | null } | null;
+  options?: string[] | null;       // Tap message the customer got: button titles, menu rows, or "Send location"
 }
 
 export interface ChatAdReferral {

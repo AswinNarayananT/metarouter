@@ -34,6 +34,7 @@ import {
   updateOrganization,
 } from '@/store/workspace/workspaceThunks';
 import { resetChangePasswordState, resetSettingsSaveState } from '@/store/workspace/workspaceSlice';
+import { currencySymbol } from '@/utils/formatPrice';
 import {
   PASSWORD_RULES,
   confirmPasswordField,
@@ -46,8 +47,15 @@ type SettingsTab = 'workspace' | 'profile' | 'security' | 'quick-replies';
 
 interface DetailsFormValues {
   organization_name: string;
+  currency: string;
   personal_name: string;
 }
+
+// "USD" -> "USD ($)"
+const currencyLabel = (code: string) => {
+  const symbol = currencySymbol(code);
+  return symbol === code ? code : `${code} (${symbol})`;
+};
 
 interface PasswordFormValues {
   current_password: string;
@@ -239,6 +247,7 @@ export function WorkspaceSettings() {
   const detailsForm = useFormik<DetailsFormValues>({
     initialValues: {
       organization_name: organization?.name || user?.organization_name || '',
+      currency: organization?.currency || 'INR',
       personal_name: user?.name || '',
     },
     validationSchema: detailsSchema,
@@ -248,8 +257,13 @@ export function WorkspaceSettings() {
       const currentOrgName = organization?.name || user?.organization_name || '';
 
       const requests = [];
-      if (isAdmin && isEditingWorkspace && organizationName !== currentOrgName) {
-        requests.push(dispatch(updateOrganization({ name: organizationName })));
+      if (isAdmin && isEditingWorkspace) {
+        // Only what changed
+        const changes = {
+          ...(organizationName !== currentOrgName && { name: organizationName }),
+          ...(organization && values.currency !== organization.currency && { currency: values.currency }),
+        };
+        if (Object.keys(changes).length > 0) requests.push(dispatch(updateOrganization(changes)));
       }
       if (isEditingPersonal && personalName !== user?.name) {
         requests.push(dispatch(updateCurrentUser({ name: personalName })));
@@ -269,6 +283,7 @@ export function WorkspaceSettings() {
     dispatch(resetSettingsSaveState());
     if (section === 'workspace') {
       detailsForm.setFieldValue('organization_name', organization?.name || user?.organization_name || '', false);
+      detailsForm.setFieldValue('currency', organization?.currency || 'INR', false);
       detailsForm.setFieldTouched('organization_name', false, false);
       setIsEditingWorkspace(true);
     } else {
@@ -284,6 +299,7 @@ export function WorkspaceSettings() {
     detailsForm.resetForm({
       values: {
         organization_name: organization?.name || user?.organization_name || '',
+        currency: organization?.currency || 'INR',
         personal_name: user?.name || '',
       },
     });
@@ -450,6 +466,24 @@ export function WorkspaceSettings() {
                   <ReadOnlyValue>
                     {organization?.name || user?.organization_name || 'N/A'}
                   </ReadOnlyValue>
+                )}
+              </Field>
+
+              <Field label="Currency" hint="Product prices are shown in it. Changing it doesn't convert existing prices.">
+                {isEditingWorkspace && organization?.supported_currencies ? (
+                  <select
+                    id="currency"
+                    {...detailsForm.getFieldProps('currency')}
+                    className={`${inputClass} ${borderClass(false)} cursor-pointer`}
+                  >
+                    {organization.supported_currencies.map((code) => (
+                      <option key={code} value={code}>
+                        {currencyLabel(code)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <ReadOnlyValue>{organization?.currency ? currencyLabel(organization.currency) : 'N/A'}</ReadOnlyValue>
                 )}
               </Field>
 

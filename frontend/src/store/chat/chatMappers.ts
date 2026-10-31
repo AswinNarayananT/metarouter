@@ -102,7 +102,23 @@ export function mapMessage(message: ApiChatMessage): ChatMessage {
       message.message_type === 'location' && message.template_data
         ? (message.template_data as { latitude: number; longitude: number; name: string | null; address: string | null })
         : null,
+    options: message.message_type === 'interactive' ? interactiveOptions(message.template_data) : null,
   };
+}
+
+type InteractiveData = {
+  buttons?: { title: string }[];
+  menu?: { button: string; sections: { rows: { title: string }[] }[] };
+  location_request?: boolean;
+};
+
+// What the customer could tap: button titles, menu rows, or the location button
+function interactiveOptions(data: Record<string, unknown> | null): string[] {
+  const interactive = (data ?? {}) as InteractiveData;
+  if (interactive.buttons) return interactive.buttons.map((b) => b.title);
+  if (interactive.menu) return interactive.menu.sections.flatMap((s) => s.rows.map((r) => r.title));
+  if (interactive.location_request) return ['📍 Send location'];
+  return [];
 }
 
 // `existing` keeps what only the browser knows: the loaded messages, and the unread count when the server didn't send one (live events)

@@ -6,6 +6,9 @@ from app.models.organization_model import Organization, User, DEFAULT_ORGANIZATI
 from app.models.platform_module_model import PlatformModule
 from app.core.deps import get_current_workspace_user
 
+# Always on for every workspace: not modules, so they can't be switched off (Team includes invites)
+CORE_FEATURES = ("overview", "channels", "settings", "team_members")
+
 
 def get_organization_features(db: Session, organization_id: int) -> Dict[str, bool]:
     """
@@ -20,23 +23,24 @@ def get_organization_features(db: Session, organization_id: int) -> Dict[str, bo
     org = db.query(Organization.features).filter(Organization.id == organization_id).first()
     org_overrides: Dict[str, Any] = (org[0] if org and org[0] else {})
 
-    resolved: Dict[str, bool] = {}
+    # A module whose row is missing (none seeded yet, or deleted) follows DEFAULT_ORGANIZATION_FEATURES,
+    # so deleting a row can't silently switch Customer Chats (and its AI replies) off everywhere
+    resolved: Dict[str, bool] = dict(DEFAULT_ORGANIZATION_FEATURES)
 
-    # If no modules are in the database yet, fall back to DEFAULT_ORGANIZATION_FEATURES
     if not modules:
-        resolved = dict(DEFAULT_ORGANIZATION_FEATURES)
         resolved.update({k: bool(v) for k, v in org_overrides.items()})
-        return resolved
+    else:
+        for m in modules:
+            # A globally inactive module is completely disabled platform-wide
+            if not m.is_active:
+                resolved[m.key] = False
+            elif m.key in org_overrides:
+                resolved[m.key] = bool(org_overrides[m.key])
+            else:
+                resolved[m.key] = bool(m.default_enabled)
 
-    for m in modules:
-        # A globally inactive module is completely disabled platform-wide
-        if not m.is_active:
-            resolved[m.key] = False
-        elif m.key in org_overrides:
-            resolved[m.key] = bool(org_overrides[m.key])
-        else:
-            resolved[m.key] = bool(m.default_enabled)
-
+    # 3. Core features are always on
+    resolved.update({key: True for key in CORE_FEATURES})
     return resolved
 
 

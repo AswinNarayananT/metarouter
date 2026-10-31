@@ -1,7 +1,33 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from app.schemas.invitation_schema import WorkspaceRole
+from app.models.organization_model import SUPPORTED_CURRENCIES
+
+# Workspace details an admin can change; only the fields sent are updated
+class UpdateOrganizationRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=120)
+    currency: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Name must be at least 2 characters")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def check_currency(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        if value not in SUPPORTED_CURRENCIES:
+            raise ValueError("Unsupported currency")
+        return value
 
 # For inviting or listing team members
 class TeamMemberResponse(BaseModel):

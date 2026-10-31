@@ -17,7 +17,7 @@ from app.models.attachment_model import ChatAttachment
 from app.config import settings
 from app.schemas.conversation_schema import SendMessageRequest, UpdateConversationRequest, AssignConversationRequest, SendTemplateRequest
 from app.services.messaging_service import queue_outgoing_message, OutgoingMessageError
-from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, record_activity, first_name
+from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, record_activity, first_name, ai_auto_reply_on, AI_AUTO_REPLY_OFF_ERROR
 from app.realtime.connection_manager import org_group, user_group
 from app.realtime.events import publish_event
 from app.services.assignment_service import check_assign_permission, assign_owner
@@ -244,9 +244,9 @@ def _take_chat_for_reply(db: Session, conversation: Conversation, current_user: 
 
 
 def _after_reply(db: Session, conversation: Conversation, current_user: User, messages: list) -> dict:
-    # Ticket: a team ticket, owned like the chat, now in progress
+    # Ticket: a team ticket, owned like the chat, now in progress (opened now if the AI chat had none, e.g. a plain question)
     ticket = get_open_ticket(db, conversation.id)
-    if ticket and ticket.status == "ai_handling":
+    if not ticket or ticket.status == "ai_handling":
         escalate_ticket(db, conversation, current_user)
     sync_ticket_owner(db, conversation, current_user)
     mark_ticket_in_progress(db, conversation, current_user)
@@ -411,6 +411,10 @@ def update_conversation(conversation_id: int, payload: UpdateConversationRequest
         if conversation.assigned_user_id and conversation.assigned_user_id != current_user.id:
             raise HTTPException(status_code=403, detail=f"This chat is assigned to {conversation.assigned_user.name}. Ask them or a manager to reassign it.")
         raise HTTPException(status_code=403, detail="Your role can't pick up chats. Ask an admin or manager to assign this chat to you.")
+
+    # AI auto-reply off: nobody to hand the chat back to
+    if payload.status == ConversationStatus.ACTIVE.value and not ai_auto_reply_on(db, conversation.organization_id):
+        raise HTTPException(status_code=409, detail=AI_AUTO_REPLY_OFF_ERROR)
 
     # 2. human_takeover: AI stays silent and the chat is yours if nobody owns it
     #    active: AI answers the next customer message, so nobody owns it anymore

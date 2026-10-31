@@ -36,29 +36,13 @@ import { WorkspaceSettings } from '@/pages/workspace/WorkspaceSettings';
 import { AISettings } from '@/pages/workspace/AISettings';
 import { Channels } from '@/pages/workspace/Channels';
 import { Orders } from '@/pages/workspace/Orders';
+import { Products } from '@/pages/workspace/Products';
 
 // Route Guards
 import { ProtectedWorkspaceRoute } from '@/components/routes/ProtectedWorkspaceRoute';
 import { PublicOnlyRoute } from '@/components/routes/PublicOnlyRoute';
 import { AdminOnlyRoute } from '@/components/routes/AdminOnlyRoute';
 import { FeatureRoute } from '@/components/routes/FeatureRoute';
-import { useFeatureFlags } from '@/hooks/useFeatureFlag';
-
-// Pages to land on when the workspace has no Overview module, in order
-const LANDING_PAGES = [
-  { feature: 'customer_chats', path: '/dashboard/chats' },
-  { feature: 'tickets', path: '/dashboard/tickets' },
-  { feature: 'orders', path: '/dashboard/orders' },
-  { feature: 'team_members', path: '/dashboard/members' },
-  { feature: 'settings', path: '/dashboard/settings' },
-];
-
-function WorkspaceHome() {
-  const features = useFeatureFlags();
-  if (features.overview) return <WorkspaceOverview />;
-  const landing = LANDING_PAGES.find((page) => features[page.feature]);
-  return landing ? <Navigate to={landing.path} replace /> : <FeatureRoute feature="overview" featureTitle="Overview">{null}</FeatureRoute>;
-}
 
 function SuperAdminLoginGate() {
   const user = useAppSelector((state) => state.superAdmin.user);
@@ -157,12 +141,21 @@ function App() {
             </ProtectedWorkspaceRoute>
           }
         >
-          <Route index element={<WorkspaceHome />} />
+          {/* Overview, Channels, Team and Settings are core (always on); the rest follow their module */}
+          <Route index element={<WorkspaceOverview />} />
           <Route
             path="orders"
             element={
               <FeatureRoute feature="orders" featureTitle="Orders & Commerce">
                 <Orders />
+              </FeatureRoute>
+            }
+          />
+          <Route
+            path="products"
+            element={
+              <FeatureRoute feature="orders" featureTitle="Orders & Commerce">
+                <Products />
               </FeatureRoute>
             }
           />
@@ -177,7 +170,7 @@ function App() {
           <Route
             path="tickets"
             element={
-              <FeatureRoute feature="tickets" featureTitle="Tickets">
+              <FeatureRoute feature="customer_chats" featureTitle="Tickets">
                 <Tickets />
               </FeatureRoute>
             }
@@ -216,27 +209,16 @@ function App() {
             path="channels"
             element={
               <AdminOnlyRoute>
-                <FeatureRoute feature="channels" featureTitle="Channels">
-                  <Channels />
-                </FeatureRoute>
+                <Channels />
               </AdminOnlyRoute>
             }
           />
-          <Route
-            path="members"
-            element={
-              <FeatureRoute feature="team_members" featureTitle="Team Members">
-                <TeamMembers />
-              </FeatureRoute>
-            }
-          />
+          <Route path="members" element={<TeamMembers />} />
           <Route
             path="invite"
             element={
               <AdminOnlyRoute>
-                <FeatureRoute feature="invite_members" featureTitle="Invite Members">
-                  <InviteMembers />
-                </FeatureRoute>
+                <InviteMembers />
               </AdminOnlyRoute>
             }
           />
@@ -244,20 +226,13 @@ function App() {
             path="ai-settings"
             element={
               <AdminOnlyRoute>
-                <FeatureRoute feature="ai_assistant" featureTitle="AI Assistant">
+                <FeatureRoute feature="customer_chats" featureTitle="AI Assistant">
                   <AISettings />
                 </FeatureRoute>
               </AdminOnlyRoute>
             }
           />
-          <Route
-            path="settings"
-            element={
-              <FeatureRoute feature="settings" featureTitle="Workspace Settings">
-                <WorkspaceSettings />
-              </FeatureRoute>
-            }
-          />
+          <Route path="settings" element={<WorkspaceSettings />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

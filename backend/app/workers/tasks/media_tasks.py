@@ -16,10 +16,12 @@ from app.models.organization_model import Organization
 from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected, number_is_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.services.document_parser_service import parse_document, transcribe_audio, DocumentParseError
-from app.workers.tasks.chat_tasks import _get_or_create_conversation, reply_with_ai, update_customer_profile
+from app.workers.tasks.chat_tasks import _get_or_create_conversation, respond_to_customer, update_customer_profile
 from app.core.redis_client import redis_client
 from app.realtime.notify import notify_new_messages, notify_attachment_updated
 from app.services.ticket_service import start_ticket_session
+from app.services.conversation_service import begin_visit_if_new, last_conversation_activity_at
+from app.core.features import is_feature_enabled
 
 RETRY_BASE_SECONDS = 30
 MEDIA_LOCK_SECONDS = 300  # Longer than a 25 MB download / one Gemini parse; released as soon as the task finishes
@@ -73,6 +75,7 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
             file_label = MEDIA_LABELS[kind]
         else:
             file_label = f"[Sent {kind}: {media.get('filename')}]" if media.get("filename") else f"[Sent {'an image' if kind == 'image' else 'a document'}]"
+        previous_activity_at = last_conversation_activity_at(db, conversation.id)
         message = ChatMessage(
             conversation_id=conversation.id,
             sender="user",
@@ -98,7 +101,10 @@ def process_media_message_task(phone_number_id: str, customer_phone: str, wamid:
                 return
             raise
         notify_new_messages(db, [message])
-        start_ticket_session(db, conversation, message.id)
+        begin_visit_if_new(db, conversation, previous_activity_at, message)
+        # Team-handled chats track every message as a ticket; AI chats get one only for a problem (after the file is read)
+        if conversation.status == ConversationStatus.HUMAN_TAKEOVER and is_feature_enabled(db, number.organization_id, "customer_chats"):
+            start_ticket_session(db, conversation, message.id)
 
         # 3. Download the file in the background
         download_whatsapp_media_task.delay(message.attachment.id)
@@ -353,5 +359,5 @@ def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str)
     org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
     if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
         return
-    reply_with_ai(db, conversation, summary)
+    respond_to_customer(db, conversation, summary)
 

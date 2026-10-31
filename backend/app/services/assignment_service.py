@@ -66,10 +66,10 @@ def assign_owner(db: Session, conversation: Conversation, user_id: Optional[int]
         text = f"{name} unassigned {first_name(previous_owner.name)}"
     record_activity(db, conversation, text, actor)
 
-    # 4. The open ticket follows: assigning to a person makes it a team ticket, owned like the chat
+    # 4. The open ticket follows: assigning to a person makes it a team ticket, owned like the chat (opened now if there was none)
     ticket = get_open_ticket(db, conversation.id)
-    if assignee and ticket and ticket.status == "ai_handling":
-        escalate_ticket(db, conversation, actor)
+    if assignee and (not ticket or ticket.status == "ai_handling"):
+        ticket = escalate_ticket(db, conversation, actor)
     sync_ticket_owner(db, conversation, actor)
 
     # 5. Every dashboard updates the owner; the new owner gets a personal alert (not when assigning yourself)

@@ -3,13 +3,16 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { AlertCircle, Bot, FlaskConical, Save } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { fetchAISettings, saveAISettings } from '@/store/workspace/workspaceThunks';
+import { fetchAISettings, saveAISettings, setAiAutoReply } from '@/store/workspace/workspaceThunks';
+import { useAiAutoReply } from '@/hooks/useAiAutoReply';
+import { Switch } from '@/components/ui/Switch';
 import { resetAISettingsSaveState } from '@/store/workspace/workspaceSlice';
 import type { HandoverRole } from '@/types/workspaceTypes';
 import { KnowledgeBaseCard } from '@/components/knowledge/KnowledgeBaseCard';
 import { AISimulatorDrawer } from '@/components/ai/AISimulatorDrawer';
 
 const MAX_INSTRUCTIONS_LENGTH = 4000;
+const MAX_GREETING_LENGTH = 500;
 
 const HANDOVER_ROLES: { value: HandoverRole; label: string; description: string }[] = [
   { value: 'admin', label: 'Administrator', description: 'Workspace admins' },
@@ -21,6 +24,7 @@ interface AISettingsFormValues {
   bot_name: string;
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
+  greeting_message: string;
 }
 
 const validationSchema = Yup.object({
@@ -36,6 +40,7 @@ const validationSchema = Yup.object({
   allowed_roles_for_handover: Yup.array()
     .of(Yup.string().oneOf(HANDOVER_ROLES.map((r) => r.value)))
     .min(1, 'Select at least one role for human handover'),
+  greeting_message: Yup.string().max(MAX_GREETING_LENGTH, `Greeting must be ${MAX_GREETING_LENGTH} characters or less`),
 });
 
 const inputClass =
@@ -50,6 +55,13 @@ export function AISettings() {
   // "Try it" drawer: tests the saved settings and knowledge base
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const closeSimulator = useCallback(() => setSimulatorOpen(false), []);
+  const aiAutoReply = useAiAutoReply();
+  const [savingAutoReply, setSavingAutoReply] = useState(false);
+  const toggleAutoReply = async (enabled: boolean) => {
+    setSavingAutoReply(true);
+    await dispatch(setAiAutoReply(enabled)); // A failure shows as a toast
+    setSavingAutoReply(false);
+  };
   const {
     aiSettings,
     isLoadingAISettings,
@@ -71,6 +83,7 @@ export function AISettings() {
       bot_name: aiSettings?.bot_name ?? 'Support Assistant',
       system_instructions: aiSettings?.system_instructions ?? '',
       allowed_roles_for_handover: aiSettings?.allowed_roles_for_handover ?? ['admin', 'manager'],
+      greeting_message: aiSettings?.greeting_message ?? '',
     }),
     [aiSettings]
   );
@@ -85,6 +98,7 @@ export function AISettings() {
           bot_name: values.bot_name.trim(),
           system_instructions: values.system_instructions.trim(),
           allowed_roles_for_handover: values.allowed_roles_for_handover,
+          greeting_message: values.greeting_message.trim(),
         })
       );
     },
@@ -145,6 +159,7 @@ export function AISettings() {
   const botNameError = showError('bot_name');
   const instructionsError = showError('system_instructions');
   const rolesError = showError('allowed_roles_for_handover');
+  const greetingError = showError('greeting_message');
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -166,6 +181,19 @@ export function AISettings() {
         </button>
       </div>
       <AISimulatorDrawer open={simulatorOpen} onClose={closeSimulator} hasUnsavedChanges={dirty} />
+
+      {/* Auto-reply: off = the team answers every new chat (tickets still open and are filed) */}
+      <div className="flex items-start gap-4 p-5 bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-sm">
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-on-surface">AI auto-reply</h2>
+          <p className="text-sm text-on-surface-variant mt-0.5">
+            {aiAutoReply
+              ? 'On: the AI answers new chats and hands them to your team when a person is needed.'
+              : 'Off: every new chat goes straight to your team, and a ticket opens for them. You can still set up and test the AI here.'}
+          </p>
+        </div>
+        <Switch checked={aiAutoReply} onChange={toggleAutoReply} label="AI auto-reply" disabled={savingAutoReply} />
+      </div>
 
       <form
         onSubmit={formik.handleSubmit}
@@ -238,6 +266,37 @@ export function AISettings() {
                 }`}
               >
                 {values.system_instructions.length}/{MAX_INSTRUCTIONS_LENGTH}
+              </span>
+            </div>
+          </div>
+
+          {/* Greeting: the menu message at the start of a visit (only when there's more than one thing to choose) */}
+          <div className="space-y-1.5">
+            <label htmlFor="greeting_message" className="block text-sm font-medium text-on-surface">
+              Greeting message
+            </label>
+            <textarea
+              id="greeting_message"
+              name="greeting_message"
+              rows={2}
+              value={values.greeting_message}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              aria-invalid={!!greetingError}
+              placeholder="Hi! 👋 Welcome to our store. How can we help you today?"
+              className={`${inputClass} ${fieldBorder(!!greetingError)} resize-y`}
+            />
+            <div className="flex justify-between gap-3">
+              <p className={`text-xs ${greetingError ? 'text-error' : 'text-on-surface-variant'}`}>
+                {greetingError ??
+                  'Optional. Sent with the "Place an order / Report a problem / Something else" buttons when a customer starts a chat with just a greeting. Leave empty for the default.'}
+              </p>
+              <span
+                className={`text-xs shrink-0 ${
+                  values.greeting_message.length > MAX_GREETING_LENGTH ? 'text-error' : 'text-on-surface-variant'
+                }`}
+              >
+                {values.greeting_message.length}/{MAX_GREETING_LENGTH}
               </span>
             </div>
           </div>

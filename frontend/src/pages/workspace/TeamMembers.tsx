@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ChevronDown, Loader2, RotateCcw, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import {
   fetchMemberOpenWork,
   fetchMembersPage,
@@ -50,7 +49,6 @@ export function TeamMembers() {
   // The full member list only feeds the remove dialog's "give their chats to" picker
   const { teamMembers, user } = useAppSelector((state) => state.workspace);
   const isAdmin = user?.role === 'admin';
-  const canInvite = useFeatureFlag('invite_members');
 
   // The page the server returned, tagged with the request it answers (loading = the tag doesn't match yet)
   const [tab, setTab] = useState<MemberListStatus>('current');
@@ -154,7 +152,7 @@ export function TeamMembers() {
             {isAdmin ? 'See who is on your team, change roles and remove members.' : 'Everyone in your workspace.'}
           </p>
         </div>
-        {isAdmin && canInvite && (
+        {isAdmin && (
           <Link
             to="/dashboard/invite"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-medium hover:bg-primary/90 transition-colors"
