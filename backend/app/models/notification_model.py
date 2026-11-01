@@ -16,6 +16,7 @@ class Notification(Base):
     body = Column(Text, nullable=True)                                                                          # Customer name and message preview
     conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True)  # Chat it opens
     ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True, index=True)        # Ticket it opens (ticket assignments)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, index=True)          # Order it opens (new orders)
     actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)                 # Who caused it (None = the AI)
     read_at = Column(DateTime(timezone=True), nullable=True)                                                    # None = unread
     created_at = Column(DateTime(timezone=True), server_default=func.now())

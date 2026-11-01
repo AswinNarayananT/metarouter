@@ -17,3 +17,4 @@ from app.models.platform_module_model import PlatformModule
 from app.models.quick_reply_model import QuickReply
 from app.models.password_reset_model import PasswordResetToken
 from app.models.product_model import Product
+from app.models.order_model import Order, OrderItem, OrderEvent, CustomerAddress

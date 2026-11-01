@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, CheckCircle2, ExternalLink, Loader2, MessageSquare, Pencil, Sparkles, StickyNote, UserRound, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { selectConversation } from '@/store/chat/chatSlice';
+import { focusMessage, selectConversation } from '@/store/chat/chatSlice';
 import { formatPhone } from '@/store/chat/chatMappers';
 import { addTicketNote, assignTicket, closeTicket, relabelTicket, updateTicket } from '@/store/tickets/ticketThunks';
 import type { TicketChanges } from '@/store/tickets/ticketThunks';
@@ -75,8 +75,12 @@ export function TicketDetailPanel({
   const subgroups = groups.find((g) => g.id === ticket.group?.id)?.subgroups ?? [];
   const save = (changes: TicketChanges) => dispatch(updateTicket({ ticketId: ticket.id, changes }));
 
+  // The chat opens where this ticket starts (a customer can have many tickets in one chat)
   const openChat = () => {
     dispatch(selectConversation(ticket.conversation_id));
+    if (ticket.first_message_id) {
+      dispatch(focusMessage({ conversationId: ticket.conversation_id, messageId: ticket.first_message_id, label: `Ticket #${ticket.number}` }));
+    }
     navigate('/dashboard/chats');
   };
 

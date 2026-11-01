@@ -28,6 +28,7 @@ def serialize_ticket(ticket: Ticket) -> dict:
         "id": ticket.id,
         "number": ticket.number,
         "conversation_id": ticket.conversation_id,
+        "first_message_id": ticket.first_message_id,  # Where this ticket starts in the chat ("Open chat" jumps there)
         "customer_name": conversation.customer_name if conversation else None,
         "customer_phone": conversation.customer_phone if conversation else None,
         "type": ticket.type,
@@ -77,7 +78,15 @@ def start_ticket_session(db: Session, conversation: Conversation, first_message_
     if ticket:
         return ticket
 
-    # 2. New session: next number in the workspace (retried if two tickets take the same number at once)
+    # 2. A new ticket never reaches back into one that already closed in this chat (two problems in one visit stay apart):
+    #    it starts at the first customer message after the previous ticket ended
+    previous_end = db.query(func.max(Ticket.last_message_id)).filter(Ticket.conversation_id == conversation.id, Ticket.status == "closed").scalar()
+    if previous_end and (first_message_id is None or first_message_id <= previous_end):
+        first_message_id = db.query(func.min(ChatMessage.id)).filter(
+            ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user", ChatMessage.id > previous_end
+        ).scalar() or first_message_id
+
+    # 3. New session: next number in the workspace (retried if two tickets take the same number at once)
     for _ in range(3):
         next_number = (db.query(func.max(Ticket.number)).filter(Ticket.organization_id == conversation.organization_id).scalar() or 0) + 1
         ticket = Ticket(organization_id=conversation.organization_id, number=next_number, conversation_id=conversation.id, first_message_id=first_message_id, assigned_user_id=conversation.assigned_user_id)

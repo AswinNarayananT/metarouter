@@ -42,6 +42,8 @@ const QUIET_THUNKS = new Set([
   'knowledge/fetchDocuments',
   'products/fetch',
   'products/fetchCategories',
+  'orders/fetch',
+  'orders/fetchDetail',
   'organizations/fetchStats',
   'organizations/fetchAll',
   'organizations/fetchOne',
@@ -79,6 +81,9 @@ const SUCCESS_MESSAGES: Record<string, string | ((action: FulfilledAction) => st
   'products/update': 'Product saved',
   'products/archive': (a) => `${a.payload.name} archived`,
   'products/restore': (a) => `${a.payload.name} restored`,
+  // A step whose WhatsApp message couldn't go (24-hour window closed) says so; the panel shows it too
+  'orders/changeStatus': (a) =>
+    `Order #${a.payload.order.number} updated${a.payload.customer_notified === true ? '. The customer was messaged.' : a.payload.customer_notified === false ? ", but the customer wasn't messaged (WhatsApp's 24-hour window has closed, or the chat isn't available)." : ''}`,
   'superAdmin/updateProfile': 'Profile updated',
   'superAdmin/changePassword': 'Password changed',
   'organizations/updateStatus': (a) => (a.meta.arg.status === 'active' ? 'Workspace activated' : 'Workspace deactivated. Its members can no longer sign in.'),

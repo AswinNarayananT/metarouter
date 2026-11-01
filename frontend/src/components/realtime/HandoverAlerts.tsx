@@ -1,23 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlarmClock, Ticket as TicketIcon, UserPlus, UserRound, X } from 'lucide-react';
+import { AlarmClock, ShoppingBag, Ticket as TicketIcon, UserPlus, UserRound, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { selectConversation } from '@/store/chat/chatSlice';
 import { selectTicket } from '@/store/tickets/ticketSlice';
 import { fetchTicketDetail } from '@/store/tickets/ticketThunks';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
 import { formatPhone } from '@/store/chat/chatMappers';
+import { isPageFocused } from '@/hooks/usePageFocused';
 
 const MAX_ALERTS = 3;
 const AUTO_DISMISS_MS = 15_000;
 
 interface Alert {
   key: string;            // One card per chat / ticket
-  kind: 'handover' | 'assigned' | 'ticket_assigned' | 'reminder';
+  kind: 'handover' | 'assigned' | 'ticket_assigned' | 'reminder' | 'order_placed';
   title: string;
   body: string;
   conversationId: number;
   ticketId: number | null; // Ticket assignments open the ticket
+  orderId: number | null;  // New orders open the order
 }
 
 const KIND_STYLES = {
@@ -25,6 +27,7 @@ const KIND_STYLES = {
   assigned: { icon: UserPlus, className: 'bg-primary/10 text-primary', border: 'border-primary/30' },
   ticket_assigned: { icon: TicketIcon, className: 'bg-primary/10 text-primary', border: 'border-primary/30' },
   reminder: { icon: AlarmClock, className: 'bg-amber-500/15 text-amber-700', border: 'border-amber-500/50' },
+  order_placed: { icon: ShoppingBag, className: 'bg-green-500/15 text-green-700', border: 'border-green-500/30' },
 };
 
 // Top-right cards (just under the navbar) on every workspace page:
@@ -39,8 +42,8 @@ export function HandoverAlerts() {
   const push = (alert: Alert) => setAlerts((current) => [alert, ...current.filter((a) => a.key !== alert.key)].slice(0, MAX_ALERTS));
 
   useRealtimeEvent('conversation.handover', (conversation) => {
-    // Already looking at this chat: the takeover banner says it
-    if (location.pathname.startsWith('/dashboard/chats') && selectedId === conversation.id) return;
+    // Already looking at this chat (open, and the tab is in front): the takeover banner says it
+    if (location.pathname.startsWith('/dashboard/chats') && selectedId === conversation.id && isPageFocused()) return;
     const customer = conversation.customer_name || formatPhone(conversation.customer_phone);
     const preview = conversation.last_message?.content;
     push({
@@ -50,21 +53,23 @@ export function HandoverAlerts() {
       body: preview ? `${customer} · ${preview}` : customer,
       conversationId: conversation.id,
       ticketId: null,
+      orderId: null,
     });
   });
 
-  // Assignments and "still waiting" reminders: same title and text as the bell ("Aromal assigned you ticket #12 · John Doe")
+  // Assignments, "still waiting" reminders and new orders: same title and text as the bell ("Aromal assigned you ticket #12 · John Doe")
   useRealtimeEvent('notification.new', (notification) => {
     if (notification.type === 'handover') return; // Shown from conversation.handover above
     if (notification.type === 'role_changed' || notification.type === 'member_left' || notification.type === 'member_joined') return; // Bell only, no chat to open
     if (notification.conversation_id === null) return;
     push({
-      key: notification.ticket ? `ticket-${notification.ticket.id}` : `chat-${notification.conversation_id}`,
+      key: notification.order_id ? `order-${notification.order_id}` : notification.ticket ? `ticket-${notification.ticket.id}` : `chat-${notification.conversation_id}`,
       kind: notification.type,
       title: notification.title,
       body: notification.body ?? '',
       conversationId: notification.conversation_id,
       ticketId: notification.ticket?.id ?? null,
+      orderId: notification.order_id,
     });
   });
 
@@ -77,10 +82,12 @@ export function HandoverAlerts() {
 
   const dismiss = (key: string) => setAlerts((current) => current.filter((a) => a.key !== key));
 
-  // Ticket alerts open the ticket; the rest open the chat
+  // Order alerts open the order, ticket alerts the ticket; the rest open the chat
   const open = (alert: Alert) => {
     dismiss(alert.key);
-    if (alert.ticketId) {
+    if (alert.orderId) {
+      navigate(`/dashboard/orders?order=${alert.orderId}`);
+    } else if (alert.ticketId) {
       dispatch(selectTicket(alert.ticketId));
       dispatch(fetchTicketDetail(alert.ticketId));
       navigate('/dashboard/tickets');
@@ -105,7 +112,7 @@ export function HandoverAlerts() {
               <p className="text-sm font-semibold text-on-surface">{alert.title}</p>
               {alert.body && <p className="text-xs text-on-surface-variant truncate">{alert.body}</p>}
               <button type="button" onClick={() => open(alert)} className="mt-2 text-xs font-semibold text-primary hover:underline cursor-pointer">
-                {alert.ticketId ? 'Open ticket' : 'Open chat'}
+                {alert.orderId ? 'Open order' : alert.ticketId ? 'Open ticket' : 'Open chat'}
               </button>
             </div>
             <button

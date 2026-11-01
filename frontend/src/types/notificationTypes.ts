@@ -3,7 +3,7 @@
 // reminder = a handed-over chat still nobody's; role_changed = an admin changed your role (no chat attached);
 // member_left = a member left the workspace and their chats went back to the queue (admins / managers, no chat attached);
 // member_joined = someone accepted an invite (admins, no chat attached)
-export type NotificationType = 'handover' | 'assigned' | 'ticket_assigned' | 'reminder' | 'role_changed' | 'member_left' | 'member_joined';
+export type NotificationType = 'handover' | 'assigned' | 'ticket_assigned' | 'reminder' | 'role_changed' | 'member_left' | 'member_joined' | 'order_placed';
 
 export interface AppNotification {
   id: number;
@@ -12,6 +12,7 @@ export interface AppNotification {
   body: string | null;          // "Aswin_nt · I want to talk to a real person"
   conversation_id: number | null;
   ticket: { id: number; number: number } | null; // Ticket assignments open the ticket
+  order_id: number | null;      // New orders open the order
   actor: { id: number; name: string } | null; // Who caused it (null = the AI)
   read_at: string | null;       // null = unread
   created_at: string;

@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     TICKET_TEAM_IDLE_CLOSE_HOURS: int = 48  # With AI auto-reply off, a team ticket with no new message for this long is closed (no reply)
     TICKET_SWEEP_INTERVAL_MINUTES: int = 10  # How often idle tickets are checked
     VISIT_GAP_HOURS: int = 4  # A customer message after this much silence starts a new visit (greeting menu asked again)
+    ORDER_SELECTION_EXPIRE_MINUTES: int = 60  # Items picked in chat are forgotten this long after the last tap (no lasting cart)
+    ORDER_MAX_ITEMS: int = 20  # Different products in one order
+    ORDER_ITEM_MAX_QUANTITY: int = 999  # Of one product in one order
+    ORDER_NUMBER_START: int = 1001  # A workspace's first order number ("Order #1001")
     UNASSIGNED_REMINDER_MINUTES: str = "5,15"  # Remind about a handed-over chat nobody took after these minutes (first: the team, later: admins / managers)
     UNASSIGNED_REMINDER_CHECK_SECONDS: int = 60  # How often waiting chats are checked
     NOTIFICATION_RETENTION_DAYS: int = 60  # Read notifications older than this are deleted (unread ones are kept)

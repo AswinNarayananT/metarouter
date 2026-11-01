@@ -10,6 +10,7 @@ import knowledgeReducer from './knowledge/knowledgeSlice';
 import chatReducer from './chat/chatSlice';
 import notificationReducer from './notifications/notificationSlice';
 import ticketReducer from './tickets/ticketSlice';
+import orderReducer from './orders/orderSlice';
 import quickRepliesReducer from './quickReplies/quickRepliesSlice';
 import { toastMiddleware } from './errorToastMiddleware';
 
@@ -24,6 +25,7 @@ export const store = configureStore({
     chat: chatReducer,
     notifications: notificationReducer,
     tickets: ticketReducer,
+    orders: orderReducer,
     quickReplies: quickRepliesReducer,
   },
   // Success and error toasts for actions (see errorToastMiddleware.ts for which ones)

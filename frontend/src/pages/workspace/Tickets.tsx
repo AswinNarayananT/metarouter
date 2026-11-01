@@ -6,6 +6,7 @@ import { fetchTicketDetail, fetchTicketGroups, fetchTickets } from '@/store/tick
 import { formatListTime, formatPhone } from '@/store/chat/chatMappers';
 import { useTicketsRealtimeSync } from '@/hooks/useChatRealtime';
 import { markNotificationsRead } from '@/store/notifications/notificationThunks';
+import { usePageFocused } from '@/hooks/usePageFocused';
 import { TicketDetailPanel } from '@/components/tickets/TicketDetailPanel';
 import { TicketHandlerBadge, TicketStatusBadge, TicketTypeBadge } from '@/components/tickets/TicketBadges';
 import { TicketInsights } from '@/components/tickets/TicketInsights';
@@ -59,12 +60,13 @@ export function Tickets() {
     return () => window.clearTimeout(timer);
   }, [dispatch, searchText, filters.search]);
 
-  // Looking at a ticket = its notifications ("assigned you ticket #12") are dealt with
+  // Looking at a ticket = its notifications ("assigned you ticket #12") are dealt with (only while the tab is in front)
   const notifications = useAppSelector((state) => state.notifications.items);
+  const pageFocused = usePageFocused();
   const hasUnreadForTicket = selectedId !== null && notifications.some((n) => n.ticket?.id === selectedId && !n.read_at);
   useEffect(() => {
-    if (selectedId !== null && hasUnreadForTicket) dispatch(markNotificationsRead({ ticketId: selectedId }));
-  }, [dispatch, selectedId, hasUnreadForTicket]);
+    if (pageFocused && selectedId !== null && hasUnreadForTicket) dispatch(markNotificationsRead({ ticketId: selectedId }));
+  }, [dispatch, pageFocused, selectedId, hasUnreadForTicket]);
 
   // 3. Live updates; leaving the page closes the details panel
   useTicketsRealtimeSync();

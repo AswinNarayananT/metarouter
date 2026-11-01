@@ -95,6 +95,13 @@ export interface ChatState {
   updatingStatusId: number | null; // Chat whose takeover switch is saving
   updatingAssignmentId: number | null; // Chat whose owner is being changed
   actionError: string | null;
+  focus: ChatFocus | null; // Open the chat at this message instead of the newest one ("Open chat" from a ticket)
+}
+
+export interface ChatFocus {
+  conversationId: number;
+  messageId: number;
+  label: string; // "Ticket #3"
 }
 
 // mine = assigned to me; unassigned = needs a human and nobody owns it; ai = the AI is handling it

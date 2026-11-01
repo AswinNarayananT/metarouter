@@ -15,6 +15,7 @@ export interface Ticket {
   id: number;
   number: number;
   conversation_id: number;
+  first_message_id: number | null; // Where the ticket starts in the chat
   customer_name: string | null;
   customer_phone: string | null;
   type: TicketType | null; // null until the AI files it

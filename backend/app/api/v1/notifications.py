@@ -15,9 +15,10 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 class MarkNotificationsReadRequest(BaseModel):
-    # Only this chat's / ticket's notifications (opening it); both empty = mark everything read
+    # Only this chat's / ticket's / order's notifications (opening it); all empty = mark everything read
     conversation_id: Optional[int] = None
     ticket_id: Optional[int] = None
+    order_id: Optional[int] = None
 
 
 def _unread_count(db: Session, user_id: int) -> int:
@@ -83,6 +84,8 @@ def mark_notifications_read(payload: MarkNotificationsReadRequest, db: Session =
         query = query.filter(Notification.conversation_id == payload.conversation_id)
     if payload.ticket_id is not None:
         query = query.filter(Notification.ticket_id == payload.ticket_id)
+    if payload.order_id is not None:
+        query = query.filter(Notification.order_id == payload.order_id)
 
     notifications = query.all()
     now = datetime.now(timezone.utc)

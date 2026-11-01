@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useLayoutEffect, useRef } from 'react';
-import { Loader2 } from 'lucide-react';
-import type { ChatConversation, ChatThread } from '@/types/chatTypes';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowDown, Loader2 } from 'lucide-react';
+import type { ChatConversation, ChatFocus, ChatThread } from '@/types/chatTypes';
 import { MessageBubble } from './MessageBubble';
 
 const NEAR_BOTTOM_PX = 120; // Within this of the bottom, new messages scroll into view
+const HIGHLIGHT_MS = 4000; // How long the jumped-to message stays highlighted
 
 // "Today", "Yesterday" or "12 Oct 2026"
 function dayLabel(iso: string): string {
@@ -22,20 +23,35 @@ export function MessageList({
   selectedDocumentId,
   onOpenDocument,
   onLoadOlder,
+  focus = null,
+  onFocused,
 }: {
   conversation: ChatConversation;
   thread: ChatThread | undefined;
   selectedDocumentId: number | null;
   onOpenDocument: (messageId: number) => void;
   onLoadOlder: () => void;
+  focus?: ChatFocus | null; // Jump here (a ticket's first message) once its page is loaded
+  onFocused?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const messages = conversation.messages;
   const firstId = messages[0]?.id;
   const lastId = messages[messages.length - 1]?.id;
 
-  // What the list looked like before this render, to decide how to scroll after it
-  const previous = useRef({ conversationId: conversation.id, firstId, lastId, scrollHeight: 0, nearBottom: true });
+  // What the list looked like before this render, to decide how to scroll after it.
+  // Starts with no chat, so the first render (also one with messages already loaded) starts at the newest message
+  const previous = useRef<{ conversationId: number | null; firstId?: number; lastId?: number; scrollHeight: number; nearBottom: boolean }>({
+    conversationId: null,
+    firstId: undefined,
+    lastId: undefined,
+    scrollHeight: 0,
+    nearBottom: true,
+  });
+  // The jumped-to message: highlighted for a moment, with a "Ticket #3 starts here" line above it
+  const [marker, setMarker] = useState<{ messageId: number; label: string; highlight: boolean } | null>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -62,13 +78,68 @@ export function MessageList({
     };
   }, [conversation.id, firstId, lastId, messages.length]);
 
+  // Jump to the focus message (or the first one after it, e.g. when that one was an activity line) once it's loaded
+  const focusMessageId = focus?.messageId ?? null;
+  const focusLabel = focus?.label ?? '';
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || focusMessageId === null || messages.length === 0) return;
+    const target = messages.find((m) => m.id >= focusMessageId) ?? messages[messages.length - 1];
+    const node = el.querySelector<HTMLElement>(`[data-message-id="${target.id}"]`);
+    if (!node) return;
+    el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - 48; // A little room above it for the "starts here" line
+    previous.current.nearBottom = false;
+    previous.current.scrollHeight = el.scrollHeight;
+    setMarker({ messageId: target.id, label: focusLabel, highlight: true });
+    setShowJumpToLatest(true);
+    onFocused?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMessageId, messages.length]);
+
+  // The highlight fades after a moment; the "starts here" line stays while the chat is open
+  useEffect(() => {
+    if (!marker?.highlight) return;
+    const timer = window.setTimeout(() => setMarker((m) => (m ? { ...m, highlight: false } : m)), HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [marker?.highlight]);
+
+  // Pictures and files that finish loading make the chat taller: stay at the newest message if the agent was there
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (previous.current.nearBottom) el.scrollTop = el.scrollHeight;
+      previous.current.scrollHeight = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [conversation.id]);
+
   // Remember whether the agent is at the bottom (scrolled up to read history = don't jump)
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     previous.current.nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
     previous.current.scrollHeight = el.scrollHeight;
+    if (previous.current.nearBottom && showJumpToLatest) setShowJumpToLatest(false);
   };
+
+  const jumpToLatest = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    previous.current.nearBottom = true;
+    setShowJumpToLatest(false);
+  };
+
+  // A different chat: no marker from the previous one
+  const [markerChat, setMarkerChat] = useState(conversation.id);
+  if (markerChat !== conversation.id) {
+    setMarkerChat(conversation.id);
+    setMarker(null);
+    setShowJumpToLatest(false);
+  }
 
   // Older messages load by themselves when the top of the chat scrolls into view (the button stays as a fallback)
   const topRef = useRef<HTMLDivElement>(null);
@@ -91,8 +162,9 @@ export function MessageList({
   const isFirstLoad = thread?.isLoading && messages.length === 0;
 
   return (
+    <div className="relative flex-1 min-h-0 flex flex-col">
     <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 bg-surface-container-lowest">
-      <div className="max-w-3xl mx-auto space-y-3">
+      <div ref={contentRef} className="max-w-3xl mx-auto space-y-3">
         {thread?.hasMore && (
           <div ref={topRef} className="flex justify-center">
             <button
@@ -129,15 +201,38 @@ export function MessageList({
                   </span>
                 </div>
               )}
-              <MessageBubble
-                message={m}
-                documentSelected={selectedDocumentId === m.id}
-                onOpenDocument={() => onOpenDocument(m.id)}
-              />
+              {marker?.messageId === m.id && marker.label && (
+                <div className="flex items-center gap-2 text-[11px] font-semibold text-primary">
+                  <span className="flex-1 h-px bg-primary/30" />
+                  {marker.label} starts here
+                  <span className="flex-1 h-px bg-primary/30" />
+                </div>
+              )}
+              <div
+                data-message-id={m.id}
+                className={`rounded-2xl transition-shadow duration-700 ${marker?.messageId === m.id && marker.highlight ? 'ring-2 ring-primary/60 ring-offset-4 ring-offset-surface-container-lowest' : ''}`}
+              >
+                <MessageBubble
+                  message={m}
+                  documentSelected={selectedDocumentId === m.id}
+                  onOpenDocument={() => onOpenDocument(m.id)}
+                />
+              </div>
             </Fragment>
           );
         })}
       </div>
+    </div>
+    {/* After a jump into older messages: one tap back to the newest */}
+    {showJumpToLatest && (
+      <button
+        type="button"
+        onClick={jumpToLatest}
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-on-primary text-xs font-medium shadow-lg cursor-pointer"
+      >
+        <ArrowDown className="w-3.5 h-3.5" /> Jump to latest
+      </button>
+    )}
     </div>
   );
 }

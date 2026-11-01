@@ -1,289 +1,209 @@
-import { useState } from 'react';
-import {
-  ShoppingBag,
-  Search,
-  Filter,
-  ArrowUpRight,
-  Package,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Truck,
-  DollarSign,
-  Plus,
-} from 'lucide-react';
-import { Card, Container } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Loader2, Search, ShoppingBag } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '@/store';
+import { selectOrder, setOrderFilters } from '@/store/orders/orderSlice';
+import { fetchOrderDetail, fetchOrders } from '@/store/orders/orderThunks';
+import { formatListTime, formatPhone } from '@/store/chat/chatMappers';
+import { useOrdersRealtimeSync } from '@/hooks/useChatRealtime';
+import { markNotificationsRead } from '@/store/notifications/notificationThunks';
+import { usePageFocused } from '@/hooks/usePageFocused';
+import { formatPrice } from '@/utils/formatPrice';
+import { OrderDetailPanel } from '@/components/orders/OrderDetailPanel';
+import { FulfilmentBadge, OrderStatusBadge } from '@/components/orders/OrderBadges';
+import type { OrderFulfilment, OrderStatus, OrderTab } from '@/types/orderTypes';
 
-interface OrderItem {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerPhone: string;
-  totalAmount: number;
-  currency: string;
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-  itemsCount: number;
-  channel: string;
-  createdAt: string;
-}
+const SEARCH_DEBOUNCE_MS = 300;
 
-const SAMPLE_ORDERS: OrderItem[] = [
-  {
-    id: 'ord-101',
-    orderNumber: 'ORD-9482',
-    customerName: 'Rahul Verma',
-    customerPhone: '+91 98765 43210',
-    totalAmount: 2499,
-    currency: 'INR',
-    status: 'delivered',
-    itemsCount: 3,
-    channel: 'WhatsApp',
-    createdAt: '2026-10-27T10:15:00Z',
-  },
-  {
-    id: 'ord-102',
-    orderNumber: 'ORD-9483',
-    customerName: 'Ananya Sharma',
-    customerPhone: '+91 98123 45678',
-    totalAmount: 1250,
-    currency: 'INR',
-    status: 'processing',
-    itemsCount: 1,
-    channel: 'WhatsApp AI Agent',
-    createdAt: '2026-10-27T11:45:00Z',
-  },
-  {
-    id: 'ord-103',
-    orderNumber: 'ORD-9484',
-    customerName: 'Karthik Menon',
-    customerPhone: '+91 94455 66778',
-    totalAmount: 4800,
-    currency: 'INR',
-    status: 'shipped',
-    itemsCount: 4,
-    channel: 'WhatsApp',
-    createdAt: '2026-10-27T13:20:00Z',
-  },
-  {
-    id: 'ord-104',
-    orderNumber: 'ORD-9485',
-    customerName: 'Pooja Nair',
-    customerPhone: '+91 99887 76655',
-    totalAmount: 899,
-    currency: 'INR',
-    status: 'pending',
-    itemsCount: 2,
-    channel: 'Customer Chat',
-    createdAt: '2026-10-27T14:05:00Z',
-  },
+const TABS: { id: OrderTab; label: string; statuses: OrderStatus[] | null }[] = [
+  { id: 'active', label: 'Active', statuses: ['placed', 'accepted', 'out_for_delivery', 'ready_for_pickup'] },
+  { id: 'placed', label: 'New', statuses: ['placed'] },
+  { id: 'accepted', label: 'Accepted', statuses: ['accepted'] },
+  { id: 'on_the_way', label: 'On the way / Ready', statuses: ['out_for_delivery', 'ready_for_pickup'] },
+  { id: 'completed', label: 'Completed', statuses: ['delivered', 'picked_up'] },
+  { id: 'closed', label: 'Rejected & cancelled', statuses: ['rejected', 'cancelled'] },
+  { id: 'all', label: 'All', statuses: null },
 ];
 
+const selectClass =
+  'px-3 py-2 bg-surface border border-outline/30 rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer';
+
 export function Orders() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const dispatch = useAppDispatch();
+  const { items, total, page, totalPages, statusCounts, filters, isLoading, loadError, selectedId, detail, isLoadingDetail, detailError } = useAppSelector(
+    (state) => state.orders
+  );
+  const [searchText, setSearchText] = useState(filters.search);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const filteredOrders = SAMPLE_ORDERS.filter((order) => {
-    const matchesSearch =
-      order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customerPhone.includes(searchTerm);
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // 1. Load the list whenever a filter changes
+  useEffect(() => {
+    dispatch(fetchOrders({ page: 1 }));
+  }, [dispatch, filters]);
 
-  const getStatusBadge = (status: OrderItem['status']) => {
-    switch (status) {
-      case 'delivered':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-            <CheckCircle2 className="size-3" /> Delivered
-          </span>
-        );
-      case 'processing':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 border border-blue-500/20">
-            <Clock className="size-3" /> Processing
-          </span>
-        );
-      case 'shipped':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-600 border border-purple-500/20">
-            <Truck className="size-3" /> Shipped
-          </span>
-        );
-      case 'pending':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20">
-            <Clock className="size-3" /> Pending
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 border border-rose-500/20">
-            <AlertCircle className="size-3" /> Cancelled
-          </span>
-        );
-    }
+  // 2. Search after the user stops typing
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (searchText !== filters.search) dispatch(setOrderFilters({ search: searchText }));
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [dispatch, searchText, filters.search]);
+
+  const openOrder = (orderId: number) => {
+    dispatch(selectOrder(orderId));
+    dispatch(fetchOrderDetail(orderId));
   };
 
+  // 3. From a "New order #1023" notification: /dashboard/orders?order=42 opens that order
+  const linkedOrder = Number(searchParams.get('order'));
+  useEffect(() => {
+    if (!linkedOrder) return;
+    dispatch(selectOrder(linkedOrder));
+    dispatch(fetchOrderDetail(linkedOrder));
+    setSearchParams({}, { replace: true });
+  }, [dispatch, linkedOrder, setSearchParams]);
+
+  // Looking at an order = its "New order" notification is dealt with (only while the tab is in front)
+  const notifications = useAppSelector((state) => state.notifications.items);
+  const pageFocused = usePageFocused();
+  const hasUnreadForOrder = selectedId !== null && notifications.some((n) => n.order_id === selectedId && !n.read_at);
+  useEffect(() => {
+    if (pageFocused && selectedId !== null && hasUnreadForOrder) dispatch(markNotificationsRead({ orderId: selectedId }));
+  }, [dispatch, pageFocused, selectedId, hasUnreadForOrder]);
+
+  // 4. Live updates; leaving the page closes the details panel
+  useOrdersRealtimeSync();
+  useEffect(() => () => {
+    dispatch(selectOrder(null));
+  }, [dispatch]);
+
+  const tabCount = (statuses: OrderStatus[] | null) =>
+    statuses ? statuses.reduce((sum, s) => sum + (statusCounts[s] ?? 0), 0) : Object.values(statusCounts).reduce((sum, n) => sum + (n ?? 0), 0);
+
   return (
-    <Container className="py-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-              <ShoppingBag className="size-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-on-surface">Orders & Commerce</h1>
-              <p className="text-xs text-on-surface-variant">
-                Manage and track customer orders placed through WhatsApp and AI chat flows.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <Button variant="primary" size="sm" className="glow-primary self-start sm:self-auto cursor-pointer">
-          <Plus className="size-4 mr-1.5" />
-          Create Order
-        </Button>
+    <div className="max-w-6xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Orders</h1>
+        <p className="text-sm text-on-surface-variant">
+          Orders customers place in WhatsApp. Accept them to take the items out of stock, then move them along. The customer gets a message at each key step.
+        </p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-on-surface-variant">Total Orders</span>
-            <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <Package className="size-4" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-on-surface mt-2">1,248</p>
-          <div className="flex items-center gap-1 mt-1 text-xs text-emerald-600 font-medium">
-            <ArrowUpRight className="size-3" />
-            <span>+14.2% from last month</span>
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-on-surface-variant">Total Revenue</span>
-            <div className="size-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="size-4" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-on-surface mt-2">₹4,82,900</p>
-          <div className="flex items-center gap-1 mt-1 text-xs text-emerald-600 font-medium">
-            <ArrowUpRight className="size-3" />
-            <span>+8.6% growth</span>
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-on-surface-variant">Pending Fulfillment</span>
-            <div className="size-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <Clock className="size-4" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-on-surface mt-2">18</p>
-          <span className="text-xs text-on-surface-variant mt-1 block">Awaiting shipping</span>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-on-surface-variant">AI Automated Orders</span>
-            <div className="size-8 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center">
-              <CheckCircle2 className="size-4" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-on-surface mt-2">64%</p>
-          <span className="text-xs text-on-surface-variant mt-1 block">Closed without agent handover</span>
-        </Card>
-      </div>
-
-      {/* Main Orders Table Card */}
-      <Card className="p-6">
-        {/* Controls Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="relative flex-1 max-w-md">
-            <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by order ID, customer name, or phone..."
-              className="w-full pl-9 pr-4 py-2 bg-surface border border-outline-variant/40 rounded-xl text-xs text-on-surface focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Filter className="size-3.5 text-on-surface-variant" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 bg-surface border border-outline-variant/40 rounded-xl text-xs text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label="Order status">
+        {TABS.map((tab) => {
+          const active = filters.tab === tab.id;
+          const count = tabCount(tab.statuses);
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => dispatch(setOrderFilters({ tab: tab.id }))}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                active ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+              }`}
             >
-              <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="shipped">Shipped</option>
-              <option value="delivered">Delivered</option>
-            </select>
-          </div>
-        </div>
+              {tab.label}
+              <span
+                className={`min-w-5 px-1 rounded-full text-[10px] ${
+                  active ? 'bg-on-primary/20' : tab.id === 'placed' && count > 0 ? 'bg-amber-500/20 text-amber-800 font-bold' : 'bg-surface-container'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Orders Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-surface-container-high text-on-surface-variant uppercase tracking-wider font-semibold">
-                <th className="pb-3 px-3">Order</th>
-                <th className="pb-3 px-3">Customer</th>
-                <th className="pb-3 px-3">Channel</th>
-                <th className="pb-3 px-3">Items</th>
-                <th className="pb-3 px-3">Total</th>
-                <th className="pb-3 px-3">Status</th>
-                <th className="pb-3 px-3">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-container-high/60">
-              {filteredOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-on-surface-variant">
-                    No orders matching your search filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-surface-container-low/40 transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-on-surface">{order.orderNumber}</td>
-                    <td className="py-3 px-3">
-                      <div className="font-semibold text-on-surface">{order.customerName}</div>
-                      <div className="text-[11px] text-on-surface-variant">{order.customerPhone}</div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-medium border border-outline-variant/20">
-                        {order.channel}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-on-surface-variant">{order.itemsCount} items</td>
-                    <td className="py-3 px-3 font-bold text-on-surface">
-                      ₹{order.totalAmount.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-3">{getStatusBadge(order.status)}</td>
-                    <td className="py-3 px-3 text-on-surface-variant">
-                      {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-56">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant/60" />
+          <input
+            type="search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Search #order number, customer name or phone"
+            aria-label="Search orders"
+            className="w-full pl-9 pr-4 py-2 bg-surface border border-outline/30 rounded-xl text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary"
+          />
         </div>
-      </Card>
-    </Container>
+        <select
+          aria-label="Delivery or pickup"
+          value={filters.fulfilment}
+          onChange={(e) => dispatch(setOrderFilters({ fulfilment: e.target.value as OrderFulfilment | '' }))}
+          className={selectClass}
+        >
+          <option value="">Delivery and pickup</option>
+          <option value="delivery">Delivery</option>
+          <option value="pickup">Pickup</option>
+        </select>
+      </div>
+
+      {/* List */}
+      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low overflow-hidden">
+        {items.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-16 text-center">
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin text-on-surface-variant" />
+            ) : (
+              <>
+                <ShoppingBag className="w-8 h-8 text-on-surface-variant/50" />
+                <p className="text-sm text-on-surface-variant">{loadError ?? 'No orders here. They appear as customers order in WhatsApp.'}</p>
+              </>
+            )}
+          </div>
+        ) : (
+          <ul>
+            {items.map((order) => (
+              <li key={order.id}>
+                <button
+                  type="button"
+                  onClick={() => openOrder(order.id)}
+                  aria-current={order.id === selectedId ? 'true' : undefined}
+                  className={`w-full flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3 text-left border-b border-l-4 border-b-outline-variant/20 transition-colors cursor-pointer ${
+                    order.status === 'placed' ? 'border-l-amber-500' : 'border-l-transparent'
+                  } ${order.id === selectedId ? 'bg-primary/5' : 'hover:bg-surface-container'}`}
+                >
+                  <span className="text-sm font-mono font-bold text-on-surface w-16 shrink-0">#{order.number}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-on-surface truncate">{order.customer_name || formatPhone(order.customer_phone)}</span>
+                    <span className="block text-xs text-on-surface-variant truncate">
+                      {order.item_count} item{order.item_count === 1 ? '' : 's'} · {order.items_summary}
+                    </span>
+                  </span>
+                  <span className="text-sm font-semibold text-on-surface shrink-0 sm:w-24 sm:text-right">{formatPrice(order.total, order.currency)}</span>
+                  <span className="flex flex-wrap items-center gap-1.5 shrink-0 sm:w-56">
+                    <FulfilmentBadge fulfilment={order.fulfilment} />
+                    <OrderStatusBadge status={order.status} />
+                  </span>
+                  <span className="text-[11px] text-on-surface-variant w-16 shrink-0 sm:text-right">{formatListTime(order.created_at)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {page < totalPages && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => dispatch(fetchOrders({ page: page + 1 }))}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-outline-variant/40 text-sm text-on-surface-variant hover:bg-surface-container disabled:opacity-60 cursor-pointer"
+          >
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />} Load more ({items.length} of {total})
+          </button>
+        </div>
+      )}
+
+      {selectedId !== null && (
+        <OrderDetailPanel detail={detail} isLoading={isLoadingDetail} error={detailError} onClose={() => dispatch(selectOrder(null))} />
+      )}
+    </div>
   );
 }

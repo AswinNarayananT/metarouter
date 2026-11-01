@@ -15,7 +15,8 @@ from app.services.messaging_service import queue_outgoing_message, queue_interac
 from app.services.intent_service import enabled_intent_options, greeting_text, greeting_buttons, tapped_intent, classify_first_message
 from app.services.order_chat_service import (
     ORDERING_PROMPT, PRODUCT_LIST_OFFER, VIEW_PRODUCTS_BUTTON, NO_PRODUCTS_TEXT, BROWSE_PREFIX, CATEGORY_PREFIX, PRODUCT_PREFIX,
-    category_menu, product_menu, parse_browse_reply, parse_category_reply, tapped_product, product_detail_text, workspace_currency
+    USE_BUTTONS_TEXT, category_menu, product_menu, parse_browse_reply, parse_category_reply, tapped_product,
+    start_quantity_step, handle_order_tap, handle_order_step, order_in_progress
 )
 from app.realtime.notify import notify_new_messages, notify_handover
 from app.services.conversation_service import record_activity, ai_auto_reply_on, begin_visit_if_new, visit_first_message_id, last_conversation_activity_at
@@ -170,8 +171,9 @@ def process_chat_message_task(
 
         # 7. Menu taps, what the customer came for, then the AI reply (not for messages with nothing to answer, e.g. an unsupported type)
         reply_id = (message_data or {}).get("reply_id")
+        location = message_data if message_type == "location" else None  # A shared pin (latitude, longitude, name, address)
         if ai_reply or reply_id:
-            respond_to_customer(db, conversation, user_text, reply_id)
+            respond_to_customer(db, conversation, user_text, reply_id, location)
 
     finally:
         db.close()
@@ -197,12 +199,22 @@ SUPPORT_PROMPT_TEXT = "Sorry to hear that. Please tell us what went wrong."
 OTHER_PROMPT_TEXT = "Sure! What can we help you with?"
 
 
-def respond_to_customer(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str] = None):
+def respond_to_customer(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str] = None, location: Optional[dict] = None, from_media: bool = False):
     # Customer Chats off (it includes the menus and the AI): nothing is sent
     if not is_feature_enabled(db, conversation.organization_id, "customer_chats"):
         return
-    # 1. Taps on the product menus
+    # 1. Taps on the product menus, then on the order buttons
     if handle_browse_tap(db, conversation, reply_id):
+        return
+    if handle_order_tap(db, conversation, reply_id):
+        return
+    # 2. An order waiting for a quantity / address / pin: only what the customer typed or shared counts
+    #    (never another button's title, or a note about a file); with AI auto-reply off, anything else gets a nudge
+    #    back to the buttons instead of a handover that would leave the order stuck
+    if not reply_id and not from_media and handle_order_step(db, conversation, user_text, location):
+        return
+    if order_in_progress(conversation.id) and not ai_auto_reply_on(db, conversation.organization_id):
+        queue_outgoing_message(db, conversation, sender="model", content=USE_BUTTONS_TEXT)
         return
     # 2. What the customer came for (asked once per visit): order, problem or something else
     if route_intent(db, conversation, user_text, reply_id):
@@ -322,10 +334,10 @@ def handle_browse_tap(db: Session, conversation: Conversation, reply_id: Optiona
             send_category_menu(db, conversation, 0)
         return True
 
-    # 3. A product: its price and stock (the in-chat cart comes next)
+    # 3. A product: how many (the order starts, or the item joins the one being picked)
     product = tapped_product(db, organization_id, reply_id)
     if product:
-        queue_outgoing_message(db, conversation, sender="model", content=product_detail_text(product, workspace_currency(db, organization_id)))
+        start_quantity_step(db, conversation, product)
     return True
 
 

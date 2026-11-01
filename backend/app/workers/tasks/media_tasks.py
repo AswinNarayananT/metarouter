@@ -359,5 +359,5 @@ def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str)
     org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
     if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
         return
-    respond_to_customer(db, conversation, summary)
+    respond_to_customer(db, conversation, summary, from_media=True)
 

@@ -67,11 +67,12 @@ export const markNotificationRead = createAsyncThunk(
 // Everything (Mark all as read), or only one chat's notifications (when the chat is opened)
 export const markNotificationsRead = createAsyncThunk(
   'notifications/markAllRead',
-  async ({ conversationId, ticketId }: { conversationId?: number; ticketId?: number } = {}, { rejectWithValue }) => {
+  async ({ conversationId, ticketId, orderId }: { conversationId?: number; ticketId?: number; orderId?: number } = {}, { rejectWithValue }) => {
     try {
       const response = await api.post<{ marked: number; unread_count: number }>('/api/v1/notifications/read', {
         conversation_id: conversationId ?? null,
         ticket_id: ticketId ?? null,
+        order_id: orderId ?? null,
       });
       return response.data;
     } catch (err) {

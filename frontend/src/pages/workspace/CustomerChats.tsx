@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatSidePanel } from '@/types/chatTypes';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { clearChatActionError, selectConversation, setChatListQuery } from '@/store/chat/chatSlice';
+import { clearChatActionError, focusMessage, selectConversation, setChatListQuery } from '@/store/chat/chatSlice';
 import { assignConversation, fetchConversationCounts, fetchConversations, fetchMessages, markConversationRead, sendAgentAttachment, sendAgentMessage, sendAgentTemplate, updateConversationStatus } from '@/store/chat/chatThunks';
 import { TemplateDialog } from '@/components/chat/TemplateDialog';
 import type { BroadcastTemplate } from '@/types/broadcastTypes';
@@ -10,6 +10,7 @@ import { markNotificationsRead } from '@/store/notifications/notificationThunks'
 import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
 import { useReplyWindowOpen } from '@/hooks/useReplyWindow';
+import { usePageFocused } from '@/hooks/usePageFocused';
 import { AssignMenu } from '@/components/chat/AssignMenu';
 import { TicketChip } from '@/components/chat/TicketChip';
 import { TicketHint } from '@/components/chat/TicketHint';
@@ -30,6 +31,7 @@ import { WindowNoticeBanner } from '@/components/chat/WindowNoticeBanner';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const COUNTS_REFRESH_MS = 1500;
+const MAX_FOCUS_PAGES = 10; // Older pages loaded at most to reach a ticket's start (50 messages each)
 
 export function CustomerChats() {
   const dispatch = useAppDispatch();
@@ -99,19 +101,48 @@ export function CustomerChats() {
   useOpenChatRealtimeSync(selectedId);
 
   // Looking at the chat = its notifications are dealt with (also ones that arrive while it's open)
+  // Only while the tab is really in front: a chat left open in a background tab keeps its alerts and bell count
+  const pageFocused = usePageFocused();
   const hasUnreadForChat = selectedId !== null && notifications.some((n) => n.conversation_id === selectedId && !n.read_at);
   useEffect(() => {
-    if (selectedId !== null && hasUnreadForChat) dispatch(markNotificationsRead({ conversationId: selectedId }));
-  }, [dispatch, selectedId, hasUnreadForChat]);
+    if (pageFocused && selectedId !== null && hasUnreadForChat) dispatch(markNotificationsRead({ conversationId: selectedId }));
+  }, [dispatch, pageFocused, selectedId, hasUnreadForChat]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
   // Looking at the chat = read: save this user's marker on opening it and when new messages arrive while it's open
   const selectedLastMessageId = selected?.lastMessage?.id ?? null;
   useEffect(() => {
-    if (selectedId !== null) dispatch(markConversationRead(selectedId));
-  }, [dispatch, selectedId, selectedLastMessageId]);
+    if (pageFocused && selectedId !== null) dispatch(markConversationRead(selectedId));
+  }, [dispatch, pageFocused, selectedId, selectedLastMessageId]);
   const thread = selectedId !== null ? threads[selectedId] : undefined;
+
+  // Opened at a ticket's start: load older pages until that message is here (a few pages at most), then the list jumps to it
+  const focus = useAppSelector((state) => state.chat.focus);
+  const chatFocus = focus && focus.conversationId === selectedId ? focus : null;
+  const focusPages = useRef(0);
+  const oldestLoadedId = selected?.messages[0]?.id ?? null;
+  useEffect(() => {
+    if (!chatFocus) {
+      focusPages.current = 0;
+      return;
+    }
+    if (!thread || thread.isLoading || oldestLoadedId === null || oldestLoadedId <= chatFocus.messageId) return;
+    if (!thread.hasMore || !thread.nextBeforeId) return;
+    // Very long chat: stop loading and show the oldest message we got instead
+    if (focusPages.current >= MAX_FOCUS_PAGES) {
+      dispatch(focusMessage({ ...chatFocus, messageId: oldestLoadedId }));
+      return;
+    }
+    focusPages.current += 1;
+    dispatch(fetchMessages({ conversationId: chatFocus.conversationId, beforeId: thread.nextBeforeId }));
+  }, [dispatch, chatFocus, thread, oldestLoadedId]);
+  // Here (or nothing older to load): the list can jump
+  const focusReady =
+    chatFocus !== null && thread !== undefined && !thread.isLoading && oldestLoadedId !== null &&
+    (oldestLoadedId <= chatFocus.messageId || !thread.hasMore);
+  const clearFocus = useCallback(() => dispatch(focusMessage(null)), [dispatch]);
+
   const documentMessage =
     panel?.type === 'document' ? selected?.messages.find((m) => m.id === panel.messageId) : undefined;
   const openDocument = documentMessage?.attachment;
@@ -281,6 +312,8 @@ export function CustomerChats() {
               selectedDocumentId={panel?.type === 'document' ? panel.messageId : null}
               onOpenDocument={showDocument}
               onLoadOlder={loadOlder}
+              focus={focusReady ? chatFocus : null}
+              onFocused={clearFocus}
             />
             {showTicketHint && selected.openTicket && (
               <TicketHint

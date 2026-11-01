@@ -6,6 +6,8 @@ import { notificationReceived, notificationsReadElsewhere } from '@/store/notifi
 import { fetchNotifications } from '@/store/notifications/notificationThunks';
 import { ticketReceived } from '@/store/tickets/ticketSlice';
 import { fetchTicketDetail, fetchTickets } from '@/store/tickets/ticketThunks';
+import { orderReceived } from '@/store/orders/orderSlice';
+import { fetchOrderDetail, fetchOrders } from '@/store/orders/orderThunks';
 import { fetchCurrentUser } from '@/store/workspace/workspaceThunks';
 import { logoutWorkspace } from '@/store/workspace/workspaceSlice';
 import { notifyError, notifySuccess } from '@/utils/notify';
@@ -113,5 +115,25 @@ export function useTicketsRealtimeSync() {
   useRealtimeReconnect(() => {
     dispatch(fetchTickets({ page: 1 }));
     if (selectedId !== null) dispatch(fetchTicketDetail(selectedId));
+  });
+}
+
+// Mount on the Orders page: new orders appear, rows and the open order update live
+export function useOrdersRealtimeSync() {
+  const dispatch = useAppDispatch();
+  const selectedId = useAppSelector((state) => state.orders.selectedId);
+  const items = useAppSelector((state) => state.orders.items);
+
+  useRealtimeEvent('order.updated', (order) => {
+    // A new order, or a status change (it may move between tabs): reload page 1, which also refreshes the tab counts
+    const listed = items.find((o) => o.id === order.id);
+    if (!listed || listed.status !== order.status) dispatch(fetchOrders({ page: 1 }));
+    else dispatch(orderReceived(order));
+    if (order.id === selectedId) dispatch(fetchOrderDetail(order.id));
+  });
+
+  useRealtimeReconnect(() => {
+    dispatch(fetchOrders({ page: 1 }));
+    if (selectedId !== null) dispatch(fetchOrderDetail(selectedId));
   });
 }

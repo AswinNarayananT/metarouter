@@ -6,6 +6,7 @@ from app.models.notification_model import Notification
 from app.realtime.connection_manager import user_group
 from app.realtime.events import publish_event
 from app.services.conversation_service import as_utc, first_name, handover_roles, SUPERVISOR_ROLES
+from app.utils.money import format_price
 
 PREVIEW_CHARS = 120  # Customer message shown under the title
 
@@ -18,6 +19,7 @@ def serialize_notification(notification: Notification) -> dict:
         "body": notification.body,
         "conversation_id": notification.conversation_id,
         "ticket": {"id": notification.ticket.id, "number": notification.ticket.number} if notification.ticket else None,
+        "order_id": notification.order_id,
         "actor": {"id": notification.actor.id, "name": first_name(notification.actor.name)} if notification.actor else None,
         "read_at": as_utc(notification.read_at),
         "created_at": as_utc(notification.created_at)
@@ -45,10 +47,10 @@ def conversation_summary(conversation: Conversation, preview: Optional[str]) -> 
     return f"{customer} · {preview[:PREVIEW_CHARS]}{'…' if len(preview) > PREVIEW_CHARS else ''}"
 
 
-def create_notifications(db: Session, conversation: Conversation, user_ids: list, type: str, title: str, body: Optional[str], actor_user_id: Optional[int] = None, ticket_id: Optional[int] = None) -> list:
+def create_notifications(db: Session, conversation: Conversation, user_ids: list, type: str, title: str, body: Optional[str], actor_user_id: Optional[int] = None, ticket_id: Optional[int] = None, order_id: Optional[int] = None) -> list:
     # 1. One row per recipient, so each person has their own read / unread state
     notifications = [
-        Notification(organization_id=conversation.organization_id, user_id=user_id, type=type, title=title, body=body, conversation_id=conversation.id, actor_user_id=actor_user_id, ticket_id=ticket_id)
+        Notification(organization_id=conversation.organization_id, user_id=user_id, type=type, title=title, body=body, conversation_id=conversation.id, actor_user_id=actor_user_id, ticket_id=ticket_id, order_id=order_id)
         for user_id in dict.fromkeys(user_ids)
     ]
     if not notifications:
@@ -145,6 +147,20 @@ def notify_team_of_handover(db: Session, conversation: Conversation, preview: Op
         User.role.in_(roles)
     ).all()
     return create_notifications(db, conversation, [r.id for r in recipients], "handover", "A customer needs a human", conversation_summary(conversation, preview))
+
+
+def notify_team_of_order(db: Session, conversation: Conversation, order) -> list:
+    # A customer placed an order in chat: everyone who handles chats hears it ("New order #1023 · Aswin · ₹341 · Delivery")
+    roles = handover_roles(db, conversation.organization_id) | SUPERVISOR_ROLES
+    recipients = db.query(User.id).filter(
+        User.organization_id == conversation.organization_id,
+        User.is_active == True,
+        User.role.in_(roles)
+    ).all()
+    how = "Delivery" if order.fulfilment == "delivery" else "Pickup"
+    title = f"New order #{order.number} · {customer_label(conversation)} · {format_price(order.total, order.currency)} · {how}"
+    body = short(", ".join(f"{item.name} × {item.quantity}" for item in order.items))
+    return create_notifications(db, conversation, [r.id for r in recipients], "order_placed", title, body, order_id=order.id)
 
 
 def notify_unassigned_reminder(db: Session, conversation: Conversation, minutes: int, first_reminder: bool, preview: Optional[str]) -> list:

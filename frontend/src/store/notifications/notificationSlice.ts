@@ -89,10 +89,13 @@ const notificationSlice = createSlice({
       })
 
       .addCase(markNotificationsRead.pending, (state, action) => {
-        const { conversationId, ticketId } = action.meta.arg ?? {};
+        const { conversationId, ticketId, orderId } = action.meta.arg ?? {};
         markRead(
           state.items,
-          (n) => (conversationId === undefined || n.conversation_id === conversationId) && (ticketId === undefined || n.ticket?.id === ticketId)
+          (n) =>
+            (conversationId === undefined || n.conversation_id === conversationId) &&
+            (ticketId === undefined || n.ticket?.id === ticketId) &&
+            (orderId === undefined || n.order_id === orderId)
         );
       })
       .addCase(markNotificationsRead.fulfilled, (state, action) => {

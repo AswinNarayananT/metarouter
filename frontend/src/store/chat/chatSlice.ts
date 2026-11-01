@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import type { ChatConversation, ChatFilterTab, ChatMessage, ChatState, ConversationStatus, DeliveryStatus } from '@/types/chatTypes';
+import type { ChatConversation, ChatFilterTab, ChatFocus, ChatMessage, ChatState, ConversationStatus, DeliveryStatus } from '@/types/chatTypes';
 import type { ApiAttachment, ApiChatMessage, ApiConversation, RealtimeEventMap } from '@/types/realtimeTypes';
 import type { Ticket } from '@/types/ticketTypes';
 import { mapAttachment, mapConversation, mapMessage } from './chatMappers';
@@ -23,6 +23,7 @@ const initialState: ChatState = {
   updatingStatusId: null,
   updatingAssignmentId: null,
   actionError: null,
+  focus: null,
 };
 
 // Ticks only move forward (a late "sent" never replaces "read"); failed always wins
@@ -130,6 +131,12 @@ const chatSlice = createSlice({
       state.selectedId = action.payload;
       const conversation = state.conversations.find((c) => c.id === action.payload);
       if (conversation) conversation.unread = 0;
+      // A jump target belongs to its own chat
+      if (state.focus && state.focus.conversationId !== action.payload) state.focus = null;
+    },
+    // Open the chat at a message (a ticket's start) instead of the newest one; null = done
+    focusMessage: (state, action: PayloadAction<ChatFocus | null>) => {
+      state.focus = action.payload;
     },
     // conversation.read event: this user opened the chat in another tab
     conversationReadElsewhere: (state, action: PayloadAction<RealtimeEventMap['conversation.read']>) => {
@@ -278,6 +285,7 @@ export const {
   ticketChanged,
   setChatListQuery,
   selectConversation,
+  focusMessage,
   conversationReadElsewhere,
   clearChatActionError,
 } = chatSlice.actions;

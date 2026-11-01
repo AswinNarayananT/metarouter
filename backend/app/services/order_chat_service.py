@@ -1,10 +1,21 @@
+import json
+import re
+import time
+import uuid
+from contextlib import contextmanager
 from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models.organization_model import Organization
+from app.config import settings
+from app.core.features import is_feature_enabled
+from app.core.redis_client import redis_client
+from app.models.conversation_model import Conversation
 from app.models.product_model import Product
-from app.services.messaging_service import fit, MAX_LIST_ROWS, ROW_TITLE_MAX_CHARS, ROW_DESCRIPTION_MAX_CHARS
+from app.services.messaging_service import fit, queue_interactive_message, queue_outgoing_message, OutgoingMessageError, INTERACTIVE_BODY_MAX_CHARS, MAX_LIST_ROWS, ROW_TITLE_MAX_CHARS, ROW_DESCRIPTION_MAX_CHARS
 from app.services.product_service import current_products, stock_status
+from app.services.order_service import price_items, place_order, publish_order, order_details_text, item_lines_text, address_label, map_link, get_customer_address, workspace_currency
+from app.services.conversation_service import record_activity
+from app.services.notification_service import notify_team_of_order
 from app.utils.money import format_price
 
 # Ordering in chat: the prompt after "Place an order", and the category / product list menus (tap to browse)
@@ -23,10 +34,6 @@ PRODUCT_PREFIX = "product:"
 def orderable_products(db: Session, organization_id: int):
     # What customers can see: current (not archived) products that are for sale
     return current_products(db, organization_id).filter(Product.is_active.is_(True))
-
-
-def workspace_currency(db: Session, organization_id: int) -> str:
-    return db.query(Organization.currency).filter(Organization.id == organization_id).scalar() or "INR"
 
 
 def stock_label(product: Product) -> str:
@@ -101,7 +108,7 @@ def product_menu(db: Session, organization_id: int, category: str, page: int = 0
     if more:
         rows.append({"id": f"{CATEGORY_PREFIX}{page + 1}:{category}", "title": "➡️ More items"})
     label = category or OTHER_CATEGORY
-    return {"body": f"{label}: tap an item to see its price.", "menu": {"button": "Products", "sections": [{"title": fit(label, 24), "rows": rows}]}}
+    return {"body": f"{label}: tap an item to add it.", "menu": {"button": "Products", "sections": [{"title": fit(label, 24), "rows": rows}]}}
 
 
 def parse_category_reply(reply_id: str) -> Optional[tuple]:
@@ -124,9 +131,325 @@ def tapped_product(db: Session, organization_id: int, reply_id: str) -> Optional
     return orderable_products(db, organization_id).filter(Product.id == int(product_id)).first()
 
 
-def product_detail_text(product: Product, currency: str) -> str:
-    # Until the in-chat cart exists: what the item costs and whether it's available
-    if stock_status(product) == "out":
-        return f"Sorry, {product.name} is out of stock right now."
-    stock = f" ({stock_label(product)})" if stock_label(product) else ""
-    return f"{product.name}: {format_price(product.price, currency)}{stock}. How many would you like?"
+# ---- Placing an order: pick items, delivery or pickup, address, confirm ----
+# No lasting cart: what the customer picks lives in Redis only while they're ordering (ORDER_SELECTION_EXPIRE_MINUTES)
+
+SELECTION_KEY = "order:selection:{}"
+LOCK_KEY = "order:lock:{}"
+PLACED_KEY = "order:placed:{}"
+LOCK_SECONDS = 30  # Longer than one step (a few queries and sends); released as soon as the step is done
+LOCK_WAIT_SECONDS = 10
+PLACED_MEMORY_SECONDS = 300  # A late second tap on Confirm is told the order is already placed
+QUANTITY_PREFIX = "qty:"
+ORDER_PREFIX = "order:"
+BODY_ROOM = INTERACTIVE_BODY_MAX_CHARS - 24  # A little spare under WhatsApp's limit
+
+ITEM_ADDED_BUTTONS = [{"id": "order:add", "title": "➕ Add another item"}, {"id": "order:place", "title": "✅ Place order"}, {"id": "order:cancel", "title": "❌ Cancel"}]
+FULFILMENT_BUTTONS = [{"id": "order:fulfil:delivery", "title": "🚚 Delivery"}, {"id": "order:fulfil:pickup", "title": "🏬 Pickup"}]
+SAVED_ADDRESS_BUTTONS = [{"id": "order:address:same", "title": "✅ Same address"}, {"id": "order:address:new", "title": "📍 New address"}]
+SKIP_BUTTON = [{"id": "order:address:skip", "title": "Skip"}]
+CONFIRM_BUTTONS = [{"id": "order:confirm", "title": "✅ Confirm order"}, {"id": "order:cancel", "title": "❌ Cancel"}]
+
+FULFILMENT_QUESTION = "How would you like to get your order?"
+LOCATION_REQUEST_TEXT = "Please share your delivery location (tap the button), or type your full address."
+HOUSE_DETAILS_TEXT = "Got it! Add your house/flat number and a landmark, or tap Skip."
+TIMED_OUT_TEXT = "This order timed out. Tap View products to start again."
+CANCELLED_TEXT = "Your order was cancelled. Tap View products whenever you're ready."
+NOTHING_AVAILABLE_TEXT = "Sorry, none of these items can be ordered right now. Tap View products to pick again."
+CHANGED_TEXT = "Prices or stock changed since you saw your order. Please check and confirm again."
+USE_BUTTONS_TEXT = "You have an order in progress. Please use the buttons above to continue, or tap ❌ Cancel to stop."
+ADDRESS_MAX_CHARS = 500
+LEADING_NUMBER = re.compile(r"^\s*(\d{1,4})(?!\d)")  # "2", "2 packets", "3kg" -> the quantity
+
+# Release the step lock only if this task still holds it (an expired lock may already belong to another task)
+RELEASE_LOCK_SCRIPT = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
+
+
+@contextmanager
+def order_step_lock(conversation_id: int):
+    # One order step at a time per chat: messages handled in parallel would otherwise overwrite each other's picks
+    key, token = LOCK_KEY.format(conversation_id), uuid.uuid4().hex
+    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+    while not redis_client.set(key, token, nx=True, ex=LOCK_SECONDS):
+        if time.monotonic() > deadline:
+            break  # Something is stuck: go on rather than drop the customer's message
+        time.sleep(0.05)
+    try:
+        yield
+    finally:
+        redis_client.eval(RELEASE_LOCK_SCRIPT, 1, key, token)
+
+
+def get_selection(conversation_id: int) -> Optional[dict]:
+    raw = redis_client.get(SELECTION_KEY.format(conversation_id))
+    return json.loads(raw) if raw else None
+
+
+def save_selection(conversation_id: int, selection: dict):
+    # Every step restarts the timer
+    redis_client.set(SELECTION_KEY.format(conversation_id), json.dumps(selection), ex=settings.ORDER_SELECTION_EXPIRE_MINUTES * 60)
+
+
+def clear_selection(conversation_id: int):
+    redis_client.delete(SELECTION_KEY.format(conversation_id))
+
+
+def order_in_progress(conversation_id: int) -> bool:
+    return redis_client.exists(SELECTION_KEY.format(conversation_id)) > 0
+
+
+def send_view_products(db: Session, conversation: Conversation, text: str):
+    queue_interactive_message(db, conversation, text, buttons=[VIEW_PRODUCTS_BUTTON])
+
+
+def quantity_buttons(product_id: int) -> list:
+    # The product is in the id, so a button from an older "How many?" can't add a different product
+    return [{"id": f"{QUANTITY_PREFIX}{product_id}:{n}", "title": str(n)} for n in (1, 2, 3)]
+
+
+def start_quantity_step(db: Session, conversation: Conversation, product: Product):
+    with order_step_lock(conversation.id):
+        # A product tapped in the list: ask how many (the order is started, or this item joins it)
+        if stock_status(product) == "out":
+            send_view_products(db, conversation, f"Sorry, {fit(product.name, 200)} is out of stock right now.")
+            return
+        selection = get_selection(conversation.id) or {"items": []}
+        if len(selection["items"]) >= settings.ORDER_MAX_ITEMS and product.id not in [pid for pid, _ in selection["items"]]:
+            queue_interactive_message(db, conversation, f"You can order up to {settings.ORDER_MAX_ITEMS} different items at once. Place this order first.", buttons=ITEM_ADDED_BUTTONS[1:])
+            return
+        selection["step"] = "quantity"
+        selection["pending_product_id"] = product.id
+        save_selection(conversation.id, selection)
+        queue_interactive_message(db, conversation, f"How many {fit(product.name, 200)}? Tap or type a number.", buttons=quantity_buttons(product.id))
+
+
+def add_pending_item(db: Session, conversation: Conversation, selection: dict, quantity: int):
+    # 1. The product still for sale, and how many can actually be had (stock, per-item and per-order limits)
+    product = orderable_products(db, conversation.organization_id).filter(Product.id == selection.get("pending_product_id")).first()
+    selection["pending_product_id"] = None
+    selection["step"] = "items"
+    items = {pid: qty for pid, qty in selection["items"]}
+    if not product or stock_status(product) == "out" or (product.id not in items and len(items) >= settings.ORDER_MAX_ITEMS):
+        save_selection(conversation.id, selection)
+        send_view_products(db, conversation, "Sorry, that item can't be added to this order.")
+        return
+    already = items.get(product.id, 0)
+    wanted = min(already + max(quantity, 1), settings.ORDER_ITEM_MAX_QUANTITY)
+    note = ""
+    if product.track_stock and wanted > product.stock_quantity:
+        wanted = product.stock_quantity
+        note = f"Only {product.stock_quantity} left, added {wanted - already}." if wanted > already else f"Only {product.stock_quantity} left, and they're already in your order."
+    items[product.id] = wanted
+    selection["items"] = [[pid, qty] for pid, qty in items.items()]
+
+    # 2. What was added, the order so far (fitted to WhatsApp's limit), and what next
+    added = wanted - already
+    name = fit(product.name, 150)
+    head = (f"Added {name} × {added} ✅" if added > 0 else f"{name} is already in your order.") + (f"\n{note}" if note else "")
+    lines, _, total = price_items(db, conversation.organization_id, [tuple(i) for i in selection["items"]])
+    currency = workspace_currency(db, conversation.organization_id)
+    footer = f"Total: {format_price(total, currency)}"
+    room = BODY_ROOM - len(head) - len(footer) - len("\n\nYour order so far:\n\n")
+    body = f"{head}\n\nYour order so far:\n{item_lines_text(lines, currency, room)}\n{footer}"
+    save_selection(conversation.id, selection)
+    queue_interactive_message(db, conversation, body, buttons=ITEM_ADDED_BUTTONS)
+
+
+def ask_address(db: Session, conversation: Conversation, selection: dict):
+    # Delivery: the saved address first ("Same address / New address"), otherwise ask for a location
+    saved = get_customer_address(db, conversation.organization_id, conversation.customer_phone)
+    if saved and address_label(saved):
+        selection["step"] = "address_confirm"
+        save_selection(conversation.id, selection)
+        text = f"Deliver to this address?\n📍 {fit(address_label(saved), 700)}"
+        if saved.get("latitude") is not None and saved.get("longitude") is not None:
+            text += f"\n{map_link(saved['latitude'], saved['longitude'])}"
+        queue_interactive_message(db, conversation, text, buttons=SAVED_ADDRESS_BUTTONS)
+        return
+    request_location(db, conversation, selection)
+
+
+def request_location(db: Session, conversation: Conversation, selection: dict):
+    selection["step"] = "address"
+    selection["address"] = None
+    save_selection(conversation.id, selection)
+    queue_interactive_message(db, conversation, LOCATION_REQUEST_TEXT, request_location=True)
+
+
+def quote_of(lines: list, total) -> list:
+    return [[line["product_id"], line["quantity"], str(line["unit_price"])] for line in lines] + [str(total)]
+
+
+def send_order_details(db: Session, conversation: Conversation, selection: dict, note: Optional[str] = None):
+    # Today's prices; what changed is said, and the quote is kept so Confirm can tell if it changed again
+    lines, problems, total = price_items(db, conversation.organization_id, [tuple(i) for i in selection["items"]])
+    if not lines:
+        clear_selection(conversation.id)
+        send_view_products(db, conversation, NOTHING_AVAILABLE_TEXT)
+        return
+    selection["items"] = [[line["product_id"], line["quantity"]] for line in lines]
+    selection["quote"] = quote_of(lines, total)
+    selection["step"] = "confirm"
+
+    # The note and what changed first, then the details in the room that's left (all within WhatsApp's limit)
+    currency = workspace_currency(db, conversation.organization_id)
+    prefix = [note] if note else []
+    if problems:
+        warnings = [f"⚠️ {fit(p['name'], 60)} {p['reason']}" for p in problems[:5]]
+        if len(problems) > 5:
+            warnings.append(f"…and {len(problems) - 5} more changes")
+        prefix.append("\n".join(warnings))
+    head = "\n\n".join(prefix)
+    room = BODY_ROOM - (len(head) + 2 if head else 0)
+    details = order_details_text(lines, total, currency, selection["fulfilment"], selection.get("address"), room)
+    save_selection(conversation.id, selection)
+    queue_interactive_message(db, conversation, f"{head}\n\n{details}" if head else details, buttons=CONFIRM_BUTTONS)
+
+
+def confirm_order(db: Session, conversation: Conversation, selection: dict):
+    # 1. Only from the details the customer is looking at (an older Confirm button shows the current details instead)
+    if selection.get("step") != "confirm":
+        if selection.get("fulfilment") == "delivery" and not address_label(selection.get("address")):
+            ask_address(db, conversation, selection)
+        elif selection.get("fulfilment") in ("delivery", "pickup"):
+            send_order_details(db, conversation, selection)
+        else:
+            selection["step"] = "fulfilment"
+            save_selection(conversation.id, selection)
+            queue_interactive_message(db, conversation, FULFILMENT_QUESTION, buttons=FULFILMENT_BUTTONS)
+        return
+
+    # 2. Prices or stock changed since the details were shown: show them again instead of placing
+    lines, problems, total = price_items(db, conversation.organization_id, [tuple(i) for i in selection["items"]])
+    if problems or quote_of(lines, total) != selection.get("quote"):
+        send_order_details(db, conversation, selection, note=CHANGED_TEXT)
+        return
+
+    # 3. Place it: the order number goes to the customer (and to delivery / pickup staff); the uid never leaves the backend
+    order = place_order(db, conversation, [tuple(i) for i in selection["items"]], selection["fulfilment"], selection.get("address"))
+    clear_selection(conversation.id)
+    redis_client.set(PLACED_KEY.format(conversation.id), order.number, ex=PLACED_MEMORY_SECONDS)
+
+    # 4. Tell the customer and the team (each step on its own: the order exists whatever happens next)
+    show = "Show this number to the delivery person." if order.fulfilment == "delivery" else "Show this number when you pick it up."
+    head = f"✅ Order #{order.number} is placed! {show} We'll message you when it's accepted."
+    details = order_details_text(lines, order.total, order.currency, order.fulfilment, selection.get("address"), 3000)
+    how = "Delivery" if order.fulfilment == "delivery" else "Pickup"
+    for step in (
+        lambda: queue_outgoing_message(db, conversation, sender="model", content=f"{head}\n\n{details}"),
+        lambda: record_activity(db, conversation, f"Order #{order.number} placed ({format_price(order.total, order.currency)}, {how})"),
+        lambda: notify_team_of_order(db, conversation, order),
+        lambda: publish_order(order),
+    ):
+        try:
+            step()
+        except Exception as exc:
+            db.rollback()
+            print(f"[ORDER] #{order.number} (org {order.organization_id}) placed, but a follow-up step failed: {exc}")
+
+
+def handle_order_tap(db: Session, conversation: Conversation, reply_id: Optional[str]) -> bool:
+    # Quantity / order buttons; True = handled. Orders switched off: the tap is just text for the normal flow
+    if not reply_id or not reply_id.startswith((QUANTITY_PREFIX, ORDER_PREFIX)):
+        return False
+    if not is_feature_enabled(db, conversation.organization_id, "orders"):
+        return False
+    with order_step_lock(conversation.id):
+        handle_order_tap_locked(db, conversation, reply_id)
+    return True
+
+
+def handle_order_tap_locked(db: Session, conversation: Conversation, reply_id: str):
+    # 1. Nothing picked any more: just placed (a second tap), cancelled, or timed out
+    selection = get_selection(conversation.id)
+    if not selection or (not selection.get("items") and not reply_id.startswith(QUANTITY_PREFIX) and reply_id != "order:cancel"):
+        placed = redis_client.get(PLACED_KEY.format(conversation.id))
+        if placed and reply_id.startswith(ORDER_PREFIX):
+            send_view_products(db, conversation, f"Order #{placed.decode()} is already placed. Tap View products to order something else.")
+        elif reply_id == "order:cancel":
+            send_view_products(db, conversation, CANCELLED_TEXT)
+        else:
+            send_view_products(db, conversation, TIMED_OUT_TEXT)
+        return
+
+    # 2. A quantity for the product being asked about (an older button for another product is ignored)
+    if reply_id.startswith(QUANTITY_PREFIX):
+        product_id, _, quantity = reply_id[len(QUANTITY_PREFIX):].partition(":")
+        if selection.get("step") == "quantity" and product_id.isdigit() and int(product_id) == selection.get("pending_product_id") and quantity.isdigit():
+            add_pending_item(db, conversation, selection, int(quantity))
+        return
+
+    # 3. The order buttons
+    if reply_id == "order:cancel":
+        clear_selection(conversation.id)
+        send_view_products(db, conversation, CANCELLED_TEXT)
+    elif reply_id == "order:add":
+        save_selection(conversation.id, selection)
+        menu = category_menu(db, conversation.organization_id)
+        if menu:
+            queue_interactive_message(db, conversation, menu["body"], menu=menu["menu"])
+        else:
+            queue_outgoing_message(db, conversation, sender="model", content=NO_PRODUCTS_TEXT)
+    elif reply_id == "order:place":
+        selection["step"] = "fulfilment"
+        save_selection(conversation.id, selection)
+        queue_interactive_message(db, conversation, FULFILMENT_QUESTION, buttons=FULFILMENT_BUTTONS)
+    elif reply_id in ("order:fulfil:delivery", "order:fulfil:pickup"):
+        selection["fulfilment"] = reply_id.rsplit(":", 1)[1]
+        if selection["fulfilment"] == "pickup":
+            selection["address"] = None
+            send_order_details(db, conversation, selection)
+        else:
+            ask_address(db, conversation, selection)
+    elif reply_id == "order:address:same":
+        saved = get_customer_address(db, conversation.organization_id, conversation.customer_phone)
+        if selection.get("fulfilment") == "delivery" and saved and address_label(saved):
+            selection["address"] = saved
+            send_order_details(db, conversation, selection)
+        else:
+            request_location(db, conversation, selection)
+    elif reply_id == "order:address:new":
+        request_location(db, conversation, selection)
+    elif reply_id == "order:address:skip":
+        if selection.get("step") == "address_details" and address_label(selection.get("address")):
+            send_order_details(db, conversation, selection)
+        else:
+            request_location(db, conversation, selection)
+    elif reply_id == "order:confirm":
+        confirm_order(db, conversation, selection)
+
+
+def handle_order_step(db: Session, conversation: Conversation, user_text: str, location: Optional[dict]) -> bool:
+    # A typed answer while an order waits for one: a quantity, an address, or a shared location pin; True = handled
+    # (only for what the customer typed or shared: never button titles or media notices, see respond_to_customer)
+    if not order_in_progress(conversation.id) or not is_feature_enabled(db, conversation.organization_id, "orders"):
+        return False
+    with order_step_lock(conversation.id):
+        selection = get_selection(conversation.id)
+        if not selection:
+            return False
+        step = selection.get("step")
+        text = (user_text or "").strip()
+
+        if step == "quantity" and not location:
+            number = LEADING_NUMBER.match(text)
+            if number and int(number.group(1)) > 0:
+                add_pending_item(db, conversation, selection, int(number.group(1)))
+                return True
+            return False
+
+        if step in ("address", "address_details", "address_confirm") and selection.get("fulfilment") == "delivery" and location and location.get("latitude") is not None and location.get("longitude") is not None:
+            # A pin: keep it, then ask for the house / flat details (or Skip)
+            place = ", ".join(p for p in (location.get("name"), location.get("address")) if p)
+            selection["address"] = {"address": None, "latitude": location["latitude"], "longitude": location["longitude"], "location_name": place[:255] or None}
+            selection["step"] = "address_details"
+            save_selection(conversation.id, selection)
+            queue_interactive_message(db, conversation, HOUSE_DETAILS_TEXT, buttons=SKIP_BUTTON)
+            return True
+
+        if step in ("address", "address_details") and text and not location:
+            address = selection.get("address") if step == "address_details" else None
+            selection["address"] = {**(address or {"latitude": None, "longitude": None, "location_name": None}), "address": text[:ADDRESS_MAX_CHARS]}
+            send_order_details(db, conversation, selection)
+            return True
+        return False
