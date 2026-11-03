@@ -15,19 +15,16 @@ import { WhatsAppChannelCard } from '@/components/channels/WhatsAppChannelCard';
 const COMING_SOON = [
   {
     name: 'Instagram',
-    description: 'Reply to Instagram direct messages.',
     icon: <Camera className="w-6 h-6" />,
     iconClassName: 'bg-pink-500/10 text-pink-600',
   },
   {
     name: 'Messenger',
-    description: 'Chat with customers on Facebook Messenger.',
     icon: <MessageCircle className="w-6 h-6" />,
     iconClassName: 'bg-blue-500/10 text-blue-600',
   },
   {
     name: 'Telegram',
-    description: 'Connect a Telegram bot to your inbox.',
     icon: <Send className="w-6 h-6" />,
     iconClassName: 'bg-sky-500/10 text-sky-600',
   },
@@ -101,14 +98,7 @@ export function Channels() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Channels</h1>
-        <p className="text-sm text-on-surface-variant">
-          Connect the messaging apps your customers use. Messages from every channel arrive in Customer Chats.
-        </p>
-      </div>
-
+    <div className="space-y-8">
       <WhatsAppChannelCard
         numbers={numbers}
         isLoading={isLoadingNumbers}

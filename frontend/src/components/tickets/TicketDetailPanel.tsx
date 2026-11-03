@@ -370,7 +370,7 @@ export function TicketDetailPanel({
 
 function PanelFrame({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <aside className="fixed inset-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[28rem] z-40 flex flex-col bg-surface-container-low border-l border-outline-variant/30 shadow-xl">
+    <aside className="fixed inset-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[28rem] z-40 flex flex-col bg-surface-container-lowest border-l border-border-subtle shadow-2xl">
       <div className="h-16 shrink-0 flex items-center justify-between gap-3 px-5 border-b border-outline-variant/30">
         <h2 className="text-sm font-semibold text-on-surface">{title}</h2>
         <button type="button" onClick={onClose} aria-label="Close ticket panel" className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container cursor-pointer">

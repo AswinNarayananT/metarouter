@@ -146,12 +146,7 @@ export function InviteMembers() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Invite Team Members</h1>
-        <p className="text-sm text-on-surface-variant">Generate secure invite links for new team members.</p>
-      </div>
-
+    <div className="space-y-6">
       <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-xl p-6 space-y-6">
         {/* Form problems (e.g. duplicate emails); a failed send shows as a toast */}
         {listError && (
@@ -292,7 +287,7 @@ export function InviteMembers() {
                             Re-sent
                           </span>
                         )}
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary uppercase">{invite.role}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary-fixed text-on-primary-fixed capitalize">{invite.role}</span>
                       </span>
                     </div>
                     <div className="flex items-center gap-2 pt-1">
@@ -423,9 +418,7 @@ function InvitationsList() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-on-surface">Invitations</h2>
-          <p className="text-sm text-on-surface-variant">Track invitations sent to your workspace.</p>
-        </div>
+          <h2 className="text-lg font-semibold tracking-tight text-on-surface">Invitations</h2>        </div>
         <div className="relative w-full sm:w-64 sm:ml-auto">
           {isLoadingInvitations && query && search.trim() === query ? (
             <Loader2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant animate-spin" />
@@ -454,16 +447,16 @@ function InvitationsList() {
             </button>
           )}
         </div>
-        <div className="flex flex-wrap gap-1 p-1 rounded-full bg-surface-container-low border border-outline-variant/30">
+        <div className="flex flex-wrap gap-1">
           {STATUS_FILTERS.map((filter) => (
             <button
               key={filter.label}
               type="button"
               onClick={() => handleFilterChange(filter.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 statusFilter === filter.value
-                  ? 'bg-primary text-on-primary'
-                  : 'text-on-surface-variant hover:text-on-surface'
+                  ? 'bg-primary-fixed text-on-primary-fixed'
+                  : 'bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
               }`}
             >
               {filter.label}
@@ -508,7 +501,7 @@ function InvitationsList() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary uppercase">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-primary-fixed text-on-primary-fixed capitalize">
                     {invite.role}
                   </span>
                   <span

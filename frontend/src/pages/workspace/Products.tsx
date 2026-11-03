@@ -137,13 +137,9 @@ export function Products() {
   const catalogEmpty = summary?.total === 0 && status !== 'archived';
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-on-surface">Products</h1>
-          <p className="text-sm text-on-surface-variant">Your catalog, prices and stock.</p>
-        </div>
-        {canEdit && (
+    <div className="space-y-6">
+      {canEdit && (
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => setEditing('new')}
@@ -151,8 +147,8 @@ export function Products() {
           >
             <Plus className="w-4 h-4" /> Add product
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Header counts; clicking one filters the list */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -327,7 +327,6 @@ export const saveAISettings = createAsyncThunk(
     formData.append('bot_name', payload.bot_name);
     formData.append('system_instructions', payload.system_instructions);
     formData.append('allowed_roles_for_handover', payload.allowed_roles_for_handover.join(','));
-    formData.append('greeting_message', payload.greeting_message);
 
     try {
       // Override the instance's JSON default so axios sends multipart with a boundary

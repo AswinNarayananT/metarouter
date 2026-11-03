@@ -177,14 +177,13 @@ export interface AISettings {
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
   is_active: boolean;
-  greeting_message: string; // Empty = the default greeting
+  greeting_message: string; // Empty = the default greeting (the default chat menu uses it; edited on Chat Menu now)
 }
 
 export interface SaveAISettingsPayload {
   bot_name: string;
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
-  greeting_message: string;
 }
 
 export interface ChangePasswordPayload {

@@ -26,7 +26,7 @@ SESSION_MESSAGES_LIMIT = 200  # Messages of the session shown on the ticket
 
 
 @router.get("/")
-def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open|in_progress|waiting|closed|active)$"), type: Optional[str] = Query(None, pattern="^(enquiry|problem|complaint)$"), handled_by: Optional[str] = Query(None, pattern="^(ai|human)$"), group_id: Optional[int] = Query(None), subgroup_id: Optional[int] = Query(None), conversation_id: Optional[int] = Query(None), assigned: Optional[str] = Query(None, pattern="^(me)$"), search: Optional[str] = Query(None, max_length=100), page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open|in_progress|waiting|closed|active)$"), type: Optional[str] = Query(None, pattern="^(enquiry|problem|complaint)$"), handled_by: Optional[str] = Query(None, pattern="^(ai|human)$"), group_id: Optional[int] = Query(None), subgroup_id: Optional[int] = Query(None), conversation_id: Optional[int] = Query(None), assigned: Optional[str] = Query(None, pattern="^(me|[0-9]{1,9})$"), search: Optional[str] = Query(None, max_length=100), page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. The workspace's tickets, newest first
     query = db.query(Ticket).options(
         selectinload(Ticket.conversation),
@@ -53,8 +53,11 @@ def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open
         query = query.filter(Ticket.subgroup_id == subgroup_id)
     if conversation_id:
         query = query.filter(Ticket.conversation_id == conversation_id)
+    # assigned: "me", or a team member's id (another workspace's member matches no ticket here)
     if assigned == "me":
         query = query.filter(Ticket.assigned_user_id == current_user.id)
+    elif assigned:
+        query = query.filter(Ticket.assigned_user_id == int(assigned))
     if search and search.strip():
         term = search.strip().lstrip("#")
         conditions = [Ticket.subject.ilike(f"%{term}%"), Conversation.customer_name.ilike(f"%{term}%"), Conversation.customer_phone.ilike(f"%{term}%")]

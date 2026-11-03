@@ -74,10 +74,10 @@ def fit(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
-def queue_interactive_message(db: Session, conversation: Conversation, body: str, buttons: Optional[list] = None, menu: Optional[dict] = None, request_location: bool = False) -> ChatMessage:
+def queue_interactive_message(db: Session, conversation: Conversation, body: str, buttons: Optional[list] = None, menu: Optional[dict] = None, request_location: bool = False, send_after_seconds: int = 0) -> ChatMessage:
     """
     Tap message to the customer: up to 3 reply buttons, a list menu (up to 10 rows) or a "Send location" button.
-    Saved as pending like any reply, then sent by the same send task.
+    Saved as pending like any reply, then sent by the same send task (send_after_seconds: so it lands after a message queued just before).
     """
     from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
 
@@ -117,7 +117,10 @@ def queue_interactive_message(db: Session, conversation: Conversation, body: str
     db.add(message)
     db.commit()
     notify_new_messages(db, [message])
-    send_whatsapp_message_task.delay(message.id)
+    if send_after_seconds:
+        send_whatsapp_message_task.apply_async((message.id,), countdown=send_after_seconds)
+    else:
+        send_whatsapp_message_task.delay(message.id)
     return message
 
 

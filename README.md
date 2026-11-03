@@ -64,7 +64,7 @@ All settings live in `backend/app/config.py`, and each one has a line in `backen
 | `GOOGLE_API_KEY` | Gemini API key |
 | `META_APP_SECRET` | Meta app → Settings → Basic. Verifies webhook signatures |
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | Any random string; paste the same value into the Meta webhook settings |
-| `SMTP_USER`, `SMTP_PASSWORD`, `EMAILS_FROM_EMAIL` | For invitation emails (a Gmail app password works) |
+| `OUTLOOK_TENANT_ID`, `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET`, `OUTLOOK_EMAILS_FROM_EMAIL` | For invite and password-reset emails, sent through Microsoft Graph (the app needs the Application permission Mail.Send; the sender must be a mailbox in the tenant) |
 | `SUPER_ADMIN_NAME`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` | Platform super admin created on first start |
 
 The other keys (broadcast rates, media and knowledge limits, Beat intervals) have working defaults in `.env.example`.

@@ -40,9 +40,8 @@ export function WhatsAppChannelCard({
   return (
     <ChannelCard
       icon={<WhatsAppIcon className="w-7 h-7" />}
-      iconClassName="bg-[#25D366]/15 text-[#128C7E]"
+      iconClassName="bg-accent/15 text-primary-strong"
       name="WhatsApp"
-      description="Connect your WhatsApp Business number to chat with customers on WhatsApp."
       status={
         isLoading && !connected ? (
           <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-container text-on-surface-variant">

@@ -211,16 +211,7 @@ export function QuickRepliesManager() {
             <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <Icon className="w-5 h-5" />
             </span>
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-on-surface">{isShared ? 'Team replies' : 'My replies'}</h2>
-              <p className="text-sm text-on-surface-variant mt-0.5">
-                {isShared
-                  ? isSupervisor
-                    ? 'Everyone in the workspace can use these.'
-                    : 'Shared by your admins and managers. Ask them to add or change one.'
-                  : 'Only you see these.'}
-              </p>
-            </div>
+            <h2 className="min-w-0 self-center text-base font-semibold text-on-surface">{isShared ? 'Team replies' : 'My replies'}</h2>
           </div>
           {canAdd && !(draft && draft.id === null && draft.shared === isShared) && (
             <button

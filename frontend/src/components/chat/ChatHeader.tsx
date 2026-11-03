@@ -30,12 +30,12 @@ export function ChatHeader({
   const showTakeover = onToggleTakeover && (!isHuman || aiAutoReply);
 
   return (
-    <header className="h-16 shrink-0 px-3 sm:px-5 flex items-center gap-2.5 sm:gap-3 border-b border-outline-variant/30 bg-surface-container-low">
+    <header className="h-16 shrink-0 px-3 sm:px-4 flex items-center gap-2.5 sm:gap-3 border-b border-border-subtle bg-surface">
       <button
         type="button"
         onClick={onBack}
         aria-label="Back to conversations"
-        className="md:hidden p-2 -ml-1 rounded-lg text-on-surface-variant hover:bg-surface-container cursor-pointer"
+        className="md:hidden p-2 -ml-1 rounded-full text-on-surface-variant hover:bg-surface-container cursor-pointer"
       >
         <ArrowLeft className="w-5 h-5" />
       </button>
@@ -63,9 +63,9 @@ export function ChatHeader({
         <button
           type="button"
           onClick={onToggleTakeover}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-control text-xs font-medium transition-colors cursor-pointer ${
             isHuman
-              ? 'bg-primary/10 text-primary hover:bg-primary/15'
+              ? 'bg-primary/10 text-primary-strong hover:bg-primary/15'
               : 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/15'
           }`}
         >
@@ -87,9 +87,9 @@ export function ChatHeader({
         onClick={onToggleContact}
         aria-label={contactOpen ? 'Hide contact details' : 'Show contact details'}
         aria-pressed={contactOpen}
-        className={`p-2 rounded-lg transition-colors cursor-pointer ${
+        className={`p-2 rounded-full transition-colors cursor-pointer ${
           contactOpen
-            ? 'bg-primary/10 text-primary'
+            ? 'bg-primary/10 text-primary-strong'
             : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
         }`}
       >

@@ -18,6 +18,7 @@ import {
   Route,
   ShoppingBag,
   Package,
+  Workflow,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { logoutWorkspaceSession, fetchCurrentUser, fetchOrganization } from '@/store/workspace/workspaceThunks';
@@ -79,8 +80,9 @@ export function WorkspaceLayout() {
   const allNavItems = [
     { label: 'Overview', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Channels', path: '/dashboard/channels', icon: Cable, adminOnly: true },
-    // Customer Chats module: AI assistant, chats and tickets
+    // Customer Chats module: AI assistant, chat menu, chats and tickets
     { label: 'AI Assistant', path: '/dashboard/ai-settings', icon: Bot, feature: 'customer_chats', adminOnly: true },
+    { label: 'Chat Menu', path: '/dashboard/chat-menu', icon: Workflow, feature: 'customer_chats', adminOnly: true },
     { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare, feature: 'customer_chats' },
     { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket, feature: 'customer_chats' },
     { label: 'Broadcast', path: '/dashboard/broadcast', icon: Send, feature: 'broadcasts', adminOnly: true },
@@ -129,30 +131,30 @@ export function WorkspaceLayout() {
               to={item.path}
               title={!showLabels ? item.label : undefined}
               aria-current={active ? 'page' : undefined}
-              className={`group flex items-center rounded-xl text-sm font-medium transition-all ${
-                showLabels ? 'gap-3 px-4 py-3' : 'justify-center px-0 py-3'
+              className={`group flex items-center rounded-full text-sm transition-colors ${
+                showLabels ? 'gap-3 px-4 py-2.5' : 'justify-center px-0 py-2.5'
               } ${
                 active
-                  ? 'bg-primary text-on-primary shadow-md'
-                  : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  ? 'bg-primary-fixed text-on-primary-fixed font-semibold'
+                  : 'font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
               }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={active ? 2.25 : 1.75} />
               {showLabels && <span className="truncate">{item.label}</span>}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t border-outline-variant/30">
+      <div className="p-3 border-t border-border-subtle">
         <button
           onClick={handleLogout}
           title={!showLabels ? 'Sign Out' : undefined}
-          className={`w-full flex items-center rounded-xl text-sm font-medium text-error hover:bg-error-container/20 transition-all ${
-            showLabels ? 'gap-3 px-4 py-3' : 'justify-center px-0 py-3'
+          className={`w-full flex items-center rounded-full text-sm font-medium text-error hover:bg-error-container/40 transition-colors ${
+            showLabels ? 'gap-3 px-4 py-2.5' : 'justify-center px-0 py-2.5'
           }`}
         >
-          <LogOut className="w-4 h-4 shrink-0" />
+          <LogOut className="w-[18px] h-[18px] shrink-0" strokeWidth={1.75} />
           {showLabels && <span>Sign Out</span>}
         </button>
       </div>
@@ -164,13 +166,13 @@ export function WorkspaceLayout() {
       <ImpersonationBanner />
 
       {/* Top Navbar */}
-      <header className="h-16 shrink-0 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between px-4 sm:px-6 z-30">
+      <header className="h-16 shrink-0 bg-header text-on-header border-b border-border-subtle flex items-center justify-between px-4 sm:px-6 z-30">
         <div className="flex items-center gap-3 min-w-0">
           {/* Mobile drawer toggle */}
           <button
             onClick={() => setMobileOpen(true)}
             aria-label="Open navigation"
-            className="lg:hidden p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+            className="lg:hidden p-2 rounded-full text-on-header/85 hover:bg-on-header/10 hover:text-on-header focus-visible:outline-on-header transition-colors"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -181,7 +183,7 @@ export function WorkspaceLayout() {
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!collapsed}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="hidden lg:inline-flex p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+            className="hidden lg:inline-flex p-2 rounded-full text-on-header/85 hover:bg-on-header/10 hover:text-on-header focus-visible:outline-on-header transition-colors"
           >
             {collapsed ? (
               <PanelLeftOpen className="w-5 h-5" />
@@ -191,18 +193,18 @@ export function WorkspaceLayout() {
           </button>
 
           {/* Brand */}
-          <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <span className="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center shrink-0">
+          <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0 rounded-control focus-visible:outline-on-header">
+            <span className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center shrink-0">
               <Route className="w-4 h-4" />
             </span>
-            <span className="font-bold text-base tracking-tight text-on-surface">
+            <span className="hidden sm:inline font-semibold text-sm text-on-header/75">
               MetaRouter
             </span>
           </Link>
 
-          {/* Breadcrumb / current page */}
-          <div className="hidden md:flex items-center gap-3 ml-3 pl-4 border-l border-outline-variant/30 min-w-0">
-            <span className="text-sm text-on-surface-variant truncate">{currentPage}</span>
+          {/* Current page: the only page title (pages don't repeat it) */}
+          <div className="flex items-center ml-1 sm:ml-2 pl-3 sm:pl-4 border-l border-on-header/20 min-w-0">
+            <span className="text-lg font-semibold text-on-header truncate">{currentPage}</span>
           </div>
         </div>
 
@@ -211,16 +213,16 @@ export function WorkspaceLayout() {
           <LiveStatus />
           <NotificationBell />
           <div className="hidden sm:block text-right min-w-0">
-            <p className="text-sm font-semibold text-on-surface truncate max-w-[220px]">
+            <p className="text-sm font-semibold text-on-header truncate max-w-[220px]">
               {userName || orgName}
             </p>
-            <p className="text-xs text-on-surface-variant truncate max-w-[220px]">
+            <p className="text-xs text-on-header/80 truncate max-w-[220px]">
               {userName ? `${orgName} · ` : ''}
               <span className="capitalize">{user?.role}</span>
             </p>
           </div>
           <div
-            className="w-9 h-9 rounded-full bg-surface-container text-on-surface border border-outline-variant/40 flex items-center justify-center text-xs font-semibold shrink-0"
+            className="w-9 h-9 rounded-full bg-on-header/15 text-on-header border border-on-header/25 flex items-center justify-center text-xs font-semibold shrink-0"
             aria-hidden="true"
           >
             {initials || 'W'}
@@ -231,7 +233,7 @@ export function WorkspaceLayout() {
       <div className="flex flex-1 min-h-0">
         {/* Desktop Sidebar (collapsible) */}
         <aside
-          className={`hidden lg:flex flex-col shrink-0 bg-surface-container-low border-r border-outline-variant/30 transition-[width] duration-200 ease-in-out ${
+          className={`hidden lg:flex flex-col shrink-0 bg-surface-container-lowest border-r border-border-subtle transition-[width] duration-200 ease-in-out ${
             collapsed ? 'w-[72px]' : 'w-64'
           }`}
         >
@@ -246,13 +248,13 @@ export function WorkspaceLayout() {
               onClick={() => setMobileOpen(false)}
               aria-hidden="true"
             />
-            <aside className="relative w-64 max-w-[80%] bg-surface-container-low border-r border-outline-variant/30 flex flex-col shadow-xl">
-              <div className="h-16 px-4 flex items-center justify-between border-b border-outline-variant/30">
+            <aside className="relative w-64 max-w-[80%] bg-surface-container-lowest flex flex-col shadow-elevated">
+              <div className="h-16 px-4 flex items-center justify-between bg-header text-on-header">
                 <span className="font-bold text-base tracking-tight">MetaRouter</span>
                 <button
                   onClick={() => setMobileOpen(false)}
                   aria-label="Close navigation"
-                  className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+                  className="p-2 rounded-full text-on-header/85 hover:bg-on-header/10 hover:text-on-header focus-visible:outline-on-header transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>

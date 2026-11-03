@@ -46,7 +46,7 @@ export function QuickReplyPicker({
       ref={ref}
       role="dialog"
       aria-label="Quick replies"
-      className="absolute bottom-full left-0 right-0 mb-2 max-w-md rounded-2xl bg-surface-container-low border border-outline-variant/40 shadow-xl z-30 overflow-hidden"
+      className="absolute bottom-full left-0 right-0 mb-2 max-w-md rounded-card bg-surface-container-lowest border border-border-subtle shadow-elevated z-30 overflow-hidden"
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/30">
         <Zap className="w-4 h-4 text-primary shrink-0" />

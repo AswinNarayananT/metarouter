@@ -38,7 +38,7 @@ export function CopyField({ label, value, mono, secret }: CopyFieldProps) {
           type="button"
           onClick={handleCopy}
           disabled={!value}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-surface-container-lowest border border-transparent hover:border-outline-variant/40 transition-colors disabled:opacity-40"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary-strong hover:bg-surface-container border border-transparent hover:border-outline-variant/40 transition-colors disabled:opacity-40"
         >
           {copied ? <Check className="size-3.5 text-tertiary" /> : <Copy className="size-3.5" />}
           {copied ? 'Copied' : 'Copy'}

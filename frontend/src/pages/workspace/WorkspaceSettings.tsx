@@ -22,11 +22,13 @@ import {
   Hash,
   AlertCircle,
   Zap,
+  Palette,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { QuickRepliesManager } from '@/components/settings/QuickRepliesManager';
 import { LeaveWorkspaceCard } from '@/components/settings/LeaveWorkspaceCard';
+import { AppearanceCard } from '@/components/settings/AppearanceCard';
 import {
   fetchOrganization,
   changePassword,
@@ -43,7 +45,7 @@ import {
   strongPasswordField,
 } from '@/validation/schemas';
 
-type SettingsTab = 'workspace' | 'profile' | 'security' | 'quick-replies';
+type SettingsTab = 'workspace' | 'profile' | 'security' | 'appearance' | 'quick-replies';
 
 interface DetailsFormValues {
   organization_name: string;
@@ -77,29 +79,22 @@ const passwordSchema = Yup.object({
 function SectionCard({
   icon: Icon,
   title,
-  description,
   action,
   children,
 }: {
   icon: React.ElementType;
   title: string;
-  description?: string;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-xl">
       <div className="flex items-start justify-between gap-4 p-6 border-b border-outline-variant/30">
-        <div className="flex items-start gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <Icon className="w-5 h-5" />
           </span>
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-on-surface">{title}</h2>
-            {description && (
-              <p className="text-sm text-on-surface-variant mt-0.5">{description}</p>
-            )}
-          </div>
+          <h2 className="min-w-0 text-base font-semibold text-on-surface">{title}</h2>
         </div>
         {action}
       </div>
@@ -378,6 +373,7 @@ export function WorkspaceSettings() {
       : []),
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'security', label: 'Security', icon: ShieldCheck },
+    { id: 'appearance', label: 'Appearance', icon: Palette },
     ...(hasChats ? [{ id: 'quick-replies' as const, label: 'Quick replies', icon: Zap }] : []),
   ];
   const activeTab: SettingsTab = tab ?? (isAdmin ? 'workspace' : 'profile');
@@ -403,14 +399,7 @@ export function WorkspaceSettings() {
   const isEditing = isEditingWorkspace || isEditingPersonal;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-24">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Settings</h1>
-        <p className="text-sm text-on-surface-variant">
-          Manage your workspace, profile and account security.
-        </p>
-      </div>
-
+    <div className="space-y-6 pb-24">
       <div className="flex flex-col md:flex-row gap-6 md:gap-8">
         {/* Settings navigation */}
         <nav
@@ -425,10 +414,10 @@ export function WorkspaceSettings() {
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all cursor-pointer ${
+                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-full text-sm whitespace-nowrap transition-colors cursor-pointer ${
                   active
-                    ? 'bg-primary text-on-primary shadow-md'
-                    : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                    ? 'bg-primary-fixed text-on-primary-fixed font-semibold'
+                    : 'font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -447,7 +436,6 @@ export function WorkspaceSettings() {
             <SectionCard
               icon={Building2}
               title="Workspace details"
-              description="Settings that apply to everyone in your workspace."
               action={!isEditingWorkspace && editButton(() => startEditing('workspace'))}
             >
               <Field label="Workspace name" hint="Shown to your team members.">
@@ -571,7 +559,6 @@ export function WorkspaceSettings() {
             <SectionCard
               icon={User}
               title="Personal details"
-              description="Your personal information within this workspace."
               action={!isEditingPersonal && editButton(() => startEditing('personal'))}
             >
               <div className="flex items-center gap-4 pb-5 border-b border-outline-variant/30">
@@ -625,7 +612,6 @@ export function WorkspaceSettings() {
             <SectionCard
               icon={KeyRound}
               title="Change password"
-              description="Use a strong password you don't use anywhere else."
             >
 
               {/* A failed change (e.g. wrong current password) shows as a toast */}
@@ -724,6 +710,8 @@ export function WorkspaceSettings() {
           )}
 
           {/* ---------- Quick replies (all users) ---------- */}
+          {activeTab === 'appearance' && <AppearanceCard />}
+
           {activeTab === 'quick-replies' && hasChats && <QuickRepliesManager />}
         </div>
       </div>

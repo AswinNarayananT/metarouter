@@ -163,15 +163,15 @@ export function MessageList({
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-    <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 bg-surface-container-lowest">
-      <div ref={contentRef} className="max-w-3xl mx-auto space-y-3">
+    <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 sm:px-8 py-4 bg-chat-bg">
+      <div ref={contentRef} className="max-w-3xl mx-auto space-y-2">
         {thread?.hasMore && (
           <div ref={topRef} className="flex justify-center">
             <button
               type="button"
               onClick={onLoadOlder}
               disabled={thread.isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-outline-variant/40 text-xs font-medium text-on-surface-variant hover:bg-surface-container disabled:opacity-60 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest shadow-subtle text-xs font-medium text-on-surface-variant hover:text-on-surface disabled:opacity-60 cursor-pointer"
             >
               {thread.isLoading && <Loader2 className="w-3 h-3 animate-spin" />}
               Load older messages
@@ -196,13 +196,13 @@ export function MessageList({
             <Fragment key={m.id}>
               {showDay && (
                 <div className="flex justify-center">
-                  <span className="px-3 py-1 rounded-full bg-surface-container text-[11px] font-medium text-on-surface-variant">
+                  <span className="px-3 py-1 rounded-bubble bg-surface-container-lowest shadow-subtle text-xs font-medium text-on-surface-variant">
                     {day}
                   </span>
                 </div>
               )}
               {marker?.messageId === m.id && marker.label && (
-                <div className="flex items-center gap-2 text-[11px] font-semibold text-primary">
+                <div className="flex items-center gap-2 text-[11px] font-semibold text-primary-strong">
                   <span className="flex-1 h-px bg-primary/30" />
                   {marker.label} starts here
                   <span className="flex-1 h-px bg-primary/30" />
@@ -210,7 +210,7 @@ export function MessageList({
               )}
               <div
                 data-message-id={m.id}
-                className={`rounded-2xl transition-shadow duration-700 ${marker?.messageId === m.id && marker.highlight ? 'ring-2 ring-primary/60 ring-offset-4 ring-offset-surface-container-lowest' : ''}`}
+                className={`rounded-bubble transition-shadow duration-700 ${marker?.messageId === m.id && marker.highlight ? 'ring-2 ring-primary/60 ring-offset-4 ring-offset-chat-bg' : ''}`}
               >
                 <MessageBubble
                   message={m}
@@ -228,7 +228,7 @@ export function MessageList({
       <button
         type="button"
         onClick={jumpToLatest}
-        className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-on-primary text-xs font-medium shadow-lg cursor-pointer"
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-on-primary text-xs font-medium shadow-elevated hover:bg-primary-container cursor-pointer"
       >
         <ArrowDown className="w-3.5 h-3.5" /> Jump to latest
       </button>

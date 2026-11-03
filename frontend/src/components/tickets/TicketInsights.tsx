@@ -46,7 +46,7 @@ export function TicketInsights({ onShowSubgroup }: { onShowSubgroup: (subgroupId
             aria-selected={days === period}
             onClick={() => setDays(period)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer ${
-              days === period ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container'
+              days === period ? 'bg-primary-fixed text-on-primary-fixed' : 'text-on-surface-variant hover:bg-surface-container-high'
             }`}
           >
             Last {period} days
@@ -76,7 +76,7 @@ export function TicketInsights({ onShowSubgroup }: { onShowSubgroup: (subgroupId
           </Card>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card title="Top problems" subtitle="Subgroups with the most tickets. Click one to see its tickets.">
+            <Card title="Top problems">
               <RankedBars
                 rows={data.top_subgroups.map((row) => ({
                   key: row.subgroup_id,
@@ -94,7 +94,7 @@ export function TicketInsights({ onShowSubgroup }: { onShowSubgroup: (subgroupId
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card title="Rising this week" subtitle="Compared with the week before">
+            <Card title="Rising this week">
               {data.rising.length === 0 ? (
                 <p className="text-sm text-on-surface-variant">Nothing is rising right now.</p>
               ) : (

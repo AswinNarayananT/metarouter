@@ -107,17 +107,7 @@ export function OrganizationListPage() {
   return (
     <Container>
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-3 border border-outline-variant/30">
-            <Building2 className="size-3.5" />
-            Super Admin · Workspaces
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Organizations</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            Manage client workspaces, subscription statuses, and primary administrator accounts.
-          </p>
-        </div>
+      <div className="flex justify-end gap-4 mb-6">
         <Link to="/admin/organizations/new">
           <Button variant="primary" className="glow-primary shrink-0">
             <Plus className="size-4" />
@@ -145,7 +135,7 @@ export function OrganizationListPage() {
                 setSearchTerm('');
                 setDebouncedSearch('');
               }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 hover:text-on-surface transition-colors p-1 rounded-full hover:bg-surface-container-low"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 hover:text-on-surface transition-colors p-1 rounded-full hover:bg-surface-container"
               title="Clear search"
             >
               <X className="size-3.5" />
@@ -273,7 +263,7 @@ export function OrganizationListPage() {
               >
                 <Card
                   variant="feature"
-                  className="p-4 sm:p-5 hover:border-primary/50 hover:bg-surface-container-low/20 transition-all duration-200"
+                  className="p-4 sm:p-5 hover:border-primary/50 hover:bg-surface-container/50 transition-all duration-200"
                 >
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     {/* Left: Avatar, Name & Slug */}
@@ -411,7 +401,7 @@ export function OrganizationListPage() {
               onClick={() => setPage(1)}
               disabled={page === 1 || isLoading}
               aria-label="First page"
-              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               <ChevronsLeft className="size-4" />
             </button>
@@ -421,7 +411,7 @@ export function OrganizationListPage() {
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1 || isLoading}
               aria-label="Previous page"
-              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -447,7 +437,7 @@ export function OrganizationListPage() {
                       'min-w-8 h-8 px-2 text-xs font-semibold rounded-lg transition-all cursor-pointer',
                       isCurrent
                         ? 'bg-primary text-on-primary shadow-xs'
-                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low border border-outline-variant/20',
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container border border-outline-variant/20',
                     )}
                   >
                     {p}
@@ -465,7 +455,7 @@ export function OrganizationListPage() {
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages || isLoading}
               aria-label="Next page"
-              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -475,7 +465,7 @@ export function OrganizationListPage() {
               onClick={() => setPage(totalPages)}
               disabled={page >= totalPages || isLoading}
               aria-label="Last page"
-              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               <ChevronsRight className="size-4" />
             </button>

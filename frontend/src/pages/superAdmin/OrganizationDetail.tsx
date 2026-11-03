@@ -746,9 +746,6 @@ export function OrganizationDetailPage() {
                 <h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">
                   Messages This Month
                 </h3>
-                <p className="text-xs text-on-surface-variant mt-0.5">
-                  Monthly message traffic divided between customer queries, automated Gemini AI responses, and human agents.
-                </p>
               </div>
               <div className="text-left sm:text-right">
                 <div className="text-2xl font-black text-on-surface">
@@ -880,9 +877,6 @@ export function OrganizationDetailPage() {
                   Team Members ({current.members?.length ?? current.user_count})
                 </h2>
               </div>
-              <p className="text-xs text-on-surface-variant mt-1">
-                All registered accounts attached to this client workspace, including their permission roles and account activity.
-              </p>
             </div>
 
             <div className="flex items-center gap-2 text-xs text-on-surface-variant bg-surface-container-low px-3 py-1.5 rounded-xl border border-outline-variant/30">
@@ -1244,7 +1238,7 @@ export function OrganizationDetailPage() {
                   setDeleteConfirmationText('');
                   setIsDeleteModalOpen(true);
                 }}
-                className="bg-rose-600 text-white hover:bg-rose-700 border-transparent shrink-0 cursor-pointer"
+                className="bg-error text-on-error hover:bg-error/90 border-transparent shrink-0 cursor-pointer"
               >
                 Delete Workspace
               </Button>
@@ -1275,7 +1269,7 @@ export function OrganizationDetailPage() {
 
             <p className="text-xs text-on-surface-variant leading-relaxed">
               Are you sure you want to change the status of <strong>{current.name}</strong> to{' '}
-              <span className="uppercase font-semibold text-primary">{pendingStatus}</span>? Setting a workspace to{' '}
+              <span className="capitalize font-semibold text-primary-strong">{pendingStatus}</span>? Setting a workspace to{' '}
               <strong>inactive</strong> suspends incoming automated replies, halts broadcast campaigns, and blocks agent logins.
             </p>
 
@@ -1440,7 +1434,7 @@ export function OrganizationDetailPage() {
                   deleteConfirmationText.trim().toLowerCase() !== current.slug.toLowerCase() ||
                   isDeletingOrg
                 }
-                className="px-4 py-2 rounded-xl text-xs font-medium bg-rose-600 hover:bg-rose-700 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-medium bg-error hover:bg-error/90 text-on-error transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
               >
                 {isDeletingOrg ? (
                   <>

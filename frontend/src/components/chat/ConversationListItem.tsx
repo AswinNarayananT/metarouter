@@ -20,8 +20,8 @@ export function ConversationListItem({
       type="button"
       onClick={onSelect}
       aria-current={active ? 'true' : undefined}
-      className={`w-full flex items-start gap-3 px-4 py-3 text-left border-l-2 transition-colors cursor-pointer ${
-        active ? 'bg-primary/5 border-primary' : 'border-transparent hover:bg-surface-container'
+      className={`w-full flex items-start gap-3 px-4 py-3 text-left border-b border-border-subtle transition-colors cursor-pointer ${
+        active ? 'bg-surface-container-high' : 'hover:bg-surface-container'
       }`}
     >
       <Avatar name={conversation.name} />
@@ -30,7 +30,7 @@ export function ConversationListItem({
           <h2 className="text-sm font-semibold text-on-surface truncate">{conversation.name}</h2>
           <span
             className={`text-[11px] shrink-0 ${
-              conversation.unread ? 'text-primary font-semibold' : 'text-on-surface-variant'
+              conversation.unread ? 'text-primary-strong font-semibold' : 'text-on-surface-variant'
             }`}
           >
             {conversation.lastActive}
@@ -56,7 +56,7 @@ export function ConversationListItem({
             )}
           </p>
           {conversation.unread > 0 && (
-            <span className="min-w-5 h-5 px-1.5 rounded-full bg-primary text-on-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
+            <span className="min-w-5 h-5 px-1.5 rounded-full bg-accent text-on-accent text-[10px] font-bold flex items-center justify-center shrink-0">
               {conversation.unread > 99 ? '99+' : conversation.unread}
             </span>
           )}

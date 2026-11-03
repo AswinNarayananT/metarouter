@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { AlertCircle, Bot, FlaskConical, Save } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, Bot, FlaskConical, Save, Workflow } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchAISettings, saveAISettings, setAiAutoReply } from '@/store/workspace/workspaceThunks';
 import { useAiAutoReply } from '@/hooks/useAiAutoReply';
@@ -12,7 +13,6 @@ import { KnowledgeBaseCard } from '@/components/knowledge/KnowledgeBaseCard';
 import { AISimulatorDrawer } from '@/components/ai/AISimulatorDrawer';
 
 const MAX_INSTRUCTIONS_LENGTH = 4000;
-const MAX_GREETING_LENGTH = 500;
 
 const HANDOVER_ROLES: { value: HandoverRole; label: string; description: string }[] = [
   { value: 'admin', label: 'Administrator', description: 'Workspace admins' },
@@ -24,7 +24,6 @@ interface AISettingsFormValues {
   bot_name: string;
   system_instructions: string;
   allowed_roles_for_handover: HandoverRole[];
-  greeting_message: string;
 }
 
 const validationSchema = Yup.object({
@@ -40,7 +39,6 @@ const validationSchema = Yup.object({
   allowed_roles_for_handover: Yup.array()
     .of(Yup.string().oneOf(HANDOVER_ROLES.map((r) => r.value)))
     .min(1, 'Select at least one role for human handover'),
-  greeting_message: Yup.string().max(MAX_GREETING_LENGTH, `Greeting must be ${MAX_GREETING_LENGTH} characters or less`),
 });
 
 const inputClass =
@@ -83,7 +81,6 @@ export function AISettings() {
       bot_name: aiSettings?.bot_name ?? 'Support Assistant',
       system_instructions: aiSettings?.system_instructions ?? '',
       allowed_roles_for_handover: aiSettings?.allowed_roles_for_handover ?? ['admin', 'manager'],
-      greeting_message: aiSettings?.greeting_message ?? '',
     }),
     [aiSettings]
   );
@@ -98,7 +95,6 @@ export function AISettings() {
           bot_name: values.bot_name.trim(),
           system_instructions: values.system_instructions.trim(),
           allowed_roles_for_handover: values.allowed_roles_for_handover,
-          greeting_message: values.greeting_message.trim(),
         })
       );
     },
@@ -126,7 +122,7 @@ export function AISettings() {
 
   if (isLoadingAISettings && !aiSettings) {
     return (
-      <div className="max-w-3xl mx-auto space-y-6" aria-busy="true">
+      <div className="space-y-6" aria-busy="true">
         <div className="h-8 w-64 rounded bg-surface-container animate-pulse" />
         <div className="h-96 rounded-2xl bg-surface-container animate-pulse" />
       </div>
@@ -135,7 +131,7 @@ export function AISettings() {
 
   if (aiSettingsLoadError && !aiSettings) {
     return (
-      <div className="max-w-3xl mx-auto">
+      <div>
         <div
           role="alert"
           className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-error-container/20 border border-error/30 text-sm text-error"
@@ -159,17 +155,10 @@ export function AISettings() {
   const botNameError = showError('bot_name');
   const instructionsError = showError('system_instructions');
   const rolesError = showError('allowed_roles_for_handover');
-  const greetingError = showError('greeting_message');
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-on-surface">AI Assistant</h1>
-          <p className="text-sm text-on-surface-variant">
-            Configure how your AI assistant responds to customers and when it hands over to your team.
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-end">
         {/* Test the saved rules and knowledge base like a customer would */}
         <button
           type="button"
@@ -204,12 +193,7 @@ export function AISettings() {
           <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <Bot className="w-5 h-5" />
           </span>
-          <div>
-            <h2 className="text-base font-semibold text-on-surface">Assistant & automation setup</h2>
-            <p className="text-sm text-on-surface-variant mt-0.5">
-              Changes apply to new customer conversations.
-            </p>
-          </div>
+          <h2 className="self-center text-base font-semibold text-on-surface">Assistant & automation setup</h2>
         </div>
 
         <div className="p-6 space-y-6">
@@ -270,35 +254,16 @@ export function AISettings() {
             </div>
           </div>
 
-          {/* Greeting: the menu message at the start of a visit (only when there's more than one thing to choose) */}
-          <div className="space-y-1.5">
-            <label htmlFor="greeting_message" className="block text-sm font-medium text-on-surface">
-              Greeting message
-            </label>
-            <textarea
-              id="greeting_message"
-              name="greeting_message"
-              rows={2}
-              value={values.greeting_message}
-              onChange={handleChange}
-              onBlur={handleBlur}
-              aria-invalid={!!greetingError}
-              placeholder="Hi! 👋 Welcome to our store. How can we help you today?"
-              className={`${inputClass} ${fieldBorder(!!greetingError)} resize-y`}
-            />
-            <div className="flex justify-between gap-3">
-              <p className={`text-xs ${greetingError ? 'text-error' : 'text-on-surface-variant'}`}>
-                {greetingError ??
-                  'Optional. Sent with the "Place an order / Report a problem / Something else" buttons when a customer starts a chat with just a greeting. Leave empty for the default.'}
-              </p>
-              <span
-                className={`text-xs shrink-0 ${
-                  values.greeting_message.length > MAX_GREETING_LENGTH ? 'text-error' : 'text-on-surface-variant'
-                }`}
-              >
-                {values.greeting_message.length}/{MAX_GREETING_LENGTH}
-              </span>
-            </div>
+          {/* The greeting and its options are built on the Chat Menu page */}
+          <div className="flex items-start gap-3 p-3 rounded-xl border border-outline/30 bg-surface">
+            <Workflow className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+            <p className="text-sm text-on-surface-variant">
+              The greeting, its options and follow-up questions are set on the{' '}
+              <Link to="/dashboard/chat-menu" className="font-medium text-primary underline underline-offset-2">
+                Chat Menu
+              </Link>{' '}
+              page.
+            </p>
           </div>
 
           {/* Handover roles */}

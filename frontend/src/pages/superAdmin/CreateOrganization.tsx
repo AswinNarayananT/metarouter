@@ -95,17 +95,6 @@ export function CreateOrganizationPage() {
 
   return (
     <Container size="md">
-      <div className="mb-6">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-3 border border-outline-variant/30">
-          <Building2 className="size-3.5" />
-          Workspace Management
-        </div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">New Organization</h1>
-        <p className="mt-1.5 text-sm text-on-surface-variant">
-          Invite the client's administrator by email. They set up the workspace and choose their own password.
-        </p>
-      </div>
-
       {error && (
         <div className="mb-6 p-3.5 rounded-xl bg-error/10 border border-error/20 text-error text-sm flex items-center gap-2.5">
           <AlertCircle className="size-4 shrink-0" />
@@ -142,9 +131,7 @@ export function CreateOrganizationPage() {
             <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
               <Mail className="size-4 text-primary" />
               <span>Client Administrator Invitation</span>
-            </h2>
-            <p className="text-xs text-on-surface-variant">We'll email them a single-use setup link.</p>
-          </div>
+            </h2>          </div>
 
           <form onSubmit={inviteFormik.handleSubmit} noValidate className="space-y-5">
             <div>

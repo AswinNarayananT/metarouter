@@ -97,7 +97,7 @@ export function AssignMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 w-60 max-h-80 overflow-y-auto z-40 p-1 rounded-xl bg-surface-container-low border border-outline-variant/40 shadow-lg"
+          className="absolute right-0 top-full mt-1 w-60 max-h-80 overflow-y-auto z-40 p-1 rounded-xl bg-surface-container-lowest border border-border-subtle shadow-elevated"
         >
           {currentUserId !== null && !isMine && (
             <button

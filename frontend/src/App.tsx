@@ -34,6 +34,7 @@ import { TeamMembers } from '@/pages/workspace/TeamMembers';
 import { InviteMembers } from '@/pages/workspace/InviteMembers';
 import { WorkspaceSettings } from '@/pages/workspace/WorkspaceSettings';
 import { AISettings } from '@/pages/workspace/AISettings';
+import { ChatMenu } from '@/pages/workspace/ChatMenu';
 import { Channels } from '@/pages/workspace/Channels';
 import { Orders } from '@/pages/workspace/Orders';
 import { Products } from '@/pages/workspace/Products';
@@ -228,6 +229,16 @@ function App() {
               <AdminOnlyRoute>
                 <FeatureRoute feature="customer_chats" featureTitle="AI Assistant">
                   <AISettings />
+                </FeatureRoute>
+              </AdminOnlyRoute>
+            }
+          />
+          <Route
+            path="chat-menu"
+            element={
+              <AdminOnlyRoute>
+                <FeatureRoute feature="customer_chats" featureTitle="Chat Menu">
+                  <ChatMenu />
                 </FeatureRoute>
               </AdminOnlyRoute>
             }

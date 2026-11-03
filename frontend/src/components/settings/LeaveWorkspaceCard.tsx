@@ -12,13 +12,7 @@ export function LeaveWorkspaceCard() {
   return (
     <section className="bg-surface-container-low border border-error/30 rounded-2xl">
       <div className="flex flex-wrap items-center justify-between gap-4 p-6">
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-error">Leave workspace</h2>
-          <p className="text-sm text-on-surface-variant mt-0.5">
-            You'll lose access to {user?.organization_name ?? 'this workspace'} and be signed out. Your past messages
-            and tickets stay.
-          </p>
-        </div>
+        <h2 className="min-w-0 text-base font-semibold text-error">Leave workspace</h2>
         <button
           type="button"
           onClick={() => setOpen(true)}

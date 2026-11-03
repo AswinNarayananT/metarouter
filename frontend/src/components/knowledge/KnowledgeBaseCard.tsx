@@ -50,12 +50,7 @@ export function KnowledgeBaseCard() {
         <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
           <BookOpen className="w-5 h-5" />
         </span>
-        <div>
-          <h2 className="text-base font-semibold text-on-surface">Knowledge base</h2>
-          <p className="text-sm text-on-surface-variant mt-0.5">
-            Manuals and policies the assistant answers from. PDFs are processed in the background.
-          </p>
-        </div>
+        <h2 className="self-center text-base font-semibold text-on-surface">Knowledge base</h2>
       </div>
 
       <div className="p-6 space-y-5">

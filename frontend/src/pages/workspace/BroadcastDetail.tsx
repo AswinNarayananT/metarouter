@@ -44,7 +44,7 @@ export function BroadcastDetail() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-6">
       <Link to="/dashboard/broadcast" className="inline-flex items-center gap-1 text-sm text-on-surface-variant hover:text-on-surface">
         <ArrowLeft className="w-4 h-4" /> Broadcasts
       </Link>

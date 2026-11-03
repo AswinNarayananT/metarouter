@@ -12,7 +12,8 @@ from app.config import settings
 from app.core.features import is_feature_enabled
 from app.services.ai_service import generate_ai_response
 from app.services.messaging_service import queue_outgoing_message, queue_interactive_message
-from app.services.intent_service import enabled_intent_options, greeting_text, greeting_buttons, tapped_intent, classify_first_message
+from app.services.intent_service import enabled_intent_options, tapped_intent, classify_first_message
+from app.services.chat_flow_service import FLOW_REPLY_PREFIX, load_flow, find_node, question_message, tapped_node, render_text
 from app.services.order_chat_service import (
     ORDERING_PROMPT, PRODUCT_LIST_OFFER, VIEW_PRODUCTS_BUTTON, NO_PRODUCTS_TEXT, BROWSE_PREFIX, CATEGORY_PREFIX, PRODUCT_PREFIX,
     USE_BUTTONS_TEXT, category_menu, product_menu, parse_browse_reply, parse_category_reply, tapped_product,
@@ -216,25 +217,43 @@ def respond_to_customer(db: Session, conversation: Conversation, user_text: str,
     if order_in_progress(conversation.id) and not ai_auto_reply_on(db, conversation.organization_id):
         queue_outgoing_message(db, conversation, sender="model", content=USE_BUTTONS_TEXT)
         return
-    # 2. What the customer came for (asked once per visit): order, problem or something else
-    if route_intent(db, conversation, user_text, reply_id):
+    # 2. The chat menu (asked once per visit) and what the customer came for: order, problem or something else
+    if route_flow(db, conversation, user_text, reply_id):
         return
     # 3. Everything else: the AI answers
     reply_with_ai(db, conversation, user_text)
 
 
-def send_greeting_menu(db: Session, conversation: Conversation, options: list):
-    queue_interactive_message(db, conversation, greeting_text(db, conversation), buttons=greeting_buttons(options))
+ANSWER_THEN_QUESTION_SECONDS = 2  # A question right after an answer: sent a moment later so it arrives second
+
+
+def send_question(db: Session, conversation: Conversation, flow: dict, node: dict, orders_on: bool, after_answer: bool = False):
+    message = question_message(db, conversation, flow, node, orders_on)
+    if message.get("buttons") or message.get("menu"):
+        delay = {"send_after_seconds": ANSWER_THEN_QUESTION_SECONDS} if after_answer else {}
+        queue_interactive_message(db, conversation, message["body"], buttons=message.get("buttons"), menu=message.get("menu"), **delay)
+    else:
+        queue_outgoing_message(db, conversation, sender="model", content=message["body"])
     conversation.menu_sent_at = datetime.now(timezone.utc)
     db.commit()
 
 
-def route_intent(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str]) -> bool:
+def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str]) -> bool:
     # True = handled here (no AI reply); False = let the AI answer
-    options = enabled_intent_options(db, conversation.organization_id)
+    organization_id = conversation.organization_id
+    options = enabled_intent_options(db, organization_id)
     allowed = {option["id"] for option in options} | {"other"}
+    flow, is_default = load_flow(db, organization_id)
+    orders_on = is_feature_enabled(db, organization_id, "orders")
 
-    # 1. A tap on the greeting menu (an option whose module was switched off since is just text for the AI)
+    # 1. A tap on the chat menu (an option deleted since, or leading to an order while Orders is off, is just text for the AI)
+    if reply_id and reply_id.startswith(FLOW_REPLY_PREFIX):
+        node = tapped_node(flow, reply_id, orders_on)
+        if not node:
+            return False
+        return run_node(db, conversation, flow, node, user_text, orders_on)
+
+    # 2. A tap on the menu sent before admins could build their own (an option whose module was switched off is text for the AI)
     intent = tapped_intent(reply_id)
     if intent:
         if intent not in allowed:
@@ -243,27 +262,28 @@ def route_intent(db: Session, conversation: Conversation, user_text: str, reply_
         db.commit()
         return start_intent(db, conversation, intent, user_text, tapped=True)
 
-    # 2. Already known this visit, or only one option (nothing to ask): the normal flow
-    if conversation.intent or len(options) < 2:
+    # 3. Already known this visit, or the default menu with only one option (nothing to ask): the normal flow
+    if conversation.intent or (is_default and len(options) < 2):
         return False
+    start = find_node(flow, flow["start"])
 
-    # 3. AI auto-reply off: no Gemini, the customer picks from the menu (a typed answer goes to the team)
-    if not ai_auto_reply_on(db, conversation.organization_id):
+    # 4. AI auto-reply off: no Gemini, the customer picks from the menu (a typed answer goes to the team)
+    if not ai_auto_reply_on(db, organization_id):
         if conversation.menu_sent_at:
             conversation.intent = "other"
             db.commit()
             return False
-        send_greeting_menu(db, conversation, options)
+        send_question(db, conversation, flow, start, orders_on)
         return True
 
-    # 4. A clear first message skips the menu; a greeting gets it (asked once: after that the AI answers)
+    # 5. A clear first message skips the menu; a greeting gets it (asked once: after that the AI answers)
     result = classify_first_message(user_text)
     if result == "unclear" or result not in allowed:
         if conversation.menu_sent_at or result != "unclear":
             conversation.intent = "other"
             db.commit()
             return False
-        send_greeting_menu(db, conversation, options)
+        send_question(db, conversation, flow, start, orders_on)
         return True
 
     conversation.intent = result
@@ -271,7 +291,45 @@ def route_intent(db: Session, conversation: Conversation, user_text: str, reply_
     return start_intent(db, conversation, result, user_text, tapped=False)
 
 
-def start_intent(db: Session, conversation: Conversation, intent: str, user_text: str, tapped: bool) -> bool:
+BOX_INTENTS = {"order": "order", "problem": "support", "ai": "other"}  # Built-in boxes of the chat menu
+
+
+def run_node(db: Session, conversation: Conversation, flow: dict, node: dict, user_text: str, orders_on: bool) -> bool:
+    # The box an option leads to; its text may be empty (= the default message)
+    kind = node["type"]
+    text = render_text(db, conversation, node.get("text") or "")
+
+    # 1. Order / Report a problem / AI answers: the same as the menu's built-in options
+    if kind in BOX_INTENTS:
+        conversation.intent = BOX_INTENTS[kind]
+        db.commit()
+        return start_intent(db, conversation, BOX_INTENTS[kind], user_text, tapped=True, prompt=text or None)
+
+    # 2. Talk to the team (taken over before the message is queued, like the AI's handover)
+    if kind == "team":
+        conversation.status = ConversationStatus.HUMAN_TAKEOVER
+        db.commit()
+        queue_outgoing_message(db, conversation, sender="model", content=text or HANDOVER_FALLBACK_TEXT)
+        hand_over_to_team(db, conversation, user_text, "The customer asked for the team in the chat menu")
+        return True
+
+    # 3. An answer and / or a question: the next tap continues the menu, anything typed goes to the AI
+    if not conversation.intent:
+        conversation.intent = "other"
+        db.commit()
+    if kind == "answer":
+        if text:
+            queue_outgoing_message(db, conversation, sender="model", content=text)
+        node = find_node(flow, node.get("next"))
+        if not node:
+            return True
+        send_question(db, conversation, flow, node, orders_on, after_answer=bool(text))
+        return True
+    send_question(db, conversation, flow, node, orders_on)
+    return True
+
+
+def start_intent(db: Session, conversation: Conversation, intent: str, user_text: str, tapped: bool, prompt: Optional[str] = None) -> bool:
     ai_on = ai_auto_reply_on(db, conversation.organization_id)
 
     # Order: the product list (works without the AI, it's all taps); no ticket
@@ -293,7 +351,7 @@ def start_intent(db: Session, conversation: Conversation, intent: str, user_text
             return True
         start_ticket_session(db, conversation, visit_first_message_id(db, conversation))
         if tapped:
-            queue_outgoing_message(db, conversation, sender="model", content=SUPPORT_PROMPT_TEXT)
+            queue_outgoing_message(db, conversation, sender="model", content=prompt or SUPPORT_PROMPT_TEXT)
             return True
         return False  # They already described it: the AI answers
 
@@ -303,7 +361,7 @@ def start_intent(db: Session, conversation: Conversation, intent: str, user_text
         hand_over_to_team(db, conversation, user_text, AUTO_REPLY_OFF_CHAT_NOTE, AUTO_REPLY_OFF_TICKET_NOTE)
         return True
     if tapped:
-        queue_outgoing_message(db, conversation, sender="model", content=OTHER_PROMPT_TEXT)
+        queue_outgoing_message(db, conversation, sender="model", content=prompt or OTHER_PROMPT_TEXT)
         return True
     return False
 

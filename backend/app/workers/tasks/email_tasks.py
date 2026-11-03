@@ -1,19 +1,75 @@
 import html
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import time
+from urllib.parse import quote, urlsplit
+import requests
 from app.workers.celery_app import celery_app
 from app.config import settings
 
-SMTP_TIMEOUT_SECONDS = 20
+EMAIL_TIMEOUT_SECONDS = 20
 RETRY_BASE_SECONDS = 60
+
+# App-only Microsoft Graph token, reused by this worker until shortly before it expires
+_graph_token = {"value": None, "expires_at": 0.0}
+
+
+def outlook_configured() -> bool:
+    return all([settings.OUTLOOK_TENANT_ID, settings.OUTLOOK_CLIENT_ID, settings.OUTLOOK_CLIENT_SECRET, settings.OUTLOOK_EMAILS_FROM_EMAIL])
+
+
+def _get_graph_token() -> str:
+    # 1. Still valid for at least a minute: reuse it
+    if _graph_token["value"] and time.time() < _graph_token["expires_at"] - 60:
+        return _graph_token["value"]
+
+    # 2. Client credentials: the app's Application permission Mail.Send
+    graph = urlsplit(settings.MS_GRAPH_API_URL)
+    response = requests.post(
+        f"{settings.OUTLOOK_LOGIN_URL}/{settings.OUTLOOK_TENANT_ID}/oauth2/v2.0/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": settings.OUTLOOK_CLIENT_ID,
+            "client_secret": settings.OUTLOOK_CLIENT_SECRET,
+            "scope": f"{graph.scheme}://{graph.netloc}/.default"
+        },
+        timeout=EMAIL_TIMEOUT_SECONDS
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Outlook token request failed ({response.status_code}): {response.text[:300]}")
+
+    data = response.json()
+    _graph_token["value"] = data["access_token"]
+    _graph_token["expires_at"] = time.time() + int(data.get("expires_in", 3600))
+    return _graph_token["value"]
+
+
+def send_email(to_email: str, subject: str, html_content: str):
+    # Sent as OUTLOOK_EMAILS_FROM_EMAIL through Microsoft Graph; 202 = accepted for delivery
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": html_content},
+            "toRecipients": [{"emailAddress": {"address": to_email}}]
+        },
+        "saveToSentItems": False
+    }
+    response = requests.post(
+        f"{settings.MS_GRAPH_API_URL}/users/{quote(settings.OUTLOOK_EMAILS_FROM_EMAIL)}/sendMail",
+        json=message,
+        headers={"Authorization": f"Bearer {_get_graph_token()}"},
+        timeout=EMAIL_TIMEOUT_SECONDS
+    )
+    if response.status_code == 401:
+        _graph_token["value"] = None  # Revoked or expired early: the retry gets a new token
+    if response.status_code != 202:
+        raise RuntimeError(f"Outlook sendMail failed ({response.status_code}): {response.text[:300]}")
+
 
 @celery_app.task(name="send_invitation_email_task", bind=True, max_retries=3)
 def send_invitation_email_task(self, to_email: str, name: str, org_name: str, invite_link: str):
     """
-    Celery background task to send workspace invitation emails securely via Gmail SMTP.
+    Celery background task to send workspace invitation emails through Outlook (Microsoft Graph).
     """
-    # Collapse whitespace so a newline in the org name can't inject extra headers
+    # Collapse whitespace so a newline in the org name can't break the subject
     subject = f"You've been invited to join {' '.join(org_name.split())} on MetaRouter"
 
     # name / org_name are user-provided: escape them so they can't inject HTML or links
@@ -33,29 +89,8 @@ def send_invitation_email_task(self, to_email: str, name: str, org_name: str, in
     </div>
     """
 
-    # Plain-text alternative: emails without one are more likely to be marked as spam
-    text_content = (
-        f"Welcome to {org_name}, {name}!\n\n"
-        "You have been invited to join the workspace as a team member.\n"
-        "Open the link below to set up your password and access your account. "
-        "This link is valid for 3 days.\n\n"
-        f"{invite_link}\n\n"
-        "If you didn't expect this invitation, you can safely ignore this email.\n"
-    )
-
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = settings.EMAILS_FROM_EMAIL
-    message["To"] = to_email
-    # Order matters: clients show the last part they support, so HTML goes last
-    message.attach(MIMEText(text_content, "plain"))
-    message.attach(MIMEText(html_content, "html"))
-
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.EMAILS_FROM_EMAIL, to_email, message.as_string())
+        send_email(to_email, subject, html_content)
     except Exception as exc:
         # Retry up to 3 times with exponential backoff: 60s, 120s, 240s
         raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
@@ -82,26 +117,8 @@ def send_password_reset_email_task(self, to_email: str, name: str, reset_link: s
     </div>
     """
 
-    text_content = (
-        f"Hi {name},\n\n"
-        "We received a request to reset your MetaRouter password.\n"
-        f"Open the link below to choose a new password. It works once and expires in {expires_minutes} minutes.\n\n"
-        f"{reset_link}\n\n"
-        "If you didn't ask for this, you can ignore this email. Your password won't change.\n"
-    )
-
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = settings.EMAILS_FROM_EMAIL
-    message["To"] = to_email
-    message.attach(MIMEText(text_content, "plain"))
-    message.attach(MIMEText(html_content, "html"))
-
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.EMAILS_FROM_EMAIL, to_email, message.as_string())
+        send_email(to_email, subject, html_content)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
 
@@ -113,9 +130,9 @@ def send_organization_onboarding_email_task(
     """
     Celery background task to send workspace onboarding invitation emails.
     """
-    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-        # If SMTP is not configured in environment, log and exit gracefully
-        print(f"[EMAIL] SMTP not configured; skipping email dispatch to {to_email}. Link: {invite_link}")
+    if not outlook_configured():
+        # If Outlook is not configured in environment, log and exit gracefully
+        print(f"[EMAIL] Outlook not configured; skipping email dispatch to {to_email}. Link: {invite_link}")
         return
 
     subject = "You're invited to launch your workspace on MetaRouter"
@@ -134,26 +151,7 @@ def send_organization_onboarding_email_task(
     </div>
     """
 
-    text_content = (
-        f"Welcome to MetaRouter!\n\n"
-        f"You have been invited to set up {org_name or 'your workspace'} as a workspace administrator.\n"
-        f"Open the link below to configure your workspace and set your password. This link expires in {expires_days} days:\n\n"
-        f"{invite_link}\n\n"
-        "Your password is private and never visible to platform administrators."
-    )
-
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = settings.EMAILS_FROM_EMAIL or "no-reply@metarouter.ai"
-    message["To"] = to_email
-    message.attach(MIMEText(text_content, "plain"))
-    message.attach(MIMEText(html_content, "html"))
-
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.EMAILS_FROM_EMAIL or "no-reply@metarouter.ai", to_email, message.as_string())
+        send_email(to_email, subject, html_content)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=RETRY_BASE_SECONDS * 2 ** self.request.retries)
-

@@ -105,7 +105,7 @@ export function NotificationBell() {
         aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="relative p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
+        className="relative p-2 rounded-full text-on-header/85 hover:bg-on-header/10 hover:text-on-header focus-visible:outline-on-header transition-colors cursor-pointer"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -119,9 +119,9 @@ export function NotificationBell() {
         <div
           role="dialog"
           aria-label="Notifications"
-          className="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-full sm:mt-2 sm:w-96 z-50 rounded-2xl bg-surface-container-low border border-outline-variant/40 shadow-xl overflow-hidden"
+          className="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-full sm:mt-2 sm:w-96 z-50 rounded-card bg-surface-container-lowest border border-border-subtle shadow-elevated overflow-hidden text-on-surface"
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/30">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
             <h2 className="text-sm font-semibold text-on-surface">Notifications</h2>
             {unreadCount > 0 && (
               <button
@@ -143,7 +143,7 @@ export function NotificationBell() {
                 aria-selected={tab === t.value}
                 onClick={() => switchTab(t.value)}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                  tab === t.value ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container'
+                  tab === t.value ? 'bg-primary-fixed text-on-primary-fixed' : 'text-on-surface-variant hover:bg-surface-container'
                 }`}
               >
                 {t.label}

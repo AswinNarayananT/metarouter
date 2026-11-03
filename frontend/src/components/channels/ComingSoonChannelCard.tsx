@@ -5,12 +5,10 @@ export function ComingSoonChannelCard({
   icon,
   iconClassName,
   name,
-  description,
 }: {
   icon: React.ReactNode;
   iconClassName: string;
   name: string;
-  description: string;
 }) {
   return (
     <ChannelCard
@@ -18,7 +16,6 @@ export function ComingSoonChannelCard({
       icon={icon}
       iconClassName={iconClassName}
       name={name}
-      description={description}
       status={
         <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-surface-container text-on-surface-variant">
           Coming soon

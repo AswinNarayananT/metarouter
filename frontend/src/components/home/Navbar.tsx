@@ -54,7 +54,7 @@ export function Navbar() {
               <a
                 key={item.label}
                 href={item.href}
-                className="px-3.5 py-2 text-sm font-medium text-on-surface-variant rounded-lg hover:text-primary hover:bg-surface-container-low transition-colors duration-150"
+                className="px-3.5 py-2 text-sm font-medium text-on-surface-variant rounded-lg hover:text-primary hover:bg-surface-container transition-colors duration-150"
               >
                 {item.label}
               </a>
@@ -99,7 +99,7 @@ export function Navbar() {
 
           {/* Mobile menu button */}
           <button
-            className="md:hidden p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors"
+            className="md:hidden p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
             onClick={() => setMobileOpenPath(mobileOpen ? null : location.pathname)}
             aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={mobileOpen}
@@ -122,7 +122,7 @@ export function Navbar() {
             <a
               key={item.label}
               href={item.href}
-              className="block px-3 py-2 text-sm font-medium text-on-surface-variant rounded-lg hover:text-primary hover:bg-surface-container-low transition-colors"
+              className="block px-3 py-2 text-sm font-medium text-on-surface-variant rounded-lg hover:text-primary hover:bg-surface-container transition-colors"
             >
               {item.label}
             </a>

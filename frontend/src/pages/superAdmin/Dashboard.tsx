@@ -31,7 +31,6 @@ const STAT_META = [
 export function SuperAdminDashboard() {
   const dispatch = useAppDispatch();
   const { stats, isLoading, error } = useAppSelector((state) => state.organizations);
-  const user = useAppSelector((state) => state.superAdmin.user);
 
   useEffect(() => {
     dispatch(fetchDashboardStats());
@@ -49,20 +48,7 @@ export function SuperAdminDashboard() {
   return (
     <Container>
       {/* Top Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-3 border border-outline-variant/30">
-            <Sparkles className="size-3.5" />
-            Super Admin Control Center
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-on-surface">
-            Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
-          </h1>
-          <p className="mt-1 text-sm text-on-surface-variant max-w-2xl">
-            Monitor infrastructure health, manage tenant workspaces, and oversee AI gateway operations across all client accounts.
-          </p>
-        </div>
-
+      <div className="flex justify-end gap-4 mb-6">
         <div className="flex items-center gap-3">
           <Button
             variant="secondary"
@@ -408,7 +394,7 @@ export function SuperAdminDashboard() {
                 <li key={org.id}>
                   <Link
                     to={`/admin/organizations/${org.id}`}
-                    className="flex items-center gap-4 px-5 py-4 hover:bg-surface-container-low/60 transition-colors group"
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-surface-container transition-colors group"
                   >
                     <div className="size-10 rounded-xl bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0 border border-primary/20">
                       {org.name[0]?.toUpperCase() || 'O'}

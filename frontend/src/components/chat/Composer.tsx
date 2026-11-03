@@ -146,10 +146,10 @@ export function Composer({
   const isImage = file?.type.startsWith('image/');
 
   return (
-    <div className="shrink-0 px-3 sm:px-5 py-3 border-t border-outline-variant/30 bg-surface-container-low">
+    <div className="shrink-0 px-3 sm:px-5 py-2.5 border-t border-border-subtle bg-surface">
       {/* Attached file: the text below becomes its caption */}
       {file && (
-        <div className="max-w-3xl mx-auto mb-2 flex items-center gap-2 p-2 rounded-xl bg-surface border border-outline-variant/40">
+        <div className="max-w-3xl mx-auto mb-2 flex items-center gap-2 p-2 rounded-card bg-surface-container-lowest border border-border-subtle shadow-subtle">
           <span className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
             {isImage ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
           </span>
@@ -161,7 +161,7 @@ export function Composer({
             type="button"
             onClick={() => onFileChange?.(null)}
             aria-label="Remove file"
-            className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container cursor-pointer"
+            className="p-1.5 rounded-full text-on-surface-variant hover:bg-surface-container cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -169,14 +169,14 @@ export function Composer({
       )}
 
       <div className="max-w-3xl mx-auto flex items-end gap-2">
-        <div className="relative flex-1 flex items-end gap-1 bg-surface border border-outline/30 rounded-2xl px-2 focus-within:border-primary transition-colors">
+        <div className="relative flex-1 flex items-end gap-0.5 bg-surface-container-lowest border border-transparent rounded-3xl px-1.5 shadow-subtle focus-within:border-primary transition-colors">
           <button
             type="button"
             onClick={() => setEmojiOpen((o) => !o)}
             disabled={disabled}
             aria-label="Add emoji"
             aria-expanded={emojiOpen}
-            className="p-2 my-1 rounded-lg text-on-surface-variant hover:text-on-surface disabled:opacity-40 cursor-pointer"
+            className="p-2 my-0.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 cursor-pointer"
           >
             <Smile className="w-5 h-5" />
           </button>
@@ -189,7 +189,7 @@ export function Composer({
               aria-label="Quick replies"
               aria-expanded={pickerOpen}
               title="Insert a saved reply (or type / in the box)"
-              className="p-2 my-1 rounded-lg text-on-surface-variant hover:text-on-surface disabled:opacity-40 cursor-pointer"
+              className="p-2 my-0.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 cursor-pointer"
             >
               <Zap className="w-5 h-5" />
             </button>
@@ -230,7 +230,7 @@ export function Composer({
             placeholder={disabled ? 'Free text is unavailable: send a template instead' : file ? 'Add a caption (optional)' : placeholder}
             disabled={disabled}
             aria-label="Message"
-            className="flex-1 resize-none bg-transparent py-3 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none"
+            className="flex-1 resize-none bg-transparent py-2.5 px-1 text-sm text-on-surface placeholder:text-outline focus:outline-none"
           />
           {onFileChange && (
             <>
@@ -250,7 +250,7 @@ export function Composer({
                 disabled={disabled}
                 aria-label="Attach file"
                 title="Send an image or document"
-                className="p-2 my-1 rounded-lg text-on-surface-variant hover:text-on-surface disabled:opacity-40 cursor-pointer"
+                className="p-2 my-0.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container disabled:opacity-40 cursor-pointer"
               >
                 <Paperclip className="w-5 h-5" />
               </button>
@@ -262,7 +262,7 @@ export function Composer({
               onClick={onOpenTemplates}
               aria-label="Send a template"
               title="Send an approved WhatsApp template (works any time)"
-              className="p-2 my-1 rounded-lg text-on-surface-variant hover:text-on-surface cursor-pointer"
+              className="p-2 my-0.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container cursor-pointer"
             >
               <LayoutTemplate className="w-5 h-5" />
             </button>
@@ -273,7 +273,7 @@ export function Composer({
           onClick={onSend}
           disabled={!canSend}
           aria-label={file ? 'Send file' : 'Send message'}
-          className="h-12 w-12 shrink-0 rounded-2xl bg-primary text-on-primary flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          className="h-11 w-11 shrink-0 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-subtle hover:bg-primary-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
         </button>
@@ -283,7 +283,7 @@ export function Composer({
         <div className="max-w-3xl mx-auto mt-1.5 px-1 flex flex-wrap items-center gap-x-3 gap-y-1">
           <p className={`text-[11px] ${error ? 'text-error' : 'text-on-surface-variant'}`}>{error ?? disabledReason}</p>
           {disabled && onOpenTemplates && (
-            <button type="button" onClick={onOpenTemplates} className="text-[11px] font-semibold text-primary hover:underline cursor-pointer">
+            <button type="button" onClick={onOpenTemplates} className="text-[11px] font-semibold text-primary-strong hover:underline cursor-pointer">
               Send a template
             </button>
           )}

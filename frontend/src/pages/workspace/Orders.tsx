@@ -81,13 +81,10 @@ export function Orders() {
     statuses ? statuses.reduce((sum, s) => sum + (statusCounts[s] ?? 0), 0) : Object.values(statusCounts).reduce((sum, n) => sum + (n ?? 0), 0);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Orders</h1>
-        <p className="text-sm text-on-surface-variant">
-          Orders customers place in WhatsApp. Accept them to take the items out of stock, then move them along. The customer gets a message at each key step.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <p className="text-sm text-on-surface-variant">
+        Accepting an order takes its items out of stock. The customer gets a WhatsApp message at each key step.
+      </p>
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-1" role="tablist" aria-label="Order status">
@@ -102,7 +99,7 @@ export function Orders() {
               aria-selected={active}
               onClick={() => dispatch(setOrderFilters({ tab: tab.id }))}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                active ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                active ? 'bg-primary-fixed text-on-primary-fixed' : 'bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
               }`}
             >
               {tab.label}

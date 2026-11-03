@@ -218,17 +218,10 @@ export function PlatformModulesPage() {
   return (
     <Container>
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-3 border border-outline-variant/30">
-            <Blocks className="size-3.5" />
-            Super Admin · Extensibility
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Platform Modules</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            Register new platform features, configure global availability, and manage default states for new workspaces.
-          </p>
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <p className="text-sm text-on-surface-variant">
+          Features you can switch on per workspace. The default decides whether new workspaces get them.
+        </p>
         <div className="flex items-center gap-2.5">
           <Button
             variant="secondary"
@@ -313,10 +306,10 @@ export function PlatformModulesPage() {
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition border',
+                  'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition',
                   selectedCategory === cat
-                    ? 'bg-primary text-on-primary border-primary shadow-sm'
-                    : 'bg-surface-container-low text-on-surface-variant border-outline-variant/20 hover:text-on-surface hover:bg-surface-container',
+                    ? 'bg-primary-fixed text-on-primary-fixed'
+                    : 'bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high',
                 )}
               >
                 {cat}
@@ -400,7 +393,7 @@ export function PlatformModulesPage() {
                       </div>
                     </div>
 
-                    <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant border border-outline-variant/20">
+                    <span className="text-[11px] font-medium capitalize px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">
                       {m.category}
                     </span>
                   </div>
@@ -491,11 +484,9 @@ export function PlatformModulesPage() {
                   <h3 className="text-lg font-bold text-on-surface">
                     {editingModule ? 'Edit Platform Module' : 'Add New Platform Module'}
                   </h3>
-                  <p className="text-xs text-on-surface-variant">
-                    {editingModule
-                      ? `Updating module key: ${editingModule.key}`
-                      : 'Define a new module key for developers and workspaces.'}
-                  </p>
+                  {editingModule && (
+                    <p className="text-xs text-on-surface-variant">Updating module key: {editingModule.key}</p>
+                  )}
                 </div>
               </div>
               <button
@@ -597,7 +588,7 @@ export function PlatformModulesPage() {
                         className={clsx(
                           'p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition',
                           isSelected
-                            ? 'bg-primary text-on-primary border-primary shadow-sm'
+                            ? 'bg-primary-fixed text-on-primary-fixed border-primary'
                             : 'bg-surface-container-low text-on-surface-variant border-outline-variant/30 hover:bg-surface-container hover:text-on-surface',
                         )}
                         title={opt.name}

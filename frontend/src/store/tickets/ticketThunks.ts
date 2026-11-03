@@ -14,6 +14,7 @@ export const fetchTickets = createAsyncThunk(
     const params: Record<string, string | number> = { page, page_size: TICKETS_PAGE_SIZE };
     if (filters.tab === 'mine') params.assigned = 'me';
     else if (filters.tab !== 'all') params.status = filters.tab;
+    if (filters.memberId && filters.tab !== 'mine') params.assigned = filters.memberId;
     if (filters.type) params.type = filters.type;
     if (filters.handledBy) params.handled_by = filters.handledBy;
     if (filters.groupId) params.group_id = filters.groupId;

@@ -157,7 +157,7 @@ export function AcceptInvitation() {
           </div>
           <h2 className="text-xl font-bold text-on-surface">Join Workspace</h2>
           <p className="text-xs text-on-surface-variant">
-            You've been invited to join <strong>{verifiedInvite?.organization_name}</strong> as a <span className="uppercase font-semibold text-primary">{verifiedInvite?.role}</span>.
+            You've been invited to join <strong>{verifiedInvite?.organization_name}</strong> as a <span className="capitalize font-semibold text-primary-strong">{verifiedInvite?.role}</span>.
           </p>
         </div>
 

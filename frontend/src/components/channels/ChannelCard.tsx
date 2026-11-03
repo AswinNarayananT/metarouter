@@ -3,7 +3,6 @@ export function ChannelCard({
   icon,
   iconClassName,
   name,
-  description,
   status,
   children,
   footer,
@@ -12,7 +11,6 @@ export function ChannelCard({
   icon: React.ReactNode;
   iconClassName: string;
   name: string;
-  description: string;
   status?: React.ReactNode;
   children?: React.ReactNode;
   footer?: React.ReactNode;
@@ -25,16 +23,13 @@ export function ChannelCard({
       }`}
       aria-label={name}
     >
-      <div className="flex items-start gap-4 p-5 sm:p-6">
+      <div className="flex items-center gap-4 p-5 sm:p-6">
         <span className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${iconClassName}`}>
           {icon}
         </span>
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold text-on-surface">{name}</h2>
-            {status}
-          </div>
-          <p className="text-sm text-on-surface-variant mt-0.5">{description}</p>
+        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+          <h2 className="text-base font-semibold text-on-surface">{name}</h2>
+          {status}
         </div>
       </div>
 

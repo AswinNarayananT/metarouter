@@ -78,11 +78,13 @@ class Settings(BaseSettings):
     NOTIFICATION_CLEANUP_INTERVAL_HOURS: int = 24  # How often old notifications are cleaned up
     STALLED_BROADCAST_MINUTES: int = 10  # Sending broadcast with no progress for this long is restarted
 
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    EMAILS_FROM_EMAIL: str = ""
+    # App emails (invites, password resets) go out through Microsoft Graph as this mailbox
+    OUTLOOK_TENANT_ID: str = ""
+    OUTLOOK_CLIENT_ID: str = ""
+    OUTLOOK_CLIENT_SECRET: str = ""
+    OUTLOOK_EMAILS_FROM_EMAIL: str = ""
+    OUTLOOK_LOGIN_URL: str = "https://login.microsoftonline.com"
+    MS_GRAPH_API_URL: str = "https://graph.microsoft.com/v1.0"
     FRONTEND_BASE_URL: str = "http://localhost:5173"
     INVITES_MAX_PER_ORG_PER_HOUR: int = 100  # Invite emails (new + resent) a workspace can send each hour
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30  # A "forgot password" link works this long, and only once

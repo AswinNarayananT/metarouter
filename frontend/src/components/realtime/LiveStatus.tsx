@@ -15,15 +15,15 @@ export function LiveStatus() {
 
   return (
     <span
-      className="hidden sm:inline-flex items-center gap-1.5 text-xs text-on-surface-variant"
+      className="hidden sm:inline-flex items-center gap-1.5 text-xs text-on-header/85"
       title={status === 'open' ? 'New messages appear instantly' : 'Live updates paused; retrying automatically'}
     >
       <span
         className={clsx(
           'w-2 h-2 rounded-full',
-          status === 'open' && 'bg-green-600',
-          (status === 'connecting' || status === 'reconnecting') && 'bg-amber-500 animate-pulse',
-          status === 'idle' && 'bg-outline-variant'
+          status === 'open' && 'bg-accent',
+          (status === 'connecting' || status === 'reconnecting') && 'bg-amber-400 animate-pulse',
+          status === 'idle' && 'bg-on-header/40'
         )}
         aria-hidden="true"
       />

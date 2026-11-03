@@ -9,7 +9,7 @@ const initialState: TicketState = {
   page: 1,
   totalPages: 1,
   statusCounts: {},
-  filters: { tab: 'active', type: '', handledBy: '', groupId: null, subgroupId: null, search: '' },
+  filters: { tab: 'active', type: '', handledBy: '', groupId: null, subgroupId: null, memberId: null, search: '' },
   isLoading: false,
   loadError: null,
   groups: [],

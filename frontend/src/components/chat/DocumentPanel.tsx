@@ -38,7 +38,7 @@ export function DocumentPanel({
               }`}
             >
               <AttachmentIcon kind={attachment.kind} className="w-12 h-12" />
-              <span className="text-xs font-bold uppercase tracking-wider">{attachment.extension}</span>
+              <span className="text-xs font-bold [text-transform:uppercase]">{attachment.extension}</span>
             </span>
           )}
           <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 group-focus-visible:bg-black/40 transition-colors">

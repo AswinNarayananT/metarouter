@@ -1,63 +1,119 @@
 @import "tailwindcss";
+/* The design tokens live in theme.css — edit colors there, not here */
+@import "./theme.css";
 
+/* dark: utilities follow the data-theme attribute, the same switch the tokens use */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Tailwind color names mapped onto the theme.css tokens.
+   Tints are mixed toward --surface and shades toward --text-primary, so they flip correctly in dark mode. */
 @theme {
-  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  /* The native UI font, as WhatsApp Web and Desktop use: Segoe UI on Windows, SF on Apple */
+  --font-body: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Roboto, Arial, sans-serif;
+  --font-display: var(--font-body);
 
-  --color-primary: #00685d;
-  --color-primary-container: #008376;
-  --color-primary-fixed: #8ff4e3;
-  --color-primary-fixed-dim: #72d8c8;
-  --color-on-primary: #ffffff;
-  --color-on-primary-container: #f4fffb;
-  --color-on-primary-fixed: #00201c;
-  --color-on-primary-fixed-variant: #005047;
+  /* Primary: main actions, links, focus. primary-fixed = the selected-state tint (active nav pill) */
+  --color-primary: var(--brand-primary);
+  --color-primary-strong: var(--brand-primary-strong);
+  --color-primary-container: var(--brand-primary-hover);
+  --color-primary-fixed: var(--brand-tint);
+  --color-primary-fixed-dim: color-mix(in oklch, var(--brand-primary) 30%, var(--surface));
+  --color-on-primary: var(--on-brand-primary);
+  --color-on-primary-container: var(--on-brand-primary);
+  --color-on-primary-fixed: var(--on-brand-tint);
+  --color-on-primary-fixed-variant: var(--brand-primary-strong);
 
-  --color-secondary: #4b41e1;
-  --color-secondary-container: #645efb;
-  --color-secondary-fixed: #e2dfff;
-  --color-secondary-fixed-dim: #c3c0ff;
-  --color-on-secondary: #ffffff;
-  --color-on-secondary-container: #fffbff;
-  --color-on-secondary-fixed: #0f0069;
-  --color-on-secondary-fixed-variant: #3323cc;
+  /* Secondary: readable deep teal (the bright accent is never used for text) */
+  --color-secondary: var(--brand-primary-strong);
+  --color-secondary-container: var(--brand-primary-hover);
+  --color-secondary-fixed: color-mix(in oklch, var(--brand-primary-strong) 14%, var(--surface));
+  --color-secondary-fixed-dim: color-mix(in oklch, var(--brand-primary-strong) 30%, var(--surface));
+  --color-on-secondary: var(--on-brand-primary);
+  --color-on-secondary-container: var(--on-brand-primary);
+  --color-on-secondary-fixed: color-mix(in oklch, var(--brand-primary-strong) 45%, var(--text-primary));
+  --color-on-secondary-fixed-variant: color-mix(in oklch, var(--brand-primary-strong) 75%, var(--text-primary));
 
-  --color-tertiary: #006b2e;
-  --color-tertiary-container: #00873c;
-  --color-tertiary-fixed: #66ff8e;
-  --color-tertiary-fixed-dim: #3de273;
-  --color-on-tertiary: #ffffff;
-  --color-on-tertiary-container: #f7fff3;
-  --color-on-tertiary-fixed: #002109;
-  --color-on-tertiary-fixed-variant: #005322;
+  /* Accent: decorative dots and badges */
+  --color-accent: var(--brand-accent);
+  --color-on-accent: var(--on-brand-accent);
 
-  --color-surface: #f8f9ff;
-  --color-surface-dim: #cbdbf5;
-  --color-surface-bright: #f8f9ff;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #eff4ff;
-  --color-surface-container: #e5eeff;
-  --color-surface-container-high: #dce9ff;
-  --color-surface-container-highest: #d3e4fe;
-  --color-surface-variant: #d3e4fe;
-  --color-surface-tint: #006b5f;
+  /* Tertiary: success / verified status */
+  --color-tertiary: var(--status-success);
+  --color-tertiary-container: var(--status-success);
+  --color-tertiary-fixed: color-mix(in oklch, var(--status-success) 14%, var(--surface));
+  --color-tertiary-fixed-dim: color-mix(in oklch, var(--status-success) 30%, var(--surface));
+  --color-on-tertiary: var(--surface);
+  --color-on-tertiary-container: var(--surface);
+  --color-on-tertiary-fixed: color-mix(in oklch, var(--status-success) 45%, var(--text-primary));
+  --color-on-tertiary-fixed-variant: color-mix(in oklch, var(--status-success) 75%, var(--text-primary));
 
-  --color-on-surface: #0b1c30;
-  --color-on-surface-variant: #3d4946;
-  --color-background: #f8f9ff;
-  --color-on-background: #0b1c30;
+  /* Surfaces. The page is surface; cards (container-low / -lowest) are the white panel on it;
+     container is hover rows and chips; high / highest are pressed and skeleton states */
+  --color-surface: var(--surface-app);
+  --color-surface-dim: var(--surface-stronger);
+  --color-surface-bright: var(--surface-app);
+  --color-surface-container-lowest: var(--surface);
+  --color-surface-container-low: var(--surface);
+  --color-surface-container: var(--surface-muted);
+  --color-surface-container-high: var(--surface-strong);
+  --color-surface-container-highest: var(--surface-stronger);
+  --color-surface-variant: var(--surface-strong);
+  --color-surface-tint: var(--brand-primary);
 
-  --color-outline: #6d7a77;
-  --color-outline-variant: #bdc9c5;
+  /* Text */
+  --color-on-surface: var(--text-primary);
+  --color-on-surface-variant: var(--text-secondary);
+  --color-background: var(--surface-app);
+  --color-on-background: var(--text-primary);
 
-  --color-inverse-surface: #213145;
-  --color-inverse-on-surface: #eaf1ff;
-  --color-inverse-primary: #72d8c8;
+  /* Borders */
+  --color-outline: var(--text-muted);
+  --color-outline-variant: var(--border-strong);
+  --color-border-subtle: var(--border-subtle);
 
-  --color-error: #ba1a1a;
-  --color-error-container: #ffdad6;
-  --color-on-error: #ffffff;
-  --color-on-error-container: #93000a;
+  --color-inverse-surface: var(--text-primary);
+  --color-inverse-on-surface: var(--surface);
+  --color-inverse-primary: color-mix(in oklch, var(--brand-primary) 30%, var(--surface));
+
+  --color-error: var(--status-error);
+  --color-error-container: var(--status-error-container);
+  --color-on-error: var(--on-status-error);
+  --color-on-error-container: var(--on-status-error-container);
+
+  /* Chat */
+  --color-chat-bg: var(--chat-bg);
+  --color-bubble-out: var(--bubble-out);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-out-meta: var(--bubble-out-meta);
+  --color-tick-read: var(--tick-read);
+
+  /* App header */
+  --color-header: var(--header-bg);
+  --color-on-header: var(--on-header);
+}
+
+/* Dark mode: the fixed status shades used as text (text-amber-700, text-rose-600, ...) would be
+   dark-on-dark, so they map to their light counterparts. The 500 tints used for backgrounds stay. */
+[data-theme="dark"] {
+  --color-amber-600: #fbbf24;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-emerald-600: #34d399;
+  --color-emerald-700: #6ee7b7;
+  --color-green-600: #4ade80;
+  --color-green-700: #86efac;
+  --color-rose-600: #fb7185;
+  --color-rose-700: #fda4af;
+  --color-rose-800: #fecdd3;
+  --color-rose-900: #ffe4e6;
+  --color-rose-950: #fff1f2;
+  --color-blue-600: #60a5fa;
+  --color-blue-700: #93c5fd;
+  --color-purple-600: #c084fc;
+  --color-purple-700: #d8b4fe;
+  --color-sky-600: #38bdf8;
+  --color-sky-700: #7dd3fc;
+  --color-pink-600: #f472b6;
 }
 
 @layer base {
@@ -66,17 +122,28 @@
   }
 
   html {
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: var(--font-body);
     scroll-behavior: smooth;
+  }
+
+  /* Counts, prices and timers line up in columns */
+  body {
+    font-variant-numeric: tabular-nums;
   }
 
   body {
     margin: 0;
     padding: 0;
-    background-color: #f8f9ff;
-    color: #0b1c30;
+    background-color: var(--color-background);
+    color: var(--color-on-background);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Keyboard focus is always visible; components with their own ring override this */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   #root {
@@ -89,19 +156,28 @@
 }
 
 @layer utilities {
+  /* Design rule: no all-caps labels. Labels are written in sentence or title case and read better
+     as written; `uppercase` (and the wide tracking that came with it) is neutralised app-wide.
+     For text that really is an acronym-style code (file extensions), use [text-transform:uppercase]. */
+  .uppercase {
+    text-transform: none;
+  }
+
+  .uppercase[class*='tracking-'] {
+    letter-spacing: normal;
+  }
+
+  /* Kept as names for existing markup; the system has no gradients or glows */
   .gradient-text {
-    background: linear-gradient(135deg, #00685d 0%, #00873c 50%, #4b41e1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-primary-strong);
   }
 
   .glow-primary {
-    box-shadow: 0 10px 30px -10px rgba(0, 104, 93, 0.35);
+    box-shadow: var(--shadow-subtle);
   }
 
   .glow-ambient {
-    box-shadow: 0 20px 45px -15px rgba(211, 228, 254, 0.7);
+    box-shadow: var(--shadow-xl);
   }
 
   .animate-float {

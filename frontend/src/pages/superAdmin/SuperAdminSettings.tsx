@@ -4,6 +4,7 @@ import * as Yup from 'yup';
 import { User, Shield, KeyRound, Save, Lock } from 'lucide-react';
 import { Card, Container } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { AppearanceCard } from '@/components/settings/AppearanceCard';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { updateSuperAdminProfile, changeSuperAdminPassword } from '@/store/superAdmin/superAdminThunks';
 import { resetSuperAdminSettingsState } from '@/store/superAdmin/superAdminSlice';
@@ -105,11 +106,6 @@ export function SuperAdminSettings() {
 
   return (
     <Container size="md">
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Super Admin Settings</h1>
-        <p className="mt-1 text-sm text-on-surface-variant">Manage your master profile credentials and platform security.</p>
-      </div>
-
       <div className="grid gap-6">
         {/* Profile Card */}
         <Card className="p-6">
@@ -252,6 +248,8 @@ export function SuperAdminSettings() {
             </div>
           </form>
         </Card>
+
+        <AppearanceCard />
       </div>
     </Container>
   );

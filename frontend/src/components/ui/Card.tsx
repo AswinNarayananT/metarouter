@@ -12,11 +12,11 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const cardVariants = {
   default:
-    'bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-xs transition-all duration-200',
+    'bg-surface-container-lowest border border-border-subtle rounded-card shadow-subtle transition-all duration-200',
   feature:
-    'bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-xs hover:shadow-md hover:border-primary/40 transition-all duration-200 group',
+    'bg-surface-container-lowest border border-border-subtle rounded-card shadow-subtle hover:shadow-elevated hover:border-primary/40 transition-all duration-200 group',
   form:
-    'bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-xl shadow-surface-container/60 transition-all duration-300',
+    'bg-surface-container-lowest border border-border-subtle rounded-card shadow-elevated transition-all duration-300',
 };
 
 export function Card({
@@ -30,7 +30,7 @@ export function Card({
     <div
       className={clsx(
         cardVariants[variant],
-        glow && 'shadow-lg shadow-surface-container-highest/80',
+        glow && 'shadow-elevated',
         className,
       )}
       {...props}

@@ -33,7 +33,7 @@ export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => vo
       ref={ref}
       role="dialog"
       aria-label="Emoji"
-      className="absolute bottom-full left-0 mb-2 w-72 max-w-[calc(100vw-2rem)] p-3 rounded-2xl bg-surface-container-low border border-outline-variant/40 shadow-xl z-30 space-y-2"
+      className="absolute bottom-full left-0 mb-2 w-72 max-w-[calc(100vw-2rem)] p-3 rounded-card bg-surface-container-lowest border border-border-subtle shadow-elevated z-30 space-y-2"
     >
       {EMOJI_GROUPS.map((group) => (
         <div key={group.label}>

@@ -172,7 +172,7 @@ export function Home() {
                       className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-colors ${
                         c.active
                           ? 'bg-surface-container-lowest shadow-xs border border-outline-variant/40'
-                          : 'hover:bg-surface-container-low'
+                          : 'hover:bg-surface-container'
                       }`}
                     >
                       <div className="size-7 rounded-lg bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0">

@@ -1,0 +1,258 @@
+/*
+ * Theme setup: the platform's design tokens. index.css maps these onto the Tailwind
+ * color names the components use (bg-primary, text-on-surface, bg-chat-bg, ...).
+ *
+ * Each theme has a light block (:root) and a dark block ([data-theme="dark"]).
+ * Light is the default; dark applies when a person picks it in Settings → Appearance
+ * (utils/theme.ts sets data-theme on <html>).
+ *
+ *   --brand-primary        Buttons, links, focus. Carries --on-brand-primary text.
+ *   --brand-primary-strong Primary as text on tints and light surfaces
+ *   --brand-tint           Selected things: active nav pill, active filter chip
+ *   --brand-accent         Decorative only: online dot, unread badge. Never text.
+ *   --surface              Cards, panels, sidebars, modals
+ *   --surface-app          Page background behind the cards
+ *   --surface-muted        Hover rows, chips, inputs on cards
+ *
+ * Switching themes: comment out both blocks of the active theme and uncomment both
+ * blocks of another. Never put a comment inside a commented-out block: its closing
+ * marker would end the outer comment early. Every text pair passes WCAG AA (4.5:1),
+ * icons and read ticks 3:1, in both modes.
+ */
+
+/* Status colors, shared by every theme */
+:root {
+  --status-success: #15803d;
+  --status-error: #b91c1c;
+  --status-error-container: #fee2e2;
+  --on-status-error: #ffffff;
+  --on-status-error-container: #991b1b;
+}
+
+[data-theme="dark"] {
+  --status-success: #4ade80;
+  --status-error: #f87171;
+  --status-error-container: #3b1d22;
+  --on-status-error: #111b21;
+  --on-status-error-container: #fca5a5;
+
+  color-scheme: dark;
+}
+
+/* ===== WhatsApp (active): the 2024 look. Neutral white panels, green only where you act ===== */
+:root {
+  --brand-primary: #007a64;
+  --brand-primary-strong: #0a5c4b;
+  --brand-primary-hover: #006653;
+  --on-brand-primary: #ffffff;
+  --brand-tint: #d9fdd3;
+  --on-brand-tint: #0a4f40;
+  --brand-accent: #25d366;
+  --on-brand-accent: #0b141a;
+  --header-bg: #ffffff;
+  --on-header: #111b21;
+
+  --text-primary: #111b21;
+  --text-secondary: #54656f;
+  --text-muted: #667781;
+
+  --border-subtle: #e9edef;
+  --border-strong: #c1c9ce;
+
+  --surface: #ffffff;
+  --surface-app: #f0f2f5;
+  --surface-muted: #f0f2f5;
+  --surface-strong: #e9edef;
+  --surface-stronger: #d1d7db;
+
+  --chat-bg: #efeae2;
+  --bubble-out: #d9fdd3;
+  --bubble-in: #ffffff;
+  --bubble-out-meta: #54656f;
+  --tick-read: #027eb5;
+}
+
+[data-theme="dark"] {
+  --brand-primary: #21c063;
+  --brand-primary-strong: #21c063;
+  --brand-primary-hover: #4ad17f;
+  --on-brand-primary: #0b141a;
+  --brand-tint: #103529;
+  --on-brand-tint: #5ae18a;
+  --brand-accent: #21c063;
+  --on-brand-accent: #0b141a;
+  --header-bg: #111b21;
+  --on-header: #e9edef;
+
+  --text-primary: #e9edef;
+  --text-secondary: #8696a0;
+  --text-muted: #8696a0;
+
+  --border-subtle: #222d34;
+  --border-strong: #3b4a54;
+
+  --surface: #111b21;
+  --surface-app: #0b141a;
+  --surface-muted: #202c33;
+  --surface-strong: #2a3942;
+  --surface-stronger: #374248;
+
+  --chat-bg: #0b141a;
+  --bubble-out: #144d37;
+  --bubble-in: #202c33;
+  --bubble-out-meta: #a5c9b4;
+  --tick-read: #53bdeb;
+}
+
+/* ===== WhatsApp Classic: teal top bar, beige wallpaper, pale-green bubbles
+:root {
+  --brand-primary: #007a64;
+  --brand-primary-strong: #075e54;
+  --brand-primary-hover: #006653;
+  --on-brand-primary: #ffffff;
+  --brand-tint: #dcf8c6;
+  --on-brand-tint: #075e54;
+  --brand-accent: #25d366;
+  --on-brand-accent: #0b141a;
+  --header-bg: #075e54;
+  --on-header: #ffffff;
+
+  --text-primary: #111b21;
+  --text-secondary: #54656f;
+  --text-muted: #667781;
+
+  --border-subtle: #e9edef;
+  --border-strong: #c1c9ce;
+
+  --surface: #ffffff;
+  --surface-app: #f0f2f5;
+  --surface-muted: #f0f2f5;
+  --surface-strong: #e9edef;
+  --surface-stronger: #d1d7db;
+
+  --chat-bg: #ece5dd;
+  --bubble-out: #dcf8c6;
+  --bubble-in: #ffffff;
+  --bubble-out-meta: #54656f;
+  --tick-read: #027eb5;
+}
+
+[data-theme="dark"] {
+  --brand-primary: #00af9c;
+  --brand-primary-strong: #00bfa5;
+  --brand-primary-hover: #00bfa5;
+  --on-brand-primary: #0d1418;
+  --brand-tint: #0d3b36;
+  --on-brand-tint: #6ee7d4;
+  --brand-accent: #25d366;
+  --on-brand-accent: #0b141a;
+  --header-bg: #1f2c34;
+  --on-header: #e9edef;
+
+  --text-primary: #e9edef;
+  --text-secondary: #8a9aa3;
+  --text-muted: #8a9aa3;
+
+  --border-subtle: #26333a;
+  --border-strong: #3b4a54;
+
+  --surface: #131c21;
+  --surface-app: #090e11;
+  --surface-muted: #1f2c34;
+  --surface-strong: #2a3942;
+  --surface-stronger: #374248;
+
+  --chat-bg: #0d1418;
+  --bubble-out: #056162;
+  --bubble-in: #262d31;
+  --bubble-out-meta: #b5d8d3;
+  --tick-read: #53bdeb;
+}
+===== */
+
+/* ===== Meta Business: Meta Business Suite blue on Facebook neutrals
+:root {
+  --brand-primary: #0064e0;
+  --brand-primary-strong: #004bb4;
+  --brand-primary-hover: #0055c2;
+  --on-brand-primary: #ffffff;
+  --brand-tint: #e7f0fe;
+  --on-brand-tint: #0047a8;
+  --brand-accent: #31a24c;
+  --on-brand-accent: #0b1520;
+  --header-bg: #ffffff;
+  --on-header: #1c2b33;
+
+  --text-primary: #1c2b33;
+  --text-secondary: #5b6670;
+  --text-muted: #65676b;
+
+  --border-subtle: #e4e6eb;
+  --border-strong: #bcc0c4;
+
+  --surface: #ffffff;
+  --surface-app: #f0f2f5;
+  --surface-muted: #f0f2f5;
+  --surface-strong: #e4e6eb;
+  --surface-stronger: #ced0d4;
+
+  --chat-bg: #f0f2f5;
+  --bubble-out: #e7f0fe;
+  --bubble-in: #ffffff;
+  --bubble-out-meta: #5b6670;
+  --tick-read: #0064e0;
+}
+
+[data-theme="dark"] {
+  --brand-primary: #4599ff;
+  --brand-primary-strong: #7ab4ff;
+  --brand-primary-hover: #7ab4ff;
+  --on-brand-primary: #0b1520;
+  --brand-tint: #1d3350;
+  --on-brand-tint: #a9cdff;
+  --brand-accent: #31a24c;
+  --on-brand-accent: #0b1520;
+  --header-bg: #242526;
+  --on-header: #e4e6eb;
+
+  --text-primary: #e4e6eb;
+  --text-secondary: #b0b3b8;
+  --text-muted: #b0b3b8;
+
+  --border-subtle: #3a3b3c;
+  --border-strong: #4e4f50;
+
+  --surface: #242526;
+  --surface-app: #18191a;
+  --surface-muted: #3a3b3c;
+  --surface-strong: #4e4f50;
+  --surface-stronger: #5c5d5e;
+
+  --chat-bg: #18191a;
+  --bubble-out: #1d3350;
+  --bubble-in: #3a3b3c;
+  --bubble-out-meta: #b9d3f5;
+  --tick-read: #7ab4ff;
+}
+===== */
+
+/* Shape and depth. Spacing uses Tailwind's 4px scale (p-1 = 4px, p-2 = 8px, ...).
+   The Tailwind radius / shadow scales are retuned so every existing class lands on the system:
+   cards are flat with a hairline border, only overlays (menus, dialogs, drawers) float. */
+@theme {
+  --radius-control: 8px;  /* rounded-control: buttons, inputs, nav items */
+  --radius-card: 12px;    /* rounded-card: cards, modals, panels */
+  --radius-bubble: 7.5px; /* rounded-bubble: chat bubbles and chips */
+  --radius-xl: 10px;      /* was 12px: buttons, inputs, chips */
+  --radius-2xl: 12px;     /* was 16px: cards and dialogs */
+  --radius-3xl: 16px;
+
+  --shadow-subtle: 0 1px 0.5px rgb(11 20 26 / 0.13);
+  --shadow-elevated: 0 2px 5px rgb(11 20 26 / 0.18), 0 4px 16px rgb(11 20 26 / 0.12);
+  --shadow-xs: 0 1px 1px rgb(11 20 26 / 0.05);
+  --shadow-sm: 0 1px 2px rgb(11 20 26 / 0.06);
+  --shadow-md: 0 1px 3px rgb(11 20 26 / 0.08);
+  --shadow-lg: 0 2px 5px rgb(11 20 26 / 0.14), 0 4px 12px rgb(11 20 26 / 0.08);
+  --shadow-xl: 0 1px 2px rgb(11 20 26 / 0.05);  /* cards: just enough to sit on the page */
+  --shadow-2xl: 0 2px 5px rgb(11 20 26 / 0.18), 0 12px 32px rgb(11 20 26 / 0.16);  /* dialogs, drawers */
+}

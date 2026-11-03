@@ -254,17 +254,7 @@ export function AuditLogsPage() {
   return (
     <Container>
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low text-primary text-xs font-semibold mb-3 border border-outline-variant/30">
-            <ShieldCheck className="size-3.5" />
-            Super Admin · Compliance & Security
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Audit Logs</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            Immutable system audit trail tracking workspace provisioning, administrative changes, and security events.
-          </p>
-        </div>
+      <div className="flex justify-end gap-4 mb-6">
         <div className="flex items-center gap-2.5">
           <Button
             variant="secondary"
@@ -388,10 +378,10 @@ export function AuditLogsPage() {
                 key={value}
                 onClick={() => changeCategoryFilter(value)}
                 className={clsx(
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition border',
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition',
                   categoryFilter === value
-                    ? 'bg-primary text-on-primary border-primary shadow-sm'
-                    : 'bg-surface-container-low text-on-surface-variant border-outline-variant/20 hover:text-on-surface hover:bg-surface-container',
+                    ? 'bg-primary-fixed text-on-primary-fixed'
+                    : 'bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high',
                 )}
               >
                 <Icon className="size-3" />
@@ -517,7 +507,7 @@ export function AuditLogsPage() {
                   return (
                     <tr
                       key={log.id}
-                      className="hover:bg-surface-container-low/60 transition-colors group"
+                      className="hover:bg-surface-container transition-colors group"
                     >
                       {/* Timestamp */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -539,7 +529,7 @@ export function AuditLogsPage() {
                             <p className="font-medium text-xs text-on-surface truncate max-w-[180px]">
                               {log.actor_email}
                             </p>
-                            <span className="inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase tracking-wider bg-surface-container text-on-surface-variant border border-outline-variant/30">
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium capitalize bg-surface-container text-on-surface-variant">
                               {log.actor_type.replace('_', ' ')}
                             </span>
                           </div>

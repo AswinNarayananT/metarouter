@@ -65,6 +65,7 @@ export interface TicketFilters {
   handledBy: 'ai' | 'human' | '';
   groupId: number | null;
   subgroupId: number | null; // From Insights: "show me these tickets"
+  memberId: number | null; // Only this team member's tickets (not used on the Mine tab)
   search: string;
 }
 

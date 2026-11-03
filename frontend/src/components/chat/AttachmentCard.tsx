@@ -48,7 +48,7 @@ export function AttachmentCard({
           className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0 ${KIND_STYLES[attachment.kind]}`}
         >
           <AttachmentIcon kind={attachment.kind} />
-          <span className="text-[9px] font-bold uppercase mt-0.5">{attachment.extension}</span>
+          <span className="text-[9px] font-bold [text-transform:uppercase] mt-0.5">{attachment.extension}</span>
         </span>
       )}
       <span className="min-w-0 flex-1">

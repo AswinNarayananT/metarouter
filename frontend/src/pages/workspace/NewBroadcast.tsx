@@ -164,12 +164,11 @@ export function NewBroadcast() {
   const canSend = !!preview && preview.queued_count > 0 && !preview.quality_blocked && !isCreating;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div className="space-y-3">
         <Link to="/dashboard/broadcast" className="inline-flex items-center gap-1 text-sm text-on-surface-variant hover:text-on-surface">
           <ArrowLeft className="w-4 h-4" /> Broadcasts
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">New broadcast</h1>
         <StepIndicator current={step} />
       </div>
 

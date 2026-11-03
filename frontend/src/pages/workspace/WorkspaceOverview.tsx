@@ -96,13 +96,8 @@ export function WorkspaceOverview() {
   const previousLabel = PERIODS.find((p) => p.value === period)?.previous ?? '';
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-on-surface">Welcome back, {user?.name?.split(' ')[0] || 'there'}!</h1>
-          <p className="text-sm text-on-surface-variant">What's happening in {user?.organization_name || 'your workspace'}.</p>
-        </div>
-
+    <div className="space-y-5">
+      <div className="flex justify-end">
         {/* Period filter: one row above everything it changes */}
         <div className="flex items-center gap-1" role="tablist" aria-label="Period">
           {loading && <Loader2 className="mr-1 w-4 h-4 animate-spin text-on-surface-variant" aria-label="Loading" />}
@@ -114,7 +109,7 @@ export function WorkspaceOverview() {
               aria-selected={period === p.value}
               onClick={() => setPeriod(p.value)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer ${
-                period === p.value ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container'
+                period === p.value ? 'bg-primary-fixed text-on-primary-fixed' : 'text-on-surface-variant hover:bg-surface-container-high'
               }`}
             >
               {p.label}
@@ -186,7 +181,7 @@ export function WorkspaceOverview() {
           )}
 
           {/* 3. Activity */}
-          <Card title={data.activity.unit === 'hour' ? 'Messages per hour' : 'Messages per day'} subtitle="Who wrote them: customers, the AI or your team.">
+          <Card title={data.activity.unit === 'hour' ? 'Messages per hour' : 'Messages per day'}>
             <ActivityChart activity={data.activity} />
           </Card>
 
@@ -258,7 +253,7 @@ export function WorkspaceOverview() {
       {data && (
         <>
           {/* 6. Channels */}
-          <Card title="Channels" subtitle={hasBroadcasts ? 'Your WhatsApp numbers and the latest broadcast.' : 'Your WhatsApp numbers.'}>
+          <Card title="Channels">
             {data.channels.numbers.length === 0 ? (
               <p className="text-sm text-on-surface-variant">No WhatsApp number connected yet.</p>
             ) : (

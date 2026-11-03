@@ -3,11 +3,12 @@ import type { ChatMessage } from '@/types/chatTypes';
 import { AttachmentCard } from './AttachmentCard';
 import { StickerImage, VideoNote, VoiceNote } from './MediaMessage';
 
+// Squared corner on the sender's side, like a bubble tail
 const BUBBLE_STYLES: Record<ChatMessage['sender'], string> = {
-  user: 'bg-surface-container-low text-on-surface rounded-2xl rounded-tl-sm border border-outline-variant/30',
-  model: 'bg-primary text-on-primary rounded-2xl rounded-tr-sm',
-  human: 'bg-surface-container-high text-on-surface rounded-2xl rounded-tr-sm',
-  broadcast: 'bg-surface-container-high text-on-surface rounded-2xl rounded-tr-sm',
+  user: 'bg-bubble-in text-on-surface rounded-bubble rounded-tl-none',
+  model: 'bg-bubble-out text-on-surface rounded-bubble rounded-tr-none',
+  human: 'bg-bubble-out text-on-surface rounded-bubble rounded-tr-none',
+  broadcast: 'bg-bubble-out text-on-surface rounded-bubble rounded-tr-none',
   system: '',
 };
 
@@ -27,7 +28,7 @@ function DeliveryTick({ message }: { message: ChatMessage }) {
     case 'delivered':
       return <CheckCheck className="w-3.5 h-3.5" aria-label="Delivered" />;
     case 'read':
-      return <CheckCheck className="w-3.5 h-3.5 text-primary" aria-label="Read" />;
+      return <CheckCheck className="w-3.5 h-3.5 text-tick-read" aria-label="Read" />;
     case 'failed':
       return <AlertCircle className="w-3.5 h-3.5 text-error" aria-label="Not delivered" />;
     default:
@@ -49,7 +50,7 @@ export function MessageBubble({
   if (message.sender === 'system') {
     return (
       <div className="flex justify-center">
-        <span className="max-w-[90%] px-3 py-1 rounded-full bg-surface-container text-[11px] text-on-surface-variant text-center">
+        <span className="max-w-[90%] px-3 py-1 rounded-bubble bg-surface-container-lowest shadow-subtle text-[11px] text-on-surface-variant text-center">
           {message.content} · {message.time}
         </span>
       </div>
@@ -65,8 +66,8 @@ export function MessageBubble({
       <div className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
         <div className={`flex flex-col ${outgoing ? 'items-end' : 'items-start'}`}>
           <StickerImage attachment={message.attachment} />
-          {message.reaction && <span className="-mt-2 mx-2 px-1.5 py-0.5 rounded-full bg-surface-container-low border border-outline-variant/40 text-sm leading-none">{message.reaction}</span>}
-          <span className="mt-1 text-[10px] text-on-surface-variant">{message.time}</span>
+          {message.reaction && <span className="-mt-2 mx-2 px-1.5 py-0.5 rounded-full bg-surface-container-lowest border border-border-subtle shadow-subtle text-sm leading-none">{message.reaction}</span>}
+          <span className="mt-1 px-1.5 py-0.5 rounded-bubble bg-surface-container-lowest shadow-subtle text-[11px] text-on-surface-variant">{message.time}</span>
         </div>
       </div>
     );
@@ -86,7 +87,7 @@ export function MessageBubble({
           </span>
         )}
         <div
-          className={`px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap wrap-break-word shadow-sm ${BUBBLE_STYLES[message.sender]} ${failed ? 'opacity-70' : ''}`}
+          className={`px-2.5 pt-1.5 pb-1 text-sm leading-normal whitespace-pre-wrap wrap-break-word shadow-subtle ${BUBBLE_STYLES[message.sender]} ${failed ? 'opacity-70' : ''}`}
         >
           {kind === 'audio' && message.attachment && <VoiceNote attachment={message.attachment} />}
           {kind === 'video' && message.attachment && <VideoNote attachment={message.attachment} />}
@@ -117,18 +118,19 @@ export function MessageBubble({
               ))}
             </div>
           )}
+          {/* Time and delivery ticks sit inside the bubble, bottom right */}
+          <span className={`flex items-center justify-end gap-1 mt-0.5 text-[11px] leading-none ${outgoing ? 'text-bubble-out-meta' : 'text-on-surface-variant'}`}>
+            {message.time}
+            {outgoing && <DeliveryTick message={message} />}
+          </span>
         </div>
         {message.reaction && (
-          <span className="-mt-2 mx-2 px-1.5 py-0.5 rounded-full bg-surface-container-low border border-outline-variant/40 text-sm leading-none shadow-sm" aria-label={`Reaction ${message.reaction}`}>
+          <span className="-mt-1.5 mx-2 px-1.5 py-0.5 rounded-full bg-surface-container-lowest border border-border-subtle text-sm leading-none shadow-subtle" aria-label={`Reaction ${message.reaction}`}>
             {message.reaction}
           </span>
         )}
-        <span className="flex items-center gap-1 mt-1 text-[10px] text-on-surface-variant">
-          {message.time}
-          {outgoing && <DeliveryTick message={message} />}
-        </span>
         {failed && (
-          <span className="mt-0.5 text-[11px] text-error text-right">
+          <span className="mt-1 px-1.5 py-0.5 rounded-bubble bg-surface-container-lowest shadow-subtle text-[11px] text-error text-right">
             Not delivered{message.error ? `: ${message.error}` : ''}
           </span>
         )}

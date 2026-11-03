@@ -11,6 +11,7 @@ import { TicketDetailPanel } from '@/components/tickets/TicketDetailPanel';
 import { TicketHandlerBadge, TicketStatusBadge, TicketTypeBadge } from '@/components/tickets/TicketBadges';
 import { TicketInsights } from '@/components/tickets/TicketInsights';
 import { TicketGroupManager } from '@/components/tickets/TicketGroupManager';
+import { TicketMemberFilter } from '@/components/tickets/TicketMemberFilter';
 import type { TicketTab, TicketType } from '@/types/ticketTypes';
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -39,7 +40,7 @@ export function Tickets() {
 
   // Insights -> "show me these tickets": every ticket of that subgroup
   const showSubgroup = (subgroupId: number) => {
-    dispatch(setTicketFilters({ tab: 'all', subgroupId, groupId: null, type: '', handledBy: '', search: '' }));
+    dispatch(setTicketFilters({ tab: 'all', subgroupId, groupId: null, type: '', handledBy: '', memberId: null, search: '' }));
     setSearchText('');
     setView('list');
   };
@@ -87,13 +88,10 @@ export function Tickets() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Tickets</h1>
-        <p className="text-sm text-on-surface-variant">
-          Every support conversation becomes a ticket, whether the AI or your team handled it. Use the groups to spot the most common and repeated problems.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <p className="text-sm text-on-surface-variant">
+        Every chat becomes a ticket, whether the AI or your team handled it. Groups show which problems keep coming back.
+      </p>
 
       {/* Views */}
       <div className="flex gap-1 p-1 w-fit rounded-xl bg-surface-container" role="tablist" aria-label="View">
@@ -135,7 +133,7 @@ export function Tickets() {
               aria-selected={active}
               onClick={() => dispatch(setTicketFilters({ tab: tab.id }))}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                active ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                active ? 'bg-surface-container-lowest text-on-surface shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
               }`}
             >
               {tab.label}
@@ -187,6 +185,8 @@ export function Tickets() {
             </option>
           ))}
         </select>
+        {/* The Mine tab already means "assigned to me" */}
+        {filters.tab !== 'mine' && <TicketMemberFilter memberId={filters.memberId} onChange={(memberId) => dispatch(setTicketFilters({ memberId }))} />}
       </div>
 
       {subgroupName && (
