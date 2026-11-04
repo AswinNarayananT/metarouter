@@ -17,8 +17,8 @@ from app.models.attachment_model import ChatAttachment
 from app.config import settings
 from app.schemas.conversation_schema import SendMessageRequest, UpdateConversationRequest, AssignConversationRequest, SendTemplateRequest
 from app.services.messaging_service import queue_outgoing_message, OutgoingMessageError
-from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, record_activity, first_name, ai_auto_reply_on, AI_AUTO_REPLY_OFF_ERROR
-from app.realtime.connection_manager import org_group, user_group
+from app.services.conversation_service import serialize_conversation, serialize_message, last_customer_message_at, reply_window, as_utc, conversation_payload, can_reply, can_see_chat, visible_chats_condition, publish_chat_event, record_activity, first_name, ai_auto_reply_on, AI_AUTO_REPLY_OFF_ERROR
+from app.realtime.connection_manager import user_group
 from app.realtime.events import publish_event
 from app.services.assignment_service import check_assign_permission, assign_owner
 from app.services.ticket_service import get_open_ticket, escalate_ticket, sync_ticket_owner, mark_ticket_in_progress, hand_ticket_back_to_ai
@@ -55,6 +55,18 @@ SENDABLE_FILES = {
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
+def _visible_chat(db: Session, conversation_id: int, current_user: User) -> Conversation:
+    # Only chats of the user's own workspace that they may see (a hidden chat looks like it doesn't exist)
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.organization_id == current_user.organization_id
+    ).first()
+
+    if not conversation or not can_see_chat(db, current_user, conversation):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
+
+
 @router.get("/")
 def list_conversations(status: Optional[ConversationStatus] = Query(None), assigned: Optional[str] = Query(None, pattern="^(me|unassigned)$"), search: Optional[str] = Query(None, max_length=100), page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Latest message and latest customer message of every chat
@@ -67,7 +79,8 @@ def list_conversations(status: Optional[ConversationStatus] = Query(None), assig
     ).outerjoin(
         customer_times, customer_times.c.conversation_id == Conversation.id
     ).filter(
-        Conversation.organization_id == current_user.organization_id
+        Conversation.organization_id == current_user.organization_id,
+        visible_chats_condition(db, current_user)
     )
     if status:
         query = query.filter(Conversation.status == status)
@@ -123,7 +136,7 @@ def list_conversations(status: Optional[ConversationStatus] = Query(None), assig
 @router.get("/counts")
 def conversation_counts(db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # Numbers on the chat list tabs (the list itself loads 30 at a time, so it can't count them)
-    base = db.query(Conversation.id).filter(Conversation.organization_id == current_user.organization_id)
+    base = db.query(Conversation.id).filter(Conversation.organization_id == current_user.organization_id, visible_chats_condition(db, current_user))
 
     return {
         "all": base.count(),
@@ -135,28 +148,14 @@ def conversation_counts(db: Session = Depends(get_db), current_user: User = Depe
 
 @router.get("/{conversation_id}")
 def get_conversation(conversation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # Only chats of the user's own workspace
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.organization_id == current_user.organization_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
+    conversation = _visible_chat(db, conversation_id, current_user)
     return conversation_payload(db, conversation)
 
 
 @router.post("/{conversation_id}/read")
 def mark_conversation_read(conversation_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. Only chats of the user's own workspace
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.organization_id == current_user.organization_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # 1. Only chats this user may see
+    _visible_chat(db, conversation_id, current_user)
 
     # 2. Move the user's marker to the newest message (one row per user and chat; never moves back)
     last_id = db.query(func.max(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation_id).scalar() or 0
@@ -177,14 +176,8 @@ def mark_conversation_read(conversation_id: int, db: Session = Depends(get_db), 
 
 @router.get("/{conversation_id}/messages")
 def list_messages(conversation_id: int, before_id: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=200), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. Only chats of the user's own workspace
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.organization_id == current_user.organization_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # 1. Only chats this user may see
+    _visible_chat(db, conversation_id, current_user)
 
     # 2. Newest page first (scrolling up passes before_id = oldest id already shown)
     query = db.query(ChatMessage).options(selectinload(ChatMessage.attachment)).filter(ChatMessage.conversation_id == conversation_id)
@@ -204,14 +197,8 @@ def list_messages(conversation_id: int, before_id: Optional[int] = Query(None, g
 
 
 def _chat_for_reply(db: Session, conversation_id: int, current_user: User, need_window: bool) -> Conversation:
-    # 1. Chat of the user's workspace, and allowed to reply (role, and the owner or a supervisor)
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.organization_id == current_user.organization_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # 1. A chat this user may see, and allowed to reply (role, and the owner or a supervisor)
+    conversation = _visible_chat(db, conversation_id, current_user)
 
     if not can_reply(db, current_user, conversation):
         if conversation.assigned_user_id and conversation.assigned_user_id != current_user.id:
@@ -398,14 +385,8 @@ def send_agent_template(conversation_id: int, payload: SendTemplateRequest, db: 
 
 @router.patch("/{conversation_id}")
 def update_conversation(conversation_id: int, payload: UpdateConversationRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. Chat of the user's workspace, and allowed to handle it (role, and the owner or a supervisor)
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.organization_id == current_user.organization_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # 1. A chat this user may see, and allowed to handle it (role, and the owner or a supervisor)
+    conversation = _visible_chat(db, conversation_id, current_user)
 
     if not can_reply(db, current_user, conversation):
         if conversation.assigned_user_id and conversation.assigned_user_id != current_user.id:
@@ -446,21 +427,15 @@ def update_conversation(conversation_id: int, payload: UpdateConversationRequest
 
     # 3. Every open dashboard updates the chat's badge
     conversation_data = conversation_payload(db, conversation)
-    publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_data)
+    publish_chat_event(conversation, "conversation.updated", conversation_data)
 
     return conversation_data
 
 
 @router.patch("/{conversation_id}/assign")
 def assign_conversation(conversation_id: int, payload: AssignConversationRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. Chat of the user's workspace
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.organization_id == current_user.organization_id
-    ).first()
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # 1. A chat this user may see
+    conversation = _visible_chat(db, conversation_id, current_user)
 
     # 2. Allowed to assign, then give the chat (and its open ticket) to the new owner
     check_assign_permission(db, current_user, conversation, payload.user_id)

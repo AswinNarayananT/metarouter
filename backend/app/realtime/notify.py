@@ -3,7 +3,7 @@ from app.models.conversation_model import Conversation, ChatMessage
 from app.models.attachment_model import ChatAttachment
 from app.realtime.connection_manager import org_group, conversation_group
 from app.realtime.events import publish_event
-from app.services.conversation_service import serialize_message, serialize_attachment, conversation_payload
+from app.services.conversation_service import serialize_message, serialize_attachment, conversation_payload, publish_chat_event
 
 # What the dashboard receives (same shapes as the REST API):
 #   conversation:{id}  message.new           a message was saved (customer, AI, agent)
@@ -25,7 +25,7 @@ def notify_new_messages(db: Session, messages: list[ChatMessage]):
         for conversation_id in dict.fromkeys(m.conversation_id for m in messages):
             conversation = db.get(Conversation, conversation_id)
             if conversation:
-                publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_payload(db, conversation))
+                publish_chat_event(conversation, "conversation.updated", conversation_payload(db, conversation))
     except Exception as e:
         print(f"[REALTIME] notify_new_messages failed: {e}")
 
@@ -41,14 +41,14 @@ def notify_message_status(message: ChatMessage):
 
 def notify_conversation_updated(db: Session, conversation: Conversation):
     try:
-        publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_payload(db, conversation))
+        publish_chat_event(conversation, "conversation.updated", conversation_payload(db, conversation))
     except Exception as e:
         print(f"[REALTIME] notify_conversation_updated failed: {e}")
 
 
 def notify_handover(db: Session, conversation: Conversation):
     try:
-        publish_event(org_group(conversation.organization_id), "conversation.handover", conversation_payload(db, conversation))
+        publish_chat_event(conversation, "conversation.handover", conversation_payload(db, conversation))
     except Exception as e:
         print(f"[REALTIME] notify_handover failed: {e}")
 

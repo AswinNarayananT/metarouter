@@ -59,13 +59,14 @@ export interface TicketGroupNode {
 // List tabs: active = the team's work (open, in progress, waiting)
 export type TicketTab = 'active' | 'ai_handling' | 'closed' | 'all' | 'mine';
 
+export type TicketMemberFilterValue = number | 'unassigned' | null;
+
 export interface TicketFilters {
   tab: TicketTab;
   type: TicketType | '';
-  handledBy: 'ai' | 'human' | '';
   groupId: number | null;
   subgroupId: number | null; // From Insights: "show me these tickets"
-  memberId: number | null; // Only this team member's tickets (not used on the Mine tab)
+  memberId: TicketMemberFilterValue; // Only this team member's tickets, unassigned, or null for all
   search: string;
 }
 

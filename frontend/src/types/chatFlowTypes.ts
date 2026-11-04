@@ -52,7 +52,7 @@ export interface ChatFlowDocument {
 export interface ChatFlowResponse {
   flow: ChatFlowDocument;
   is_default: boolean; // No menu saved yet: this is the built-in one
-  orders_enabled: boolean;
+  off_box_types: FlowBoxType[]; // Boxes whose module is off: customers don't see options leading there
 }
 
 // A problem found before saving, on a box (and one of its options)

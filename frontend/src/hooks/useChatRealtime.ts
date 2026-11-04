@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { attachmentReceived, conversationReadElsewhere, conversationReceived, messageReceived, messageStatusReceived, ticketChanged } from '@/store/chat/chatSlice';
+import { attachmentReceived, conversationHidden, conversationReadElsewhere, conversationReceived, messageReceived, messageStatusReceived, selectConversation, ticketChanged } from '@/store/chat/chatSlice';
 import { fetchConversationCounts, fetchConversations, fetchMessages } from '@/store/chat/chatThunks';
 import { notificationReceived, notificationsReadElsewhere } from '@/store/notifications/notificationSlice';
 import { fetchNotifications } from '@/store/notifications/notificationThunks';
-import { ticketReceived } from '@/store/tickets/ticketSlice';
+import { selectTicket, ticketHidden, ticketReceived } from '@/store/tickets/ticketSlice';
 import { fetchTicketDetail, fetchTickets } from '@/store/tickets/ticketThunks';
 import { orderReceived } from '@/store/orders/orderSlice';
 import { fetchOrderDetail, fetchOrders } from '@/store/orders/orderThunks';
-import { fetchCurrentUser } from '@/store/workspace/workspaceThunks';
+import { fetchCurrentUser, fetchOrganization } from '@/store/workspace/workspaceThunks';
 import { logoutWorkspace } from '@/store/workspace/workspaceSlice';
 import { notifyError, notifySuccess } from '@/utils/notify';
 import { useConversationSubscription, useRealtimeEvent, useRealtimeReconnect } from './useRealtime';
@@ -19,6 +19,7 @@ const REFETCH_DEBOUNCE_MS = 1000; // A broadcast sends one "changed" per batch; 
 export function useChatListRealtimeSync() {
   const dispatch = useAppDispatch();
   const hasLoaded = useAppSelector((state) => state.chat.hasLoaded);
+  const currentRole = useAppSelector((state) => state.workspace.user?.role);
   const refetchTimer = useRef<number | null>(null);
 
   // 1. One chat changed (new message, takeover on / off, AI handed it over)
@@ -27,6 +28,9 @@ export function useChatListRealtimeSync() {
   useRealtimeEvent('conversation.assigned', (conversation) => dispatch(conversationReceived(conversation)));
   useRealtimeEvent('ticket.updated', (ticket) => dispatch(ticketChanged(ticket)));
   useRealtimeEvent('conversation.read', (update) => dispatch(conversationReadElsewhere(update)));
+  // This member may not see it (any more): reassigned away, or handed back to the AI
+  useRealtimeEvent('conversation.hidden', (update) => dispatch(conversationHidden(update)));
+  useRealtimeEvent('ticket.hidden', (update) => dispatch(ticketHidden(update.id)));
 
   // 2. Many chats changed, or we were offline and missed events: reload the list (only if it was loaded)
   const refetch = () => {
@@ -40,6 +44,18 @@ export function useChatListRealtimeSync() {
   };
   useRealtimeEvent('conversations.changed', refetch);
   useRealtimeReconnect(refetch);
+
+  // 3. Who can see what changed: the server already applied it; a restricted member's open chat closes (it may be hidden now)
+  useRealtimeEvent('chat_visibility.changed', ({ rules, role }) => {
+    const myRole = role ?? currentRole;
+    if (myRole !== 'admin' && rules[myRole as 'manager' | 'service'] !== 'all') {
+      dispatch(selectConversation(null));
+      dispatch(selectTicket(null));
+    }
+    dispatch(fetchCurrentUser());
+    dispatch(fetchOrganization());
+    refetch();
+  });
 
   useEffect(
     () => () => {
@@ -103,17 +119,21 @@ export function useTicketsRealtimeSync() {
   const dispatch = useAppDispatch();
   const selectedId = useAppSelector((state) => state.tickets.selectedId);
   const items = useAppSelector((state) => state.tickets.items);
+  const page = useAppSelector((state) => state.tickets.page);
 
   useRealtimeEvent('ticket.updated', (ticket) => {
-    // A ticket we don't list yet (new session, or it moved into this tab): reload page 1
-    if (!items.some((t) => t.id === ticket.id)) dispatch(fetchTickets({ page: 1 }));
+    // A ticket not on this page (new, or it moved into this tab): reload the page being read, so nobody is thrown back to page 1
+    if (!items.some((t) => t.id === ticket.id)) dispatch(fetchTickets({ page }));
     else dispatch(ticketReceived(ticket));
     // The open ticket also gets its new timeline / messages
     if (ticket.id === selectedId) dispatch(fetchTicketDetail(ticket.id));
   });
 
+  // New visibility rules change which tickets this member can see
+  useRealtimeEvent('chat_visibility.changed', () => dispatch(fetchTickets({ page })));
+
   useRealtimeReconnect(() => {
-    dispatch(fetchTickets({ page: 1 }));
+    dispatch(fetchTickets({ page }));
     if (selectedId !== null) dispatch(fetchTicketDetail(selectedId));
   });
 }

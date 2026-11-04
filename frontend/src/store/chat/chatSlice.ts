@@ -143,6 +143,14 @@ const chatSlice = createSlice({
       const conversation = findConversation(state, action.payload.conversation_id);
       if (conversation) conversation.unread = 0;
     },
+    // conversation.hidden event: this member may not see the chat (any more), so nothing of it stays here
+    conversationHidden: (state, action: PayloadAction<RealtimeEventMap['conversation.hidden']>) => {
+      const id = action.payload.conversation_id;
+      state.conversations = state.conversations.filter((c) => c.id !== id);
+      delete state.threads[id];
+      if (state.selectedId === id) state.selectedId = null;
+      if (state.focus?.conversationId === id) state.focus = null;
+    },
     clearChatActionError: (state) => {
       state.actionError = null;
     },
@@ -200,6 +208,7 @@ const chatSlice = createSlice({
       .addCase(fetchMessages.fulfilled, (state, action) => {
         const { conversationId, beforeId } = action.meta.arg;
         const thread = state.threads[conversationId];
+        if (!thread) return; // The chat was hidden from this member during the load
         mergeMessages(state, conversationId, action.payload.messages);
         thread.isLoading = false;
         // Only an older page moves the cursor back; a refresh of the newest page keeps the scroll-back position
@@ -210,6 +219,7 @@ const chatSlice = createSlice({
       })
       .addCase(fetchMessages.rejected, (state, action) => {
         const thread = state.threads[action.meta.arg.conversationId];
+        if (!thread) return;
         thread.isLoading = false;
         thread.loadError = action.payload as string;
       })
@@ -287,6 +297,7 @@ export const {
   selectConversation,
   focusMessage,
   conversationReadElsewhere,
+  conversationHidden,
   clearChatActionError,
 } = chatSlice.actions;
 export default chatSlice.reducer;

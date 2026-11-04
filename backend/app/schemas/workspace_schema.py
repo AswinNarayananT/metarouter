@@ -1,13 +1,22 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
+from typing import Literal, Optional, List
 from app.schemas.invitation_schema import WorkspaceRole
 from app.models.organization_model import SUPPORTED_CURRENCIES
+
+ChatVisibilityOption = Literal["all", "handovered", "assigned"]
+
+
+class ChatVisibilityRules(BaseModel):
+    manager: ChatVisibilityOption
+    service: ChatVisibilityOption
+
 
 # Workspace details an admin can change; only the fields sent are updated
 class UpdateOrganizationRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=120)
     currency: Optional[str] = None
+    chat_visibility: Optional[ChatVisibilityRules] = None
 
     @field_validator("name")
     @classmethod

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Loader2, Search } from 'lucide-react';
 import type { ChatConversation, ChatFilterCounts, ChatFilterTab } from '@/types/chatTypes';
+import type { ChatVisibilityOption } from '@/types/workspaceTypes';
 import { ConversationListItem } from './ConversationListItem';
 
 const FILTER_TABS: { id: ChatFilterTab; label: string }[] = [
@@ -24,6 +25,7 @@ export function ConversationList({
   hasMore = false,
   isLoadingMore = false,
   onLoadMore,
+  chatVisibility = 'all',
   className = '',
 }: {
   conversations: ChatConversation[];
@@ -38,6 +40,7 @@ export function ConversationList({
   hasMore?: boolean;       // More chats on the server
   isLoadingMore?: boolean;
   onLoadMore?: () => void; // Called when the end of the list scrolls into view
+  chatVisibility?: ChatVisibilityOption;
   className?: string;
 }) {
   const listRef = useRef<HTMLUListElement>(null);
@@ -77,7 +80,11 @@ export function ConversationList({
         </div>
 
         <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filter conversations">
-          {FILTER_TABS.map((tab) => {
+          {FILTER_TABS.filter((tab) => {
+            if (chatVisibility === 'assigned') return tab.id === 'all' || tab.id === 'mine';
+            if (chatVisibility === 'handovered') return tab.id !== 'ai';
+            return true;
+          }).map((tab) => {
             const active = filter === tab.id;
             return (
               <button

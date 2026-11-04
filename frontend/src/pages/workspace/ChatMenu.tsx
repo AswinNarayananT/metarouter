@@ -18,8 +18,8 @@ import { AlertCircle, Loader2, Plus, RotateCcw, Save, TriangleAlert, X } from 'l
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchChatFlow, resetChatFlow, saveChatFlow } from '@/store/chatFlow/chatFlowThunks';
 import { useThemeMode } from '@/hooks/useThemeMode';
-import { BOX_TYPE_ORDER, BOX_TYPES, MAX_BOXES } from '@/constants/chatFlow';
-import { newBox, toSavePayload, validateFlow } from '@/utils/chatFlow';
+import { BOX_TYPES, MAX_BOXES } from '@/constants/chatFlow';
+import { addableBoxTypes, newBox, toSavePayload, validateFlow } from '@/utils/chatFlow';
 import { BoxNode } from '@/components/chatFlow/BoxNode';
 import { BOX_ICONS, FlowCanvasContext, type BoxNodeType } from '@/components/chatFlow/flowCanvas';
 import { BoxEditor } from '@/components/chatFlow/BoxEditor';
@@ -67,7 +67,7 @@ function ChatMenuEditor() {
   const [nodes, setNodes] = useState<BoxNodeType[]>([]);
   const [startId, setStartId] = useState('');
   const [isDefault, setIsDefault] = useState(false);
-  const [ordersEnabled, setOrdersEnabled] = useState(true);
+  const [offBoxTypes, setOffBoxTypes] = useState<FlowBoxType[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -80,7 +80,7 @@ function ChatMenuEditor() {
     setNodes(response.flow.nodes.map(toNode));
     setStartId(response.flow.start);
     setIsDefault(response.is_default);
-    setOrdersEnabled(response.orders_enabled);
+    setOffBoxTypes(response.off_box_types);
     setSelectedId(null);
     setSelectedEdgeId(null);
     setDirty(false);
@@ -135,13 +135,13 @@ function ChatMenuEditor() {
       if (box.type === 'question') {
         for (const option of box.options) {
           const target = option.next ? boxes.get(option.next) : undefined;
-          if (target) result.push(arrow(`${box.id}:${option.id}`, box.id, option.id, target.id, target.type === 'order' && !ordersEnabled));
+          if (target) result.push(arrow(`${box.id}:${option.id}`, box.id, option.id, target.id, offBoxTypes.includes(target.type)));
         }
       }
       if (box.type === 'answer' && box.next && boxes.has(box.next)) result.push(arrow(`${box.id}:next`, box.id, 'next', box.next, false));
     }
     return result;
-  }, [flow, boxes, ordersEnabled, selectedEdgeId]);
+  }, [flow, boxes, offBoxTypes, selectedEdgeId]);
 
   const updateBox = useCallback((id: string, change: (box: FlowBox) => FlowBox) => {
     setNodes((current) => current.map((node) => (node.id === id ? { ...node, data: { box: change(node.data.box) } } : node)));
@@ -292,7 +292,7 @@ function ChatMenuEditor() {
             <>
               <div className="fixed inset-0 z-20" onClick={() => setAddOpen(false)} />
               <ul className="absolute left-0 top-full mt-1 z-30 w-72 rounded-xl border border-outline-variant/50 bg-surface-container-lowest shadow-xl py-1">
-                {BOX_TYPE_ORDER.map((type) => {
+                {addableBoxTypes(offBoxTypes).map((type) => {
                   const Icon = BOX_ICONS[type];
                   return (
                     <li key={type}>
@@ -349,7 +349,7 @@ function ChatMenuEditor() {
 
       <div className="relative flex-1 min-h-0 flex">
         <div ref={canvasRef} className="flex-1 min-w-0">
-          <FlowCanvasContext.Provider value={{ startId, ordersEnabled, issueBoxIds }}>
+          <FlowCanvasContext.Provider value={{ startId, offBoxTypes, issueBoxIds }}>
             <ReactFlow
               nodes={canvasNodes}
               edges={edges}
@@ -384,7 +384,7 @@ function ChatMenuEditor() {
               box={selectedBox}
               boxes={boxes}
               isStart={selectedBox.id === startId}
-              ordersEnabled={ordersEnabled}
+              offBoxTypes={offBoxTypes}
               orgName={orgName}
               issues={issues.filter((issue) => issue.boxId === selectedBox.id)}
               onChange={(box) => updateBox(box.id, () => box)}
@@ -410,7 +410,7 @@ function ChatMenuEditor() {
               </button>
             </div>
             <p className="p-5 text-sm text-on-surface-variant">
-              Your menu is deleted and customers get the default one again: "Place an order", "Report a problem" and "Something else". This can't be undone.
+              Your menu is deleted and customers get the default one again: {offBoxTypes.includes('order') ? '' : '"Place an order", '}"Report a problem" and "Something else". This can't be undone.
             </p>
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-outline-variant/30">
               <button type="button" onClick={() => setConfirmReset(false)} disabled={resetting} className="px-4 py-2 rounded-xl text-sm text-on-surface hover:bg-surface-container cursor-pointer">

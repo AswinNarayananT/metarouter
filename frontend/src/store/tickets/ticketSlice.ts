@@ -9,7 +9,7 @@ const initialState: TicketState = {
   page: 1,
   totalPages: 1,
   statusCounts: {},
-  filters: { tab: 'active', type: '', handledBy: '', groupId: null, subgroupId: null, memberId: null, search: '' },
+  filters: { tab: 'active', type: '', groupId: null, subgroupId: null, memberId: null, search: '' },
   isLoading: false,
   loadError: null,
   groups: [],
@@ -21,6 +21,24 @@ const initialState: TicketState = {
   actionError: null,
   relabelingId: null,
 };
+
+// A reassigned ticket no longer belongs in a list filtered by member
+function leavesMemberFilter(filters: TicketFilters, ticket: Ticket) {
+  if (filters.memberId === null) return false;
+  return filters.memberId === 'unassigned' ? ticket.assigned_to !== null : ticket.assigned_to?.id !== filters.memberId;
+}
+
+// Puts the saved ticket in the list, or takes it out if it has left the member filter
+function applyTicketToList(state: TicketState, ticket: Ticket) {
+  const index = state.items.findIndex((t) => t.id === ticket.id);
+  if (index < 0) return;
+  if (leavesMemberFilter(state.filters, ticket)) {
+    state.items.splice(index, 1);
+    state.total = Math.max(0, state.total - 1);
+  } else {
+    state.items[index] = ticket;
+  }
+}
 
 const ticketSlice = createSlice({
   name: 'tickets',
@@ -36,10 +54,21 @@ const ticketSlice = createSlice({
     },
     // ticket.updated event: refresh the row (and the open details) if we have it
     ticketReceived: (state, action: PayloadAction<Ticket>) => {
-      const index = state.items.findIndex((t) => t.id === action.payload.id);
-      if (index >= 0) state.items[index] = action.payload;
+      applyTicketToList(state, action.payload);
       if (state.detail?.ticket.id === action.payload.id) state.detail.ticket = action.payload;
       if (state.relabelingId === action.payload.id) state.relabelingId = null; // The AI finished re-filing it
+    },
+    // ticket.hidden event: this member may not see the ticket's chat (any more)
+    ticketHidden: (state, action: PayloadAction<number>) => {
+      const index = state.items.findIndex((t) => t.id === action.payload);
+      if (index >= 0) {
+        state.items.splice(index, 1);
+        state.total = Math.max(0, state.total - 1);
+      }
+      if (state.selectedId === action.payload) {
+        state.selectedId = null;
+        state.detail = null;
+      }
     },
     clearTicketActionError: (state) => {
       state.actionError = null;
@@ -54,7 +83,7 @@ const ticketSlice = createSlice({
       .addCase(fetchTickets.fulfilled, (state, action) => {
         state.isLoading = false;
         const { tickets, total, page, total_pages, status_counts } = action.payload;
-        state.items = page === 1 ? tickets : [...state.items, ...tickets.filter((t) => !state.items.some((i) => i.id === t.id))];
+        state.items = tickets;
         state.total = total;
         state.page = page;
         state.totalPages = total_pages;
@@ -107,8 +136,7 @@ const ticketSlice = createSlice({
         (action) => [updateTicket.fulfilled.type, closeTicket.fulfilled.type, assignTicket.fulfilled.type].includes(action.type),
         (state, action: PayloadAction<Ticket>) => {
           state.savingId = null;
-          const index = state.items.findIndex((t) => t.id === action.payload.id);
-          if (index >= 0) state.items[index] = action.payload;
+          applyTicketToList(state, action.payload);
           if (state.detail?.ticket.id === action.payload.id) state.detail.ticket = action.payload;
         }
       )
@@ -124,5 +152,5 @@ const ticketSlice = createSlice({
   },
 });
 
-export const { setTicketFilters, selectTicket, ticketReceived, clearTicketActionError } = ticketSlice.actions;
+export const { setTicketFilters, selectTicket, ticketReceived, ticketHidden, clearTicketActionError } = ticketSlice.actions;
 export default ticketSlice.reducer;

@@ -1,7 +1,9 @@
+import json
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from app.core.chat_visibility import DEFAULT_CHAT_VISIBILITY
 from app.database import Base
 
 # Modules a workspace can have switched on or off (customer_chats includes the AI assistant and tickets).
@@ -25,6 +27,8 @@ class Organization(Base):
     # Only this workspace's overrides ({"orders": true}); every other module follows its platform default
     features = Column(JSONB, nullable=False, default=dict, server_default='{}')
     currency = Column(String(3), nullable=False, default="INR", server_default="INR")  # Product prices are in this currency
+    # Per role: which chats its members can see (app/core/chat_visibility.py)
+    chat_visibility = Column(JSONB, nullable=False, default=lambda: dict(DEFAULT_CHAT_VISIBILITY), server_default=json.dumps(DEFAULT_CHAT_VISIBILITY))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     profile = relationship("OrganizationProfile", back_populates="organization", uselist=False, cascade="all, delete-orphan")

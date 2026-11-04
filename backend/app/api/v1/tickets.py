@@ -10,7 +10,7 @@ from app.models.organization_model import User
 from app.models.conversation_model import Conversation, ChatMessage
 from app.models.ticket_model import Ticket, TicketGroup
 from app.schemas.ticket_schema import UpdateTicketRequest, TicketNoteRequest, CloseTicketRequest, AssignTicketRequest, RenameTicketGroupRequest, MergeTicketGroupRequest
-from app.services.conversation_service import serialize_message, can_reply, SUPERVISOR_ROLES, ai_auto_reply_on
+from app.services.conversation_service import serialize_message, can_reply, can_see_chat, visible_chats_condition, SUPERVISOR_ROLES, ai_auto_reply_on
 from app.services.ticket_service import serialize_ticket, serialize_activity, update_ticket, add_ticket_note, close_ticket, hand_chat_back_after_close, release_chat_after_close, OPEN_STATUSES
 from app.services.assignment_service import check_assign_permission, assign_owner
 from app.workers.tasks.ticket_tasks import relabel_ticket_task, file_closed_ticket_task
@@ -26,8 +26,9 @@ SESSION_MESSAGES_LIMIT = 200  # Messages of the session shown on the ticket
 
 
 @router.get("/")
-def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open|in_progress|waiting|closed|active)$"), type: Optional[str] = Query(None, pattern="^(enquiry|problem|complaint)$"), handled_by: Optional[str] = Query(None, pattern="^(ai|human)$"), group_id: Optional[int] = Query(None), subgroup_id: Optional[int] = Query(None), conversation_id: Optional[int] = Query(None), assigned: Optional[str] = Query(None, pattern="^(me|[0-9]{1,9})$"), search: Optional[str] = Query(None, max_length=100), page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. The workspace's tickets, newest first
+def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open|in_progress|waiting|closed|active)$"), type: Optional[str] = Query(None, pattern="^(enquiry|problem|complaint)$"), handled_by: Optional[str] = Query(None, pattern="^(ai|human)$"), group_id: Optional[int] = Query(None), subgroup_id: Optional[int] = Query(None), conversation_id: Optional[int] = Query(None), assigned: Optional[str] = Query(None, pattern="^(me|unassigned|[0-9]{1,9})$"), search: Optional[str] = Query(None, max_length=100), page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
+    # 1. The workspace's tickets whose chat this user may see, newest first
+    visible_ticket = Ticket.conversation.has(visible_chats_condition(db, current_user))
     query = db.query(Ticket).options(
         selectinload(Ticket.conversation),
         selectinload(Ticket.group),
@@ -35,7 +36,8 @@ def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open
         selectinload(Ticket.assigned_user),
         selectinload(Ticket.closed_by)
     ).filter(
-        Ticket.organization_id == current_user.organization_id
+        Ticket.organization_id == current_user.organization_id,
+        visible_ticket
     )
 
     # 2. Filters ("active" = the team's work: open, in progress, waiting)
@@ -53,9 +55,11 @@ def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open
         query = query.filter(Ticket.subgroup_id == subgroup_id)
     if conversation_id:
         query = query.filter(Ticket.conversation_id == conversation_id)
-    # assigned: "me", or a team member's id (another workspace's member matches no ticket here)
+    # assigned: "me", "unassigned", or a team member's id (another workspace's member matches no ticket here)
     if assigned == "me":
         query = query.filter(Ticket.assigned_user_id == current_user.id)
+    elif assigned == "unassigned":
+        query = query.filter(Ticket.assigned_user_id.is_(None))
     elif assigned:
         query = query.filter(Ticket.assigned_user_id == int(assigned))
     if search and search.strip():
@@ -68,8 +72,8 @@ def list_tickets(status: Optional[str] = Query(None, pattern="^(ai_handling|open
     total = query.count()
     tickets = query.order_by(Ticket.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
-    # 3. Counts for the status tabs (whole workspace, not the filtered page)
-    status_counts = dict(db.query(Ticket.status, func.count(Ticket.id)).filter(Ticket.organization_id == current_user.organization_id).group_by(Ticket.status).all())
+    # 3. Counts for the status tabs (everything this user may see, not the filtered page)
+    status_counts = dict(db.query(Ticket.status, func.count(Ticket.id)).filter(Ticket.organization_id == current_user.organization_id, visible_ticket).group_by(Ticket.status).all())
 
     return {
         "tickets": [serialize_ticket(t) for t in tickets],
@@ -180,7 +184,7 @@ def ticket_insights(days: int = Query(30, ge=1, le=365), db: Session = Depends(g
     repeat_rows = in_period.filter(Ticket.subgroup_id.isnot(None)).with_entities(
         Ticket.conversation_id, Ticket.subgroup_id, func.count(Ticket.id)
     ).group_by(Ticket.conversation_id, Ticket.subgroup_id).having(func.count(Ticket.id) >= 2).order_by(func.count(Ticket.id).desc()).limit(10).all()
-    customers = {c.id: c for c in db.query(Conversation).filter(Conversation.id.in_([r[0] for r in repeat_rows])).all()} if repeat_rows else {}
+    customers = {c.id: c for c in db.query(Conversation).filter(Conversation.id.in_([r[0] for r in repeat_rows]), visible_chats_condition(db, current_user)).all()} if repeat_rows else {}
     repeat_customers = [
         {
             "conversation_id": conversation_id,
@@ -286,14 +290,8 @@ def merge_ticket_group(group_id: int, payload: MergeTicketGroupRequest, db: Sess
 
 @router.get("/{ticket_id}")
 def get_ticket(ticket_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. Only tickets of the user's own workspace
-    ticket = db.query(Ticket).filter(
-        Ticket.id == ticket_id,
-        Ticket.organization_id == current_user.organization_id
-    ).first()
-
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    # 1. Only tickets of the user's own workspace, on a chat they may see
+    ticket = _workspace_ticket(db, ticket_id, current_user)
 
     # 2. The session's messages (customer, AI, agents and activity lines)
     query = db.query(ChatMessage).options(selectinload(ChatMessage.attachment)).filter(ChatMessage.conversation_id == ticket.conversation_id)
@@ -311,9 +309,10 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db), current_user: User
     }
 
 
-def _workspace_ticket(db: Session, ticket_id: int, organization_id: int) -> Ticket:
-    ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.organization_id == organization_id).first()
-    if not ticket:
+def _workspace_ticket(db: Session, ticket_id: int, user: User) -> Ticket:
+    # A ticket of a chat this user may not see looks like it doesn't exist (it shows the chat's messages)
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.organization_id == user.organization_id).first()
+    if not ticket or not can_see_chat(db, user, ticket.conversation):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
 
@@ -328,7 +327,7 @@ def _require_handler(db: Session, user: User, ticket: Ticket):
 @router.patch("/{ticket_id}")
 def update_ticket_details(ticket_id: int, payload: UpdateTicketRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Ticket of the user's workspace, and allowed to work on it
-    ticket = _workspace_ticket(db, ticket_id, current_user.organization_id)
+    ticket = _workspace_ticket(db, ticket_id, current_user)
     _require_handler(db, current_user, ticket)
 
     # 2. Status changes only while it's open (closing has its own step with a resolution)
@@ -343,7 +342,7 @@ def update_ticket_details(ticket_id: int, payload: UpdateTicketRequest, db: Sess
 @router.post("/{ticket_id}/notes", status_code=201)
 def add_note(ticket_id: int, payload: TicketNoteRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # Internal notes: any team member can add one (never sent to the customer)
-    ticket = _workspace_ticket(db, ticket_id, current_user.organization_id)
+    ticket = _workspace_ticket(db, ticket_id, current_user)
     note = add_ticket_note(db, ticket, payload.content.strip(), current_user)
     return serialize_activity(note)
 
@@ -351,7 +350,7 @@ def add_note(ticket_id: int, payload: TicketNoteRequest, db: Session = Depends(g
 @router.post("/{ticket_id}/close")
 def close_ticket_by_agent(ticket_id: int, payload: CloseTicketRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Open ticket of the user's workspace, and allowed to work on it
-    ticket = _workspace_ticket(db, ticket_id, current_user.organization_id)
+    ticket = _workspace_ticket(db, ticket_id, current_user)
     _require_handler(db, current_user, ticket)
 
     if ticket.status not in OPEN_STATUSES:
@@ -375,7 +374,7 @@ def close_ticket_by_agent(ticket_id: int, payload: CloseTicketRequest, db: Sessi
 @router.post("/{ticket_id}/relabel", status_code=202)
 def relabel_ticket(ticket_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # The AI rewrites subject, details and labels from the latest messages (in the background: it can take a while)
-    ticket = _workspace_ticket(db, ticket_id, current_user.organization_id)
+    ticket = _workspace_ticket(db, ticket_id, current_user)
     _require_handler(db, current_user, ticket)
     relabel_ticket_task.delay(ticket.id, current_user.id)
     return {"status": "queued"}
@@ -384,7 +383,7 @@ def relabel_ticket(ticket_id: int, db: Session = Depends(get_db), current_user: 
 @router.patch("/{ticket_id}/assign")
 def assign_ticket(ticket_id: int, payload: AssignTicketRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     # 1. Open ticket of the user's workspace
-    ticket = _workspace_ticket(db, ticket_id, current_user.organization_id)
+    ticket = _workspace_ticket(db, ticket_id, current_user)
     if ticket.status not in OPEN_STATUSES:
         raise HTTPException(status_code=422, detail="This ticket is closed")
 

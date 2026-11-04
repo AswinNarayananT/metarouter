@@ -7,19 +7,22 @@ from app.config import settings
 from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User
 from app.models.attachment_model import ChatAttachment
+from app.services.conversation_service import can_see_chat
 from app.workers.tasks.media_tasks import PARSEABLE_TYPES
 
 router = APIRouter(prefix="/attachments", tags=["Chat Attachments"])
 
 @router.get("/{attachment_id}/file")
 def get_attachment_file(attachment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
-    # 1. Only files that belong to the user's own organization
+    # 1. Only files of the user's own organization, from a chat they may see
     attachment = db.query(ChatAttachment).filter(
         ChatAttachment.id == attachment_id,
         ChatAttachment.organization_id == current_user.organization_id
     ).first()
 
     if not attachment or attachment.download_status != "done" or not attachment.storage_path:
+        raise HTTPException(status_code=404, detail="File not found")
+    if not can_see_chat(db, current_user, attachment.message.conversation):
         raise HTTPException(status_code=404, detail="File not found")
 
     # 2. Resolve the path and make sure it stays inside the media folder

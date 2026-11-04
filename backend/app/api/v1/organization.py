@@ -14,6 +14,8 @@ from app.services.notification_service import notify_role_changed, notify_member
 from app.services.member_service import archive_member, assigned_chats_query, assigned_tickets_query, other_active_admins, MEMBER_LEFT_MESSAGE
 from app.services.audit_service import record_audit_log, get_client_ip
 from app.services.conversation_service import ai_auto_reply_on
+from app.realtime.connection_manager import CHAT_VISIBILITY_CHANGED, org_group, user_group
+from app.realtime.events import publish_event
 
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
@@ -54,6 +56,7 @@ def get_current_organization(
         "currency": organization.currency,
         "supported_currencies": SUPPORTED_CURRENCIES,
         "ai_auto_reply": ai_auto_reply_on(db, organization.id),
+        "chat_visibility": organization.chat_visibility,
     }
 
 
@@ -203,6 +206,9 @@ def update_member_role(user_id: int, payload: UpdateMemberRoleRequest, db: Sessi
     db.commit()
     db.refresh(member)
     notify_role_changed(db, member, current_user, payload.role)
+    # Their open sockets follow the new role's chat visibility straight away
+    rules = db.query(Organization.chat_visibility).filter(Organization.id == current_user.organization_id).scalar()
+    publish_event(user_group(member.id), CHAT_VISIBILITY_CHANGED, {"rules": rules, "role": payload.role})
 
     return member
 
@@ -335,11 +341,12 @@ def _find_current_member(db: Session, user_id: int, organization_id: int) -> Use
 @router.patch("/current", response_model=dict)
 def update_current_organization(
     payload: UpdateOrganizationRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_workspace_user)
 ):
     """
-    Rename the current user's organization or change its currency (admin only).
+    Rename the current user's organization, change its currency or its chat visibility (admin only).
     """
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can update the workspace")
@@ -353,15 +360,34 @@ def update_current_organization(
     if not changes:
         raise HTTPException(status_code=400, detail="Nothing to update")
 
+    previous_visibility = organization.chat_visibility
     for field, value in changes.items():
         setattr(organization, field, value)
     db.commit()
     db.refresh(organization)
+
+    # Who can see which chats changed: recorded, and every open dashboard follows the new rules right away
+    if organization.chat_visibility != previous_visibility:
+        record_audit_log(
+            db,
+            action="CHAT_VISIBILITY_CHANGED",
+            category="access_control",
+            actor_email=current_user.email,
+            actor_type="user",
+            actor_id=current_user.id,
+            target_type="organization",
+            target_id=organization.id,
+            target_name=organization.name,
+            details={"organization_id": organization.id, "from": previous_visibility, "to": organization.chat_visibility},
+            ip_address=get_client_ip(request)
+        )
+        publish_event(org_group(organization.id), CHAT_VISIBILITY_CHANGED, {"rules": organization.chat_visibility})
 
     return {
         "id": organization.id,
         "name": organization.name,
         "slug": organization.slug,
         "created_at": organization.created_at,
-        "currency": organization.currency
+        "currency": organization.currency,
+        "chat_visibility": organization.chat_visibility
     }

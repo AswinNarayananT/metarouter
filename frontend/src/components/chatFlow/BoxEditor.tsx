@@ -2,7 +2,6 @@ import { ChevronDown, ChevronUp, Flag, Plus, Trash2, TriangleAlert, X } from 'lu
 import {
   ACTION_TEXT_MAX,
   ANSWER_TEXT_MAX,
-  BOX_TYPE_ORDER,
   BOX_TYPES,
   BUTTON_TITLE_MAX,
   DEFAULT_MENU_BUTTON,
@@ -12,7 +11,7 @@ import {
   OPTION_TITLE_MAX,
   QUESTION_TEXT_MAX,
 } from '@/constants/chatFlow';
-import { boxLabel, charCount, newOption, visibleOptions } from '@/utils/chatFlow';
+import { addableBoxTypes, boxLabel, charCount, newOption, visibleOptions } from '@/utils/chatFlow';
 import type { FlowBox, FlowBoxType, FlowIssue, FlowOption, QuestionBox } from '@/types/chatFlowTypes';
 import { BOX_ICONS } from './flowCanvas';
 import { WhatsAppPreview } from './WhatsAppPreview';
@@ -21,7 +20,7 @@ interface BoxEditorProps {
   box: FlowBox;
   boxes: Map<string, FlowBox>;
   isStart: boolean;
-  ordersEnabled: boolean;
+  offBoxTypes: FlowBoxType[];
   orgName: string;
   issues: FlowIssue[];
   onChange: (box: FlowBox) => void;
@@ -40,7 +39,7 @@ function Counter({ text, max }: { text: string; max: number }) {
   return <span className={`text-[11px] shrink-0 ${length > max ? 'text-error' : 'text-on-surface-variant'}`}>{length}/{max}</span>;
 }
 
-export function BoxEditor({ box, boxes, isStart, ordersEnabled, orgName, issues, onChange, onCreateBox, onSetStart, onDelete, onClose }: BoxEditorProps) {
+export function BoxEditor({ box, boxes, isStart, offBoxTypes, orgName, issues, onChange, onCreateBox, onSetStart, onDelete, onClose }: BoxEditorProps) {
   const Icon = BOX_ICONS[box.type];
   const others = [...boxes.values()].filter((other) => other.id !== box.id);
 
@@ -79,7 +78,7 @@ export function BoxEditor({ box, boxes, isStart, ordersEnabled, orgName, issues,
           </ul>
         )}
 
-        {box.type === 'question' && <QuestionFields box={box} others={others} boxes={boxes} ordersEnabled={ordersEnabled} onChange={onChange} resolveTarget={resolveTarget} />}
+        {box.type === 'question' && <QuestionFields box={box} others={others} boxes={boxes} offBoxTypes={offBoxTypes} onChange={onChange} resolveTarget={resolveTarget} />}
 
         {box.type === 'answer' && (
           <>
@@ -117,7 +116,7 @@ export function BoxEditor({ box, boxes, isStart, ordersEnabled, orgName, issues,
 
         <div className="space-y-1.5">
           <p className="text-sm font-medium text-on-surface">Preview</p>
-          <WhatsAppPreview box={box} boxes={boxes} ordersEnabled={ordersEnabled} orgName={orgName} />
+          <WhatsAppPreview box={box} boxes={boxes} offBoxTypes={offBoxTypes} orgName={orgName} />
         </div>
       </div>
 
@@ -142,13 +141,13 @@ interface QuestionFieldsProps {
   box: QuestionBox;
   others: FlowBox[];
   boxes: Map<string, FlowBox>;
-  ordersEnabled: boolean;
+  offBoxTypes: FlowBoxType[];
   onChange: (box: FlowBox) => void;
   resolveTarget: (value: string) => string | null;
 }
 
-function QuestionFields({ box, others, boxes, ordersEnabled, onChange, resolveTarget }: QuestionFieldsProps) {
-  const { asButtons } = visibleOptions(box, boxes, ordersEnabled);
+function QuestionFields({ box, others, boxes, offBoxTypes, onChange, resolveTarget }: QuestionFieldsProps) {
+  const { asButtons } = visibleOptions(box, boxes, offBoxTypes);
   const showList = box.options.length > MAX_BUTTONS || !asButtons;
 
   const setOption = (index: number, option: FlowOption) => onChange({ ...box, options: box.options.map((o, i) => (i === index ? option : o)) });
@@ -205,11 +204,11 @@ function QuestionFields({ box, others, boxes, ordersEnabled, onChange, resolveTa
               className={`${inputClass} ${option.next ? '' : 'border-error'}`}
             >
               <option value="">Goes to… (pick a next step)</option>
-              {others.map((other) => (
+              {others.filter((other) => !offBoxTypes.includes(other.type) || other.id === option.next).map((other) => (
                 <option key={other.id} value={other.id}>{boxLabel(other)}</option>
               ))}
               <optgroup label="Add a new box">
-                {BOX_TYPE_ORDER.map((type) => (
+                {addableBoxTypes(offBoxTypes).map((type) => (
                   <option key={type} value={`${NEW_PREFIX}${type}`}>New: {BOX_TYPES[type].label}</option>
                 ))}
               </optgroup>

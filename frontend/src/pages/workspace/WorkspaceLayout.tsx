@@ -5,7 +5,6 @@ import {
   Ticket,
   Send,
   Users,
-  UserPlus,
   Bot,
   Cable,
   Settings,
@@ -90,7 +89,6 @@ export function WorkspaceLayout() {
     { label: 'Orders', path: '/dashboard/orders', icon: ShoppingBag, feature: 'orders' },
     { label: 'Products', path: '/dashboard/products', icon: Package, feature: 'orders' },
     { label: 'Team Members', path: '/dashboard/members', icon: Users },
-    { label: 'Invite Members', path: '/dashboard/invite', icon: UserPlus, adminOnly: true },
     { label: 'Settings', path: '/dashboard/settings', icon: Settings },
   ];
 

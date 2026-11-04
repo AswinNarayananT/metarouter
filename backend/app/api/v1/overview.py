@@ -10,7 +10,7 @@ from app.models.conversation_model import Conversation, ChatMessage, Conversatio
 from app.models.ticket_model import Ticket, TicketActivity, TicketGroup
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
-from app.services.conversation_service import as_utc, SUPERVISOR_ROLES
+from app.services.conversation_service import as_utc, visible_chats_condition, SUPERVISOR_ROLES
 
 router = APIRouter(prefix="/overview", tags=["Overview"])  # Always available (core)
 
@@ -106,7 +106,8 @@ def workspace_overview(period: str = Query("today", pattern="^(today|7d|30d)$"),
     ).filter(
         Conversation.organization_id == org_id,
         Conversation.status == ConversationStatus.HUMAN_TAKEOVER,
-        Conversation.assigned_user_id.is_(None)
+        Conversation.assigned_user_id.is_(None),
+        visible_chats_condition(db, current_user)
     ).all()
     waiting = sorted(
         [{"conversation_id": c.id, "customer_name": c.customer_name, "customer_phone": c.customer_phone, "waiting_since": at or as_utc(c.updated_at)} for c, at in waiting_rows],

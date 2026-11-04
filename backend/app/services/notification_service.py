@@ -1,11 +1,12 @@
 from typing import Optional
 from sqlalchemy.orm import Session
+from app.core.chat_visibility import role_chat_visibility, chat_rule_allows
 from app.models.organization_model import User
 from app.models.conversation_model import Conversation
 from app.models.notification_model import Notification
 from app.realtime.connection_manager import user_group
 from app.realtime.events import publish_event
-from app.services.conversation_service import as_utc, first_name, handover_roles, SUPERVISOR_ROLES
+from app.services.conversation_service import as_utc, first_name, handover_roles, workspace_chat_rules, SUPERVISOR_ROLES
 from app.utils.money import format_price
 
 PREVIEW_CHARS = 120  # Customer message shown under the title
@@ -138,15 +139,21 @@ def notify_member_joined(db: Session, member: User, rejoined: bool) -> list:
     return notifications
 
 
-def notify_team_of_handover(db: Session, conversation: Conversation, preview: Optional[str]) -> list:
-    # Everyone who can act on an unassigned chat: admins, managers and roles allowed to pick up chats
-    roles = handover_roles(db, conversation.organization_id) | SUPERVISOR_ROLES
-    recipients = db.query(User.id).filter(
+def members_who_see_chat(db: Session, conversation: Conversation, roles: set) -> list:
+    # Active members of these roles whose chat visibility shows this chat (an alert about a hidden chat would lead nowhere)
+    rules = workspace_chat_rules(db, conversation.organization_id)
+    members = db.query(User.id, User.role).filter(
         User.organization_id == conversation.organization_id,
         User.is_active == True,
         User.role.in_(roles)
     ).all()
-    return create_notifications(db, conversation, [r.id for r in recipients], "handover", "A customer needs a human", conversation_summary(conversation, preview))
+    return [m.id for m in members if chat_rule_allows(role_chat_visibility(rules, m.role), m.id, conversation.status, conversation.assigned_user_id)]
+
+
+def notify_team_of_handover(db: Session, conversation: Conversation, preview: Optional[str]) -> list:
+    # Everyone who can act on an unassigned chat: admins, managers and roles allowed to pick up chats
+    roles = handover_roles(db, conversation.organization_id) | SUPERVISOR_ROLES
+    return create_notifications(db, conversation, members_who_see_chat(db, conversation, roles), "handover", "A customer needs a human", conversation_summary(conversation, preview))
 
 
 def notify_team_of_order(db: Session, conversation: Conversation, order) -> list:
@@ -166,14 +173,8 @@ def notify_team_of_order(db: Session, conversation: Conversation, order) -> list
 def notify_unassigned_reminder(db: Session, conversation: Conversation, minutes: int, first_reminder: bool, preview: Optional[str]) -> list:
     # First reminder: everyone who got the handover; later ones only admins / managers, who can assign someone
     roles = handover_roles(db, conversation.organization_id) | SUPERVISOR_ROLES if first_reminder else SUPERVISOR_ROLES
-    recipients = db.query(User.id).filter(
-        User.organization_id == conversation.organization_id,
-        User.is_active == True,
-        User.role.in_(roles)
-    ).all()
-
     title = f"Still waiting for {minutes} min · {customer_label(conversation)}" if first_reminder else f"Nobody has taken this chat for {minutes} min · {customer_label(conversation)}"
-    return create_notifications(db, conversation, [r.id for r in recipients], "reminder", title, short(preview))
+    return create_notifications(db, conversation, members_who_see_chat(db, conversation, roles), "reminder", title, short(preview))
 
 
 def notify_assignee(db: Session, conversation: Conversation, assignee: User, actor: User, preview: Optional[str], ticket=None) -> list:

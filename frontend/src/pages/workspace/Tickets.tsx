@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
-import { BarChart3, FolderTree, List, Loader2, Search, Ticket as TicketIcon, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { BarChart3, ChevronLeft, ChevronRight, FolderTree, List, Loader2, Search, Ticket as TicketIcon, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { selectTicket, setTicketFilters } from '@/store/tickets/ticketSlice';
-import { fetchTicketDetail, fetchTicketGroups, fetchTickets } from '@/store/tickets/ticketThunks';
+import { fetchTicketDetail, fetchTicketGroups, fetchTickets, TICKETS_PAGE_SIZE } from '@/store/tickets/ticketThunks';
+import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
 import { formatListTime, formatPhone } from '@/store/chat/chatMappers';
 import { useTicketsRealtimeSync } from '@/hooks/useChatRealtime';
 import { markNotificationsRead } from '@/store/notifications/notificationThunks';
@@ -12,20 +13,31 @@ import { TicketHandlerBadge, TicketStatusBadge, TicketTypeBadge } from '@/compon
 import { TicketInsights } from '@/components/tickets/TicketInsights';
 import { TicketGroupManager } from '@/components/tickets/TicketGroupManager';
 import { TicketMemberFilter } from '@/components/tickets/TicketMemberFilter';
+import { TicketFiltersMenu } from '@/components/tickets/TicketFiltersMenu';
 import type { TicketTab, TicketType } from '@/types/ticketTypes';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-const TABS: { id: TicketTab; label: string }[] = [
-  { id: 'active', label: 'Team work' },
-  { id: 'ai_handling', label: 'AI handling' },
-  { id: 'closed', label: 'Closed' },
-  { id: 'all', label: 'All' },
-  { id: 'mine', label: 'Mine' },
+const TABS: { id: TicketTab; label: string; hint: string }[] = [
+  { id: 'mine', label: 'My tickets', hint: 'Tickets assigned to you' },
+  { id: 'active', label: 'Needs team', hint: 'Open tickets your team is working on' },
+  { id: 'ai_handling', label: 'With AI', hint: 'Tickets the AI is handling' },
+  { id: 'closed', label: 'Closed', hint: 'Finished tickets' },
+  { id: 'all', label: 'All', hint: 'Every ticket' },
 ];
 
-const selectClass =
-  'px-3 py-2 bg-surface border border-outline/30 rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer';
+const TYPE_LABELS: Record<TicketType, string> = { enquiry: 'Enquiry', problem: 'Problem', complaint: 'Complaint' };
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 pl-3 pr-1 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+      {label}
+      <button type="button" onClick={onRemove} aria-label={`Remove filter: ${label}`} className="p-0.5 rounded-full hover:bg-primary/15 cursor-pointer">
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </span>
+  );
+}
 
 export function Tickets() {
   const dispatch = useAppDispatch();
@@ -37,12 +49,28 @@ export function Tickets() {
   const role = useAppSelector((state) => state.workspace.user?.role);
   const isSupervisor = role === 'admin' || role === 'manager';
   const subgroupName = groups.flatMap((g) => g.subgroups.map((sg) => ({ ...sg, groupName: g.name }))).find((sg) => sg.id === filters.subgroupId);
+  const groupName = groups.find((g) => g.id === filters.groupId)?.name;
+  const listTop = useRef<HTMLDivElement>(null);
+
+  // What the Filters button holds, and whether anything at all narrows the list
+  const menuFilterCount = (filters.type ? 1 : 0) + (filters.groupId ? 1 : 0) + (filters.subgroupId ? 1 : 0);
+  const hasFilters = menuFilterCount > 0 || filters.memberId !== null || filters.search.trim() !== '';
+
+  const clearFilters = () => {
+    dispatch(setTicketFilters({ type: '', groupId: null, subgroupId: null, memberId: null, search: '' }));
+    setSearchText('');
+  };
 
   // Insights -> "show me these tickets": every ticket of that subgroup
   const showSubgroup = (subgroupId: number) => {
-    dispatch(setTicketFilters({ tab: 'all', subgroupId, groupId: null, type: '', handledBy: '', memberId: null, search: '' }));
+    dispatch(setTicketFilters({ tab: 'all', subgroupId, groupId: null, type: '', memberId: null, search: '' }));
     setSearchText('');
     setView('list');
+  };
+
+  const goToPage = (nextPage: number) => {
+    dispatch(fetchTickets({ page: nextPage }));
+    listTop.current?.scrollIntoView({ block: 'start' });
   };
 
   // 1. Load the list whenever a filter changes, and the groups for the group filter
@@ -51,7 +79,13 @@ export function Tickets() {
   }, [dispatch, filters]);
   useEffect(() => {
     dispatch(fetchTicketGroups());
+    dispatch(fetchTeamMembers());
   }, [dispatch]);
+
+  // A page left empty (its tickets moved or closed meanwhile): step back to the page before it
+  useEffect(() => {
+    if (!isLoading && !loadError && items.length === 0 && page > 1) dispatch(fetchTickets({ page: page - 1 }));
+  }, [dispatch, isLoading, loadError, items.length, page]);
 
   // 2. Search after the user stops typing
   useEffect(() => {
@@ -90,7 +124,7 @@ export function Tickets() {
   return (
     <div className="space-y-5">
       <p className="text-sm text-on-surface-variant">
-        Every chat becomes a ticket, whether the AI or your team handled it. Groups show which problems keep coming back.
+        Customer problems and requests, whether the AI or your team is handling them.
       </p>
 
       {/* Views */}
@@ -131,7 +165,8 @@ export function Tickets() {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => dispatch(setTicketFilters({ tab: tab.id }))}
+              title={tab.hint}
+              onClick={() => dispatch(setTicketFilters({ tab: tab.id, ...(tab.id === 'mine' ? { memberId: null } : {}) }))}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
                 active ? 'bg-surface-container-lowest text-on-surface shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
               }`}
@@ -151,57 +186,38 @@ export function Tickets() {
             type="search"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Search #number, subject or customer"
+            placeholder="Search ticket number, subject or customer"
             aria-label="Search tickets"
             className="w-full pl-9 pr-4 py-2 bg-surface border border-outline/30 rounded-xl text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary"
           />
         </div>
-        <select aria-label="Type" value={filters.type} onChange={(e) => dispatch(setTicketFilters({ type: e.target.value as TicketType | '' }))} className={selectClass}>
-          <option value="">All types</option>
-          <option value="enquiry">Enquiry</option>
-          <option value="problem">Problem</option>
-          <option value="complaint">Complaint</option>
-        </select>
-        <select
-          aria-label="Handled by"
-          value={filters.handledBy}
-          onChange={(e) => dispatch(setTicketFilters({ handledBy: e.target.value as 'ai' | 'human' | '' }))}
-          className={selectClass}
-        >
-          <option value="">AI or team</option>
-          <option value="ai">AI only</option>
-          <option value="human">Team</option>
-        </select>
-        <select
-          aria-label="Group"
-          value={filters.groupId ?? ''}
-          onChange={(e) => dispatch(setTicketFilters({ groupId: e.target.value ? Number(e.target.value) : null, subgroupId: null }))}
-          className={selectClass}
-        >
-          <option value="">All groups</option>
-          {groups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name} ({group.ticket_count})
-            </option>
-          ))}
-        </select>
-        {/* The Mine tab already means "assigned to me" */}
+        {/* "My tickets" already means assigned to you */}
         {filters.tab !== 'mine' && <TicketMemberFilter memberId={filters.memberId} onChange={(memberId) => dispatch(setTicketFilters({ memberId }))} />}
+        <TicketFiltersMenu type={filters.type} groupId={filters.groupId} activeCount={menuFilterCount} groups={groups} onChange={(next) => dispatch(setTicketFilters(next))} />
       </div>
 
-      {subgroupName && (
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 pl-3 pr-1 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
-            {subgroupName.groupName} › {subgroupName.name}
-            <button type="button" onClick={() => dispatch(setTicketFilters({ subgroupId: null }))} aria-label="Clear subgroup filter" className="p-0.5 rounded-full hover:bg-primary/15 cursor-pointer">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </span>
+      {hasFilters && (
+        <div className="flex flex-wrap items-center gap-2">
+          {menuFilterCount > 0 && <span className="text-xs text-on-surface-variant">Filtered by:</span>}
+          {filters.type && <FilterChip label={TYPE_LABELS[filters.type]} onRemove={() => dispatch(setTicketFilters({ type: '' }))} />}
+          {groupName && <FilterChip label={groupName} onRemove={() => dispatch(setTicketFilters({ groupId: null }))} />}
+          {subgroupName && <FilterChip label={`${subgroupName.groupName} › ${subgroupName.name}`} onRemove={() => dispatch(setTicketFilters({ subgroupId: null }))} />}
+          <button type="button" onClick={clearFilters} className="text-xs font-medium text-primary underline underline-offset-2 cursor-pointer">
+            Clear all
+          </button>
         </div>
       )}
 
+      <div ref={listTop} className="scroll-mt-4">
+        {total > 0 && items.length > 0 && (
+          <p className="text-xs text-on-surface-variant" aria-live="polite">
+            Showing {(page - 1) * TICKETS_PAGE_SIZE + 1}-{(page - 1) * TICKETS_PAGE_SIZE + items.length} of {total}
+          </p>
+        )}
+      </div>
+
       {/* List */}
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low overflow-hidden">
+      <div aria-busy={isLoading} className={`rounded-2xl border border-outline-variant/30 bg-surface-container-low overflow-hidden transition-opacity ${isLoading && items.length > 0 ? 'opacity-60' : ''}`}>
         {items.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-16 text-center">
             {isLoading ? (
@@ -209,7 +225,12 @@ export function Tickets() {
             ) : (
               <>
                 <TicketIcon className="w-8 h-8 text-on-surface-variant/50" />
-                <p className="text-sm text-on-surface-variant">{loadError ?? 'No tickets here yet. They appear as customers chat with you.'}</p>
+                <p className="text-sm text-on-surface-variant">{loadError ?? (hasFilters ? 'No tickets match these filters.' : 'No tickets here yet.')}</p>
+                {hasFilters && !loadError && (
+                  <button type="button" onClick={clearFilters} className="text-sm font-medium text-primary underline underline-offset-2 cursor-pointer">
+                    Clear all filters
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -246,17 +267,28 @@ export function Tickets() {
         )}
       </div>
 
-      {page < totalPages && (
-        <div className="flex justify-center">
+      {totalPages > 1 && (
+        <nav aria-label="Ticket pages" className="flex items-center justify-center gap-3">
           <button
             type="button"
-            onClick={() => dispatch(fetchTickets({ page: page + 1 }))}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-outline-variant/40 text-sm text-on-surface-variant hover:bg-surface-container disabled:opacity-60 cursor-pointer"
+            onClick={() => goToPage(page - 1)}
+            disabled={isLoading || page <= 1}
+            className="flex items-center gap-1 px-3 py-2 rounded-xl border border-outline-variant/40 text-sm text-on-surface hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />} Load more ({items.length} of {total})
+            <ChevronLeft className="w-4 h-4" /> Previous
           </button>
-        </div>
+          <span className="text-sm text-on-surface-variant">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => goToPage(page + 1)}
+            disabled={isLoading || page >= totalPages}
+            className="flex items-center gap-1 px-3 py-2 rounded-xl border border-outline-variant/40 text-sm text-on-surface hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            Next <ChevronRight className="w-4 h-4" />
+          </button>
+        </nav>
       )}
 
       </>

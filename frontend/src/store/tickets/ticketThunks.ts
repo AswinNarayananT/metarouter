@@ -4,9 +4,9 @@ import { getApiErrorMessage } from '@/api/errors';
 import type { RootState } from '@/store';
 import type { Ticket, TicketActivity, TicketDetail, TicketGroupNode, TicketStatus, TicketType } from '@/types/ticketTypes';
 
-const TICKETS_PAGE_SIZE = 30;
+export const TICKETS_PAGE_SIZE = 30;
 
-// Current filters from the store -> API query (page 1 replaces the list, later pages append)
+// Current filters from the store -> API query; each page replaces the list
 export const fetchTickets = createAsyncThunk(
   'tickets/fetch',
   async ({ page = 1 }: { page?: number } = {}, { getState, rejectWithValue }) => {
@@ -16,7 +16,6 @@ export const fetchTickets = createAsyncThunk(
     else if (filters.tab !== 'all') params.status = filters.tab;
     if (filters.memberId && filters.tab !== 'mine') params.assigned = filters.memberId;
     if (filters.type) params.type = filters.type;
-    if (filters.handledBy) params.handled_by = filters.handledBy;
     if (filters.groupId) params.group_id = filters.groupId;
     if (filters.subgroupId) params.subgroup_id = filters.subgroupId;
     if (filters.search.trim()) params.search = filters.search.trim();

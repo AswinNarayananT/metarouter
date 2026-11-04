@@ -6,6 +6,7 @@ import { assignConversation, fetchConversationCounts, fetchConversations, fetchM
 import { TemplateDialog } from '@/components/chat/TemplateDialog';
 import type { BroadcastTemplate } from '@/types/broadcastTypes';
 import { fetchTeamMembers } from '@/store/workspace/workspaceThunks';
+import type { ChatVisibilityOption } from '@/types/workspaceTypes';
 import { markNotificationsRead } from '@/store/notifications/notificationThunks';
 import { useOpenChatRealtimeSync } from '@/hooks/useChatRealtime';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
@@ -43,9 +44,14 @@ export function CustomerChats() {
   const teamMembers = useAppSelector((state) => state.workspace.teamMembers);
   const notifications = useAppSelector((state) => state.notifications.items);
   const quickReplies = useAppSelector((state) => state.quickReplies.items);
+  const organization = useAppSelector((state) => state.workspace.organization);
   const currentUserId = currentUser?.id ?? null;
   // Admins and managers supervise: they assign anyone and can reply to any chat
   const isSupervisor = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const chatVisibility: ChatVisibilityOption =
+    currentUser?.role === 'admin'
+      ? 'all'
+      : currentUser?.chat_visibility ?? organization?.chat_visibility?.[currentUser?.role as 'manager' | 'service'] ?? 'all';
   const [searchText, setSearchText] = useState(listSearch); // Typed text; sent to the server after a pause
   const [draft, setDraft] = useState('');
   const [panel, setPanel] = useState<ChatSidePanel>(null);
@@ -76,12 +82,23 @@ export function CustomerChats() {
     return () => window.clearTimeout(timer);
   }, [dispatch, searchText, listSearch]);
 
+  // Adjust active tab if current user's visibility rule excludes it
+  useEffect(() => {
+    if (chatVisibility === 'assigned' && (listFilter === 'ai' || listFilter === 'unassigned')) {
+      dispatch(setChatListQuery({ filter: 'mine' }));
+    } else if (chatVisibility === 'handovered' && listFilter === 'ai') {
+      dispatch(setChatListQuery({ filter: 'all' }));
+    }
+  }, [chatVisibility, listFilter, dispatch]);
+
   // Tab counts change as chats are assigned / handed over: refresh them shortly after a change
   const countsTimer = useRef<number | null>(null);
-  useRealtimeEvent('conversation.updated', () => {
+  const refreshCountsSoon = () => {
     if (countsTimer.current !== null) window.clearTimeout(countsTimer.current);
     countsTimer.current = window.setTimeout(() => dispatch(fetchConversationCounts()), COUNTS_REFRESH_MS);
-  });
+  };
+  useRealtimeEvent('conversation.updated', refreshCountsSoon);
+  useRealtimeEvent('conversation.hidden', refreshCountsSoon);
   useEffect(() => () => {
     if (countsTimer.current !== null) window.clearTimeout(countsTimer.current);
   }, []);
@@ -153,13 +170,15 @@ export function CustomerChats() {
   const filtered = useMemo(() => {
     const q = listSearch.trim().toLowerCase();
     return conversations.filter((c) => {
+      if (chatVisibility === 'assigned' && c.assignedTo?.id !== currentUserId) return false;
+      if (chatVisibility === 'handovered' && c.status !== 'human_takeover' && c.assignedTo?.id !== currentUserId) return false;
       if (listFilter === 'ai' && c.status !== 'active') return false;
       if (listFilter === 'mine' && c.assignedTo?.id !== currentUserId) return false;
       if (listFilter === 'unassigned' && (c.status !== 'human_takeover' || c.assignedTo)) return false;
       if (!q) return true;
       return c.name.toLowerCase().includes(q) || c.phone.replace('+', '').includes(q.replace('+', ''));
     });
-  }, [conversations, listSearch, listFilter, currentUserId]);
+  }, [conversations, listSearch, listFilter, currentUserId, chatVisibility]);
 
   const counts = tabCounts ?? { all: 0, mine: 0, unassigned: 0, ai: 0 };
   const loadMoreChats = () => {
@@ -251,11 +270,14 @@ export function CustomerChats() {
 
   const emptyMessage = isLoading && !hasLoaded ? 'Loading conversations…' : loadError ?? 'No conversations found.';
 
+  // Phones: the open chat, or the list if there is none (a chat hidden while open closes itself)
+  const showChatOnPhone = mobileView === 'chat' && selected !== null;
+
   return (
     // Cancel <main>'s padding and fill the viewport below the 64px navbar
     <div className="-m-4 sm:-m-6 lg:-m-8 h-[calc(100dvh-4rem)] flex overflow-hidden bg-surface">
       <ConversationList
-        className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:flex`}
+        className={`${showChatOnPhone ? 'hidden' : 'flex'} md:flex`}
         conversations={filtered}
         counts={counts}
         query={searchText}
@@ -268,10 +290,11 @@ export function CustomerChats() {
         selectedId={selectedId}
         onSelect={openConversation}
         emptyMessage={emptyMessage}
+        chatVisibility={chatVisibility}
       />
 
       <section
-        className={`${mobileView === 'chat' ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 flex-col`}
+        className={`${showChatOnPhone ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 flex-col`}
         aria-label="Conversation"
       >
         {selected ? (

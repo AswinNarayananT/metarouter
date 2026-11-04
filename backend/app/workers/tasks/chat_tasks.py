@@ -13,7 +13,7 @@ from app.core.features import is_feature_enabled
 from app.services.ai_service import generate_ai_response
 from app.services.messaging_service import queue_outgoing_message, queue_interactive_message
 from app.services.intent_service import enabled_intent_options, tapped_intent, classify_first_message
-from app.services.chat_flow_service import FLOW_REPLY_PREFIX, load_flow, find_node, question_message, tapped_node, render_text
+from app.services.chat_flow_service import FLOW_REPLY_PREFIX, load_flow, off_box_types, find_node, question_message, tapped_node, render_text
 from app.services.order_chat_service import (
     ORDERING_PROMPT, PRODUCT_LIST_OFFER, VIEW_PRODUCTS_BUTTON, NO_PRODUCTS_TEXT, BROWSE_PREFIX, CATEGORY_PREFIX, PRODUCT_PREFIX,
     USE_BUTTONS_TEXT, category_menu, product_menu, parse_browse_reply, parse_category_reply, tapped_product,
@@ -214,7 +214,7 @@ def respond_to_customer(db: Session, conversation: Conversation, user_text: str,
     #    back to the buttons instead of a handover that would leave the order stuck
     if not reply_id and not from_media and handle_order_step(db, conversation, user_text, location):
         return
-    if order_in_progress(conversation.id) and not ai_auto_reply_on(db, conversation.organization_id):
+    if order_in_progress(conversation.id) and is_feature_enabled(db, conversation.organization_id, "orders") and not ai_auto_reply_on(db, conversation.organization_id):
         queue_outgoing_message(db, conversation, sender="model", content=USE_BUTTONS_TEXT)
         return
     # 2. The chat menu (asked once per visit) and what the customer came for: order, problem or something else
@@ -227,8 +227,8 @@ def respond_to_customer(db: Session, conversation: Conversation, user_text: str,
 ANSWER_THEN_QUESTION_SECONDS = 2  # A question right after an answer: sent a moment later so it arrives second
 
 
-def send_question(db: Session, conversation: Conversation, flow: dict, node: dict, orders_on: bool, after_answer: bool = False):
-    message = question_message(db, conversation, flow, node, orders_on)
+def send_question(db: Session, conversation: Conversation, flow: dict, node: dict, off_boxes: set, after_answer: bool = False):
+    message = question_message(db, conversation, flow, node, off_boxes)
     if message.get("buttons") or message.get("menu"):
         delay = {"send_after_seconds": ANSWER_THEN_QUESTION_SECONDS} if after_answer else {}
         queue_interactive_message(db, conversation, message["body"], buttons=message.get("buttons"), menu=message.get("menu"), **delay)
@@ -244,14 +244,14 @@ def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id
     options = enabled_intent_options(db, organization_id)
     allowed = {option["id"] for option in options} | {"other"}
     flow, is_default = load_flow(db, organization_id)
-    orders_on = is_feature_enabled(db, organization_id, "orders")
+    off_boxes = off_box_types(db, organization_id)
 
-    # 1. A tap on the chat menu (an option deleted since, or leading to an order while Orders is off, is just text for the AI)
+    # 1. A tap on the chat menu (an option deleted since, or leading to a module that's off, is just text for the AI)
     if reply_id and reply_id.startswith(FLOW_REPLY_PREFIX):
-        node = tapped_node(flow, reply_id, orders_on)
+        node = tapped_node(flow, reply_id, off_boxes)
         if not node:
             return False
-        return run_node(db, conversation, flow, node, user_text, orders_on)
+        return run_node(db, conversation, flow, node, user_text, off_boxes)
 
     # 2. A tap on the menu sent before admins could build their own (an option whose module was switched off is text for the AI)
     intent = tapped_intent(reply_id)
@@ -273,7 +273,7 @@ def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id
             conversation.intent = "other"
             db.commit()
             return False
-        send_question(db, conversation, flow, start, orders_on)
+        send_question(db, conversation, flow, start, off_boxes)
         return True
 
     # 5. A clear first message skips the menu; a greeting gets it (asked once: after that the AI answers)
@@ -283,7 +283,7 @@ def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id
             conversation.intent = "other"
             db.commit()
             return False
-        send_question(db, conversation, flow, start, orders_on)
+        send_question(db, conversation, flow, start, off_boxes)
         return True
 
     conversation.intent = result
@@ -294,7 +294,7 @@ def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id
 BOX_INTENTS = {"order": "order", "problem": "support", "ai": "other"}  # Built-in boxes of the chat menu
 
 
-def run_node(db: Session, conversation: Conversation, flow: dict, node: dict, user_text: str, orders_on: bool) -> bool:
+def run_node(db: Session, conversation: Conversation, flow: dict, node: dict, user_text: str, off_boxes: set) -> bool:
     # The box an option leads to; its text may be empty (= the default message)
     kind = node["type"]
     text = render_text(db, conversation, node.get("text") or "")
@@ -323,9 +323,9 @@ def run_node(db: Session, conversation: Conversation, flow: dict, node: dict, us
         node = find_node(flow, node.get("next"))
         if not node:
             return True
-        send_question(db, conversation, flow, node, orders_on, after_answer=bool(text))
+        send_question(db, conversation, flow, node, off_boxes, after_answer=bool(text))
         return True
-    send_question(db, conversation, flow, node, orders_on)
+    send_question(db, conversation, flow, node, off_boxes)
     return True
 
 

@@ -29,6 +29,7 @@ import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { QuickRepliesManager } from '@/components/settings/QuickRepliesManager';
 import { LeaveWorkspaceCard } from '@/components/settings/LeaveWorkspaceCard';
 import { AppearanceCard } from '@/components/settings/AppearanceCard';
+import { ChatVisibilityCard } from '@/components/settings/ChatVisibilityCard';
 import {
   fetchOrganization,
   changePassword,
@@ -553,6 +554,8 @@ export function WorkspaceSettings() {
               </Field>
             </SectionCard>
           )}
+
+          {activeTab === 'workspace' && isAdmin && <ChatVisibilityCard />}
 
           {/* ---------- Profile (all users) ---------- */}
           {activeTab === 'profile' && (

@@ -1,13 +1,16 @@
+
+
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.deps import get_current_workspace_user
-from app.core.features import require_feature, is_feature_enabled
+from app.core.features import require_feature
 from app.models.organization_model import User
 from app.models.chat_flow_model import ChatFlow
 from app.schemas.chat_flow_schema import ChatFlowDocument
-from app.services.chat_flow_service import load_flow
+from app.services.chat_flow_service import load_flow, enabled_modules, off_box_types
 
 router = APIRouter(
     prefix="/chat-flow",
@@ -37,7 +40,7 @@ def get_chat_flow(db: Session = Depends(get_db), current_user: User = Depends(ge
     return {
         "flow": flow,
         "is_default": is_default,
-        "orders_enabled": is_feature_enabled(db, current_user.organization_id, "orders")
+        "off_box_types": sorted(off_box_types(db, current_user.organization_id))
     }
 
 
@@ -51,19 +54,20 @@ def save_chat_flow(payload: dict = Body(...), db: Session = Depends(get_db), cur
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=_validation_message(e))
 
-    # 2. Replace the workspace's menu
+    # 2. Replace the workspace's menu (modules on now count as seen: one the admin removed stays removed)
     chat_flow = db.query(ChatFlow).filter(ChatFlow.organization_id == current_user.organization_id).first()
     if not chat_flow:
         chat_flow = ChatFlow(organization_id=current_user.organization_id)
         db.add(chat_flow)
     chat_flow.flow = document.model_dump(exclude_none=True)
+    chat_flow.known_modules = sorted(set(chat_flow.known_modules or []) | enabled_modules(db, current_user.organization_id))
     chat_flow.updated_by_id = current_user.id
     db.commit()
 
     return {
         "flow": chat_flow.flow,
         "is_default": False,
-        "orders_enabled": is_feature_enabled(db, current_user.organization_id, "orders")
+        "off_box_types": sorted(off_box_types(db, current_user.organization_id))
     }
 
 
@@ -78,5 +82,5 @@ def reset_chat_flow(db: Session = Depends(get_db), current_user: User = Depends(
     return {
         "flow": flow,
         "is_default": is_default,
-        "orders_enabled": is_feature_enabled(db, current_user.organization_id, "orders")
+        "off_box_types": sorted(off_box_types(db, current_user.organization_id))
     }

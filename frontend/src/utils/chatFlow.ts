@@ -1,6 +1,7 @@
 import {
   ACTION_TEXT_MAX,
   ANSWER_TEXT_MAX,
+  BOX_TYPE_ORDER,
   BOX_TYPES,
   BUTTON_TITLE_MAX,
   MAX_BOXES,
@@ -43,11 +44,16 @@ export function boxLabel(box: FlowBox): string {
   return BOX_TYPES[box.type].label;
 }
 
-// The options the customer sees (an order is hidden while Orders is off), and whether they fit as buttons
-export function visibleOptions(question: QuestionBox, boxes: Map<string, FlowBox>, ordersEnabled: boolean) {
+// The boxes an admin can add (none whose module is off)
+export function addableBoxTypes(offBoxTypes: FlowBoxType[]): FlowBoxType[] {
+  return BOX_TYPE_ORDER.filter((type) => !offBoxTypes.includes(type));
+}
+
+// The options the customer sees (a box whose module is off is hidden), and whether they fit as buttons
+export function visibleOptions(question: QuestionBox, boxes: Map<string, FlowBox>, offBoxTypes: FlowBoxType[]) {
   const options = question.options.filter((option) => {
     const target = option.next ? boxes.get(option.next) : undefined;
-    return target && (target.type !== 'order' || ordersEnabled);
+    return target && !offBoxTypes.includes(target.type);
   });
   const asButtons = options.length <= MAX_BUTTONS && options.every((option) => charCount(option.title.trim()) <= BUTTON_TITLE_MAX);
   return { options, asButtons };

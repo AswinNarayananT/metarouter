@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Optional
 import redis
 import redis.asyncio as aioredis
 from app.config import settings
@@ -11,11 +12,12 @@ from app.realtime.connection_manager import manager
 REALTIME_CHANNEL = "realtime:events"
 
 
-def publish_event(group: str, event_type: str, data: dict):
+def publish_event(group: str, event_type: str, data: dict, chat: Optional[dict] = None):
     # Sync on purpose: called from Celery tasks and sync routes. Live updates are best effort,
     # so a Redis hiccup must never fail the task that saved the message
+    # chat: the chat this event is about (see publish_chat_event); it decides who gets it and is never sent to browsers
     try:
-        redis_client.publish(REALTIME_CHANNEL, json.dumps({"group": group, "event": {"type": event_type, "data": data}}, default=str))
+        redis_client.publish(REALTIME_CHANNEL, json.dumps({"group": group, "event": {"type": event_type, "data": data}, "chat": chat}, default=str))
     except redis.RedisError as e:
         print(f"[REALTIME] Could not publish {event_type} to {group}: {e}")
 
@@ -35,7 +37,7 @@ async def listen_for_events():
                     continue
                 try:
                     payload = json.loads(message["data"])
-                    await manager.send_to_group(payload["group"], payload["event"])
+                    await manager.send_to_group(payload["group"], payload["event"], payload.get("chat"))
                 except (ValueError, KeyError) as e:
                     print(f"[REALTIME] Dropped malformed event: {e}")
         except asyncio.CancelledError:

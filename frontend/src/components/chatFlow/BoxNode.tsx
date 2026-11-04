@@ -18,7 +18,7 @@ const ACCENTS: Record<FlowBoxType, string> = {
 const handleClass = '!w-3 !h-3 !bg-primary !border-2 !border-surface-container-lowest';
 
 function BoxNodeComponent({ id, data, selected }: NodeProps<BoxNodeType>) {
-  const { startId, ordersEnabled, issueBoxIds } = useContext(FlowCanvasContext);
+  const { startId, offBoxTypes, issueBoxIds } = useContext(FlowCanvasContext);
   const { box } = data;
 
   // Options moved, added or removed: the arrows must start from the new rows
@@ -59,7 +59,7 @@ function BoxNodeComponent({ id, data, selected }: NodeProps<BoxNodeType>) {
       <div className="px-3 py-2">
         {box.type === 'order' ? (
           <p className="text-xs text-on-surface-variant">
-            {ordersEnabled ? 'Shows the product list.' : 'Orders is off: customers don’t see options leading here.'}
+            {offBoxTypes.includes('order') ? 'Orders is off: customers don’t see options leading here.' : 'Shows the product list.'}
           </p>
         ) : (
           <p className={`text-xs whitespace-pre-line line-clamp-3 ${text ? 'text-on-surface' : 'text-on-surface-variant italic'}`}>

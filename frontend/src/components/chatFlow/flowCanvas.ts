@@ -7,9 +7,9 @@ import type { FlowBox, FlowBoxType } from '@/types/chatFlowTypes';
 export type BoxNodeType = Node<{ box: FlowBox }, 'box'>;
 
 // What every box on the canvas needs to know about the whole menu
-export const FlowCanvasContext = createContext<{ startId: string; ordersEnabled: boolean; issueBoxIds: Set<string> }>({
+export const FlowCanvasContext = createContext<{ startId: string; offBoxTypes: FlowBoxType[]; issueBoxIds: Set<string> }>({
   startId: '',
-  ordersEnabled: true,
+  offBoxTypes: [],
   issueBoxIds: new Set(),
 });
 

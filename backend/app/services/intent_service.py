@@ -7,14 +7,16 @@ from app.schemas.intent_schema import IntentResult
 from app.services.ai_service import generate_with_backup, model_chain
 
 # What a customer can come for; each belongs to a module and counts only while it's enabled.
-# The default menu (chat_flow_service.default_flow) offers them in this order; a new module adds its option here
-# (and its flow in chat_tasks.start_intent).
+# The default menu (chat_flow_service.default_flow) offers them in this order, and saved menus gain them when the module turns on.
+# A new module adds its option here, its flow in chat_tasks.start_intent, its node in chat_flow_schema.py, and BOX_TYPES + FlowBoxType in the frontend.
 INTENT_OPTIONS = [
-    {"id": "order", "module": "orders", "title": "🛒 Place an order"},
-    {"id": "support", "module": "customer_chats", "title": "🛠 Report a problem"},
+    {"id": "order", "module": "orders", "box": "order", "title": "🛒 Place an order"},
+    {"id": "support", "module": "customer_chats", "box": "problem", "title": "🛠 Report a problem"},
 ]
+# Customer Chats is the menu itself, so it never arrives after a menu was saved
+ADDABLE_MODULE_OPTIONS = [option for option in INTENT_OPTIONS if option["module"] != "customer_chats"]
 # Last option of the default menu (questions are neither an order nor a problem); never counts as a module option
-OTHER_OPTION = {"id": "other", "title": "💬 Something else"}
+OTHER_OPTION = {"id": "other", "box": "ai", "title": "💬 Something else"}
 INTENT_REPLY_PREFIX = "intent:"  # Buttons of the menu before admins could build their own
 DEFAULT_GREETING = "Hi{name}! 👋 Welcome to {org}. How can we help you today?"
 GREETING_MAX_CHARS = 500

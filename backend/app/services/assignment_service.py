@@ -4,9 +4,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.organization_model import User
 from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
-from app.realtime.connection_manager import org_group, user_group
+from app.realtime.connection_manager import user_group
 from app.realtime.events import publish_event
-from app.services.conversation_service import conversation_payload, record_activity, first_name, handover_roles, SUPERVISOR_ROLES
+from app.services.conversation_service import conversation_payload, record_activity, first_name, handover_roles, publish_chat_event, SUPERVISOR_ROLES
 from app.services.notification_service import notify_assignee
 from app.services.ticket_service import get_open_ticket, escalate_ticket, sync_ticket_owner
 
@@ -74,7 +74,7 @@ def assign_owner(db: Session, conversation: Conversation, user_id: Optional[int]
 
     # 5. Every dashboard updates the owner; the new owner gets a personal alert (not when assigning yourself)
     conversation_data = conversation_payload(db, conversation)
-    publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_data)
+    publish_chat_event(conversation, "conversation.updated", conversation_data)
     if assignee and assignee.id != actor.id:
         publish_event(user_group(assignee.id), "conversation.assigned", {**conversation_data, "assigned_by": {"id": actor.id, "name": actor.name}})
         last_customer_text = db.query(ChatMessage.content).filter(ChatMessage.conversation_id == conversation.id, ChatMessage.sender == "user").order_by(ChatMessage.id.desc()).limit(1).scalar()

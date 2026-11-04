@@ -1,20 +1,20 @@
 import { List } from 'lucide-react';
 import { BOX_TYPES, DEFAULT_MENU_BUTTON } from '@/constants/chatFlow';
 import { fillPlaceholders, visibleOptions } from '@/utils/chatFlow';
-import type { FlowBox } from '@/types/chatFlowTypes';
+import type { FlowBox, FlowBoxType } from '@/types/chatFlowTypes';
 
 interface WhatsAppPreviewProps {
   box: FlowBox;
   boxes: Map<string, FlowBox>;
-  ordersEnabled: boolean;
+  offBoxTypes: FlowBoxType[];
   orgName: string;
 }
 
 // Roughly what the customer gets in WhatsApp when they reach this box
-export function WhatsAppPreview({ box, boxes, ordersEnabled, orgName }: WhatsAppPreviewProps) {
+export function WhatsAppPreview({ box, boxes, offBoxTypes, orgName }: WhatsAppPreviewProps) {
   const rawText = 'text' in box ? (box.text ?? '').trim() : '';
   const text = fillPlaceholders(rawText || BOX_TYPES[box.type].defaultText || '', orgName);
-  const question = box.type === 'question' ? visibleOptions(box, boxes, ordersEnabled) : null;
+  const question = box.type === 'question' ? visibleOptions(box, boxes, offBoxTypes) : null;
 
   if (box.type === 'order') {
     return <p className="text-xs text-on-surface-variant">The customer gets the ordering prompt with a "📋 View products" button.</p>;

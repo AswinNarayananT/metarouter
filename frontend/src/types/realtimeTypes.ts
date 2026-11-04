@@ -67,6 +67,7 @@ export interface ApiConversation {
 import type { AppNotification } from './notificationTypes';
 import type { Ticket } from './ticketTypes';
 import type { Order } from './orderTypes';
+import type { OrganizationChatVisibility } from './workspaceTypes';
 
 /* WebSocket events (backend realtime/notify.py) */
 
@@ -83,6 +84,9 @@ export interface RealtimeEventMap {
   'order.updated': Order; // An order was placed or its status changed
   'notifications.read': { ids: number[]; conversation_id: number | null; unread_count: number }; // Read in another tab
   'conversation.read': { conversation_id: number }; // This user opened the chat in another tab
+  'conversation.hidden': { conversation_id: number }; // This chat isn't visible to this member (any more): drop it
+  'ticket.hidden': { id: number; conversation_id: number }; // Same for a ticket
+  'chat_visibility.changed': { rules: OrganizationChatVisibility; role?: string }; // New rules, or this member's role changed
   'member.removed': { message: string; reason: 'removed' | 'left' }; // Removed by an admin or left; the server closes the socket right after
   // Replies to what this tab sent
   subscribed: { conversation_id: number };

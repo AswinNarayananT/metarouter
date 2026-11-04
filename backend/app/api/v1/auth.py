@@ -16,7 +16,7 @@ from app.core.deps import get_current_workspace_user, token_issued_after_reset, 
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
 from app.core.token_blacklist import blacklist_token, is_token_revoked, rotation_marker
 from app.core.features import get_organization_features
-from app.services.conversation_service import handover_roles
+from app.services.conversation_service import handover_roles, chat_visibility_for
 from app.core.redis_client import redis_client
 from app.services.audit_service import record_audit_log, get_client_ip
 from app.schemas.auth_schema import WorkspaceLoginRequest, WorkspaceLoginResponse, TokenRefreshResponse, ChangePasswordRequest, UpdateNameRequest, ImpersonationExchangeRequest, ForgotPasswordRequest, ResetTokenRequest, ResetPasswordRequest
@@ -296,6 +296,7 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
             "impersonation": _impersonation_info(payload),
             # AI settings "allowed roles for handover": may this member pick up / take over unassigned chats
             "can_handle_chats": user.role in handover_roles(db, user.organization_id),
+            "chat_visibility": chat_visibility_for(db, user),
         }
     }
 

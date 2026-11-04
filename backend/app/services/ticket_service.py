@@ -5,9 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
 from app.models.ticket_model import Ticket, TicketActivity, TicketGroup
-from app.realtime.connection_manager import org_group
-from app.realtime.events import publish_event
-from app.services.conversation_service import as_utc, first_name, record_activity, conversation_payload, visit_first_message_id
+from app.services.conversation_service import as_utc, first_name, record_activity, conversation_payload, visit_first_message_id, publish_chat_event
 from app.services.ticket_ai_service import label_ticket, TicketLabelError
 
 # A ticket = one support session of a chat: it starts with the customer's first message
@@ -60,7 +58,7 @@ def serialize_activity(activity: TicketActivity) -> dict:
 
 def publish_ticket(ticket: Ticket):
     # Every open dashboard updates the ticket list / details
-    publish_event(org_group(ticket.organization_id), "ticket.updated", serialize_ticket(ticket))
+    publish_chat_event(ticket.conversation, "ticket.updated", serialize_ticket(ticket))
 
 
 def add_ticket_activity(db: Session, ticket: Ticket, type: str, content: str, user=None):
@@ -347,7 +345,7 @@ def release_chat_after_close(db: Session, conversation: Conversation):
     conversation.assigned_user_id = None
     conversation.assigned_at = None
     db.commit()
-    publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_payload(db, conversation))
+    publish_chat_event(conversation, "conversation.updated", conversation_payload(db, conversation))
 
 
 def hand_chat_back_after_close(db: Session, conversation: Conversation, user):
@@ -359,4 +357,4 @@ def hand_chat_back_after_close(db: Session, conversation: Conversation, user):
     conversation.assigned_at = None
     db.commit()
     record_activity(db, conversation, f"{first_name(user.name)} handed the chat back to the AI", user)
-    publish_event(org_group(conversation.organization_id), "conversation.updated", conversation_payload(db, conversation))
+    publish_chat_event(conversation, "conversation.updated", conversation_payload(db, conversation))

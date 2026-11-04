@@ -9,6 +9,7 @@ from app.core.redis_client import redis_client
 from app.models.organization_model import User
 from app.models.conversation_model import Conversation
 from app.realtime.connection_manager import manager
+from app.services.conversation_service import can_see_chat, chat_visibility_for
 
 router = APIRouter(prefix="/realtime", tags=["Realtime"])
 
@@ -20,15 +21,22 @@ TICKET_EXPIRE_SECONDS = 30
 CLOSE_INVALID_TICKET = 4401  # Fetch a new ticket and reconnect
 
 
-def _conversation_in_org(conversation_id: int, organization_id: int) -> bool:
+def _member_can_see_chat(conversation_id: int, user_id: int) -> bool:
     # Sync DB check, run in a thread from the async socket loop
     db = SessionLocal()
     try:
-        conversation = db.query(Conversation.id).filter(
-            Conversation.id == conversation_id,
-            Conversation.organization_id == organization_id
-        ).first()
-        return conversation is not None
+        user = db.query(User).filter(User.id == user_id).first()
+        conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        return bool(user and conversation and can_see_chat(db, user, conversation))
+    finally:
+        db.close()
+
+
+def _member_chat_visibility(user_id: int) -> str:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        return chat_visibility_for(db, user) if user else "assigned"
     finally:
         db.close()
 
@@ -61,7 +69,8 @@ async def realtime_socket(websocket: WebSocket, ticket: Optional[str] = Query(No
     owner = json.loads(raw_owner)
 
     # 2. Join the workspace and user groups
-    await manager.connect(websocket, owner["user_id"], owner["organization_id"], owner["role"])
+    chat_visibility = await run_in_threadpool(_member_chat_visibility, owner["user_id"])
+    await manager.connect(websocket, owner["user_id"], owner["organization_id"], owner["role"], chat_visibility)
 
     # 3. Handle what the browser sends: open / close a chat, keep-alive pings
     try:
@@ -90,8 +99,8 @@ async def realtime_socket(websocket: WebSocket, ticket: Optional[str] = Query(No
                     await websocket.send_json({"type": "unsubscribed", "data": {"conversation_id": conversation_id}})
                     continue
 
-                # Only chats of the user's own workspace
-                if not await run_in_threadpool(_conversation_in_org, conversation_id, owner["organization_id"]):
+                # Only chats of the user's own workspace that they may see
+                if not await run_in_threadpool(_member_can_see_chat, conversation_id, owner["user_id"]):
                     await websocket.send_json({"type": "error", "data": {"detail": "Conversation not found", "conversation_id": conversation_id}})
                     continue
                 await manager.subscribe_conversation(websocket, conversation_id)

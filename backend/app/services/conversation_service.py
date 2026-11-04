@@ -1,13 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from sqlalchemy import func
+from sqlalchemy import func, or_, true
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models.conversation_model import Conversation, ChatMessage
+from app.core.chat_visibility import role_chat_visibility, chat_rule_allows
+from app.models.conversation_model import Conversation, ChatMessage, ConversationStatus
+from app.models.organization_model import Organization
 from app.models.ai_settings_model import OrganizationAISettings
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.ticket_model import Ticket
-from app.realtime.connection_manager import conversation_group
+from app.realtime.connection_manager import conversation_group, org_group
 from app.realtime.events import publish_event
 
 # WhatsApp only allows free-form replies within 24 hours of the customer's last message
@@ -119,6 +121,34 @@ def conversation_payload(db: Session, conversation: Conversation) -> dict:
     return serialize_conversation(conversation, last_message, last_customer_message_at(db, conversation.id), display_phone_number, open_ticket)
 
 
+def workspace_chat_rules(db: Session, organization_id: int) -> dict:
+    return db.query(Organization.chat_visibility).filter(Organization.id == organization_id).scalar() or {}
+
+
+def chat_visibility_for(db: Session, user) -> str:
+    return role_chat_visibility(workspace_chat_rules(db, user.organization_id), user.role)
+
+
+def visible_chats_condition(db: Session, user):
+    # The chats this user may see, as a query filter (same rule as chat_rule_allows)
+    rule = chat_visibility_for(db, user)
+    if rule == "all":
+        return true()
+    if rule == "handovered":
+        return or_(Conversation.assigned_user_id == user.id, Conversation.status == ConversationStatus.HUMAN_TAKEOVER)
+    return Conversation.assigned_user_id == user.id
+
+
+def can_see_chat(db: Session, user, conversation: Conversation) -> bool:
+    return conversation.organization_id == user.organization_id and chat_rule_allows(chat_visibility_for(db, user), user.id, _enum_value(conversation.status), conversation.assigned_user_id)
+
+
+def publish_chat_event(conversation: Conversation, event_type: str, data: dict):
+    # Workspace-wide event about one chat: only sockets whose member may see the chat receive it
+    chat = {"conversation_id": conversation.id, "status": _enum_value(conversation.status), "assigned_user_id": conversation.assigned_user_id}
+    publish_event(org_group(conversation.organization_id), event_type, data, chat=chat)
+
+
 # Admins and managers supervise: they can assign anyone and reply to any chat
 SUPERVISOR_ROLES = {"admin", "manager"}
 
@@ -127,8 +157,8 @@ def can_reply(db: Session, user, conversation: Conversation) -> bool:
     # 1. The owner can always reply (an admin / manager gave them the chat, whatever their role)
     if conversation.assigned_user_id == user.id:
         return True
-    # 2. Otherwise the role must be allowed to handle chats (AI settings)
-    if user.role not in handover_roles(db, user.organization_id):
+    # 2. Otherwise the role must be allowed to handle chats (AI settings) and able to see this one
+    if user.role not in handover_roles(db, user.organization_id) or not can_see_chat(db, user, conversation):
         return False
     # 3. Unassigned chats are open to those roles; someone else's chat only to a supervisor stepping in
     return conversation.assigned_user_id is None or user.role in SUPERVISOR_ROLES

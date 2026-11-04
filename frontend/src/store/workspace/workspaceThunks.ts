@@ -8,7 +8,7 @@ import type { LoginCredentials, LoginErrorPayload, VerifyInvitationResponse,
   FetchInvitationsParams, ChangePasswordPayload, AISettings,
   SaveAISettingsPayload, InvitePayloadItem, BulkInvitationResult,
   InvitationListItem, InvitationItemResult,
-  WorkspaceUser, CurrentOrganization } from '@/types/workspaceTypes';
+  WorkspaceUser, CurrentOrganization, OrganizationChatVisibility } from '@/types/workspaceTypes';
 
 // Async Thunk for Workspace Login
 export const loginWorkspaceUser = createAsyncThunk(
@@ -82,7 +82,7 @@ export const fetchOrganization = createAsyncThunk(
 // Async Thunk to rename the current organization or change its currency (admin only); only the fields sent change
 export const updateOrganization = createAsyncThunk(
   'workspace/updateOrganization',
-  async (payload: { name?: string; currency?: string }, { rejectWithValue }) => {
+  async (payload: { name?: string; currency?: string; chat_visibility?: OrganizationChatVisibility }, { rejectWithValue }) => {
     try {
       const response = await api.patch<CurrentOrganization>('/api/v1/organizations/current', payload);
       return response.data;

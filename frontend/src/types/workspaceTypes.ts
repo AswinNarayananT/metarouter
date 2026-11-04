@@ -1,3 +1,10 @@
+export type ChatVisibilityOption = 'all' | 'handovered' | 'assigned';
+
+export interface OrganizationChatVisibility {
+  manager: ChatVisibilityOption;
+  service: ChatVisibilityOption;
+}
+
 export interface WorkspaceUser {
   id: number;
   name: string;
@@ -8,6 +15,7 @@ export interface WorkspaceUser {
   features?: Record<string, boolean>;
   impersonation?: ImpersonationInfo | null;
   can_handle_chats?: boolean; // Role may pick up / take over unassigned chats (AI settings); sent by /auth/me
+  chat_visibility?: ChatVisibilityOption; // Active chat visibility rule for this user's role
 }
 
 // Set only when a super admin is viewing the workspace as this user (read-only support session)
@@ -26,6 +34,7 @@ export interface CurrentOrganization {
   currency?: string; // Product prices are in this currency (ISO code)
   supported_currencies?: string[];
   ai_auto_reply?: boolean; // False: the AI doesn't answer, every new chat goes straight to the team
+  chat_visibility?: OrganizationChatVisibility;
 }
 
 export interface TeamMember {
