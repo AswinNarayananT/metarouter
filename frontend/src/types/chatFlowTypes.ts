@@ -53,6 +53,7 @@ export interface ChatFlowResponse {
   flow: ChatFlowDocument;
   is_default: boolean; // No menu saved yet: this is the built-in one
   off_box_types: FlowBoxType[]; // Boxes whose module is off: customers don't see options leading there
+  unadded_modules?: string[]; // Option titles that are on but couldn't join this menu (only when loading it)
 }
 
 // A problem found before saving, on a box (and one of its options)

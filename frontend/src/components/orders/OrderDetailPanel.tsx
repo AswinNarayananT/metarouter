@@ -199,7 +199,7 @@ export function OrderDetailPanel({
               {event.customer_notified === false && (
                 <span className="flex items-start gap-1.5 mt-1 p-2 rounded-lg bg-amber-500/10 text-on-surface">
                   <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0 text-amber-700" />
-                  Customer not messaged: WhatsApp's 24-hour window had closed, or the chat isn't available. Let them know another way.
+                  Customer not messaged: WhatsApp's 24-hour window had closed and the update template isn't ready yet, or the customer opted out. Let them know another way.
                 </span>
               )}
               <span className="block text-on-surface-variant">{formatDateTime(event.created_at)}</span>

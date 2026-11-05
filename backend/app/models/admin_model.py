@@ -9,4 +9,5 @@ class SuperAdmin(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")  # Raised on password change: older tokens and support sessions stop working
     created_at = Column(DateTime(timezone=True), server_default=func.now())

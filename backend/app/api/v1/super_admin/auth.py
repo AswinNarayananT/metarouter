@@ -15,6 +15,12 @@ from app.services.audit_service import record_audit_log, get_client_ip
 
 router = APIRouter(prefix="/superadmin", tags=["Super Admin Authentication"])
 
+
+def _admin_access_token(admin: SuperAdmin) -> str:
+    token_payload = {"sub": admin.email, "role": "super_admin", "admin_id": admin.id, "token_version": admin.token_version}
+    return create_access_token(data=token_payload, expires_delta=timedelta(minutes=settings.SUPER_ADMIN_TOKEN_EXPIRE_MINUTES))
+
+
 @router.post("/login", response_model=TokenResponse)
 def super_admin_login(payload: SuperAdminLoginRequest, request: Request, db: Session = Depends(get_db)):
     # Too many failed attempts for this email / IP -> 429 before checking anything
@@ -46,12 +52,7 @@ def super_admin_login(payload: SuperAdminLoginRequest, request: Request, db: Ses
     clear_failed_logins("super_admin", payload.email, request)
 
     # 3. Create JWT access token embedding the sub and role
-    access_token_payload = {
-        "sub": admin.email,
-        "role": "super_admin",
-        "admin_id": admin.id
-    }
-    access_token = create_access_token(data=access_token_payload, expires_delta=timedelta(minutes=settings.SUPER_ADMIN_TOKEN_EXPIRE_MINUTES))
+    access_token = _admin_access_token(admin)
 
     # Audit log login
     record_audit_log(
@@ -128,7 +129,9 @@ def change_super_admin_password(
     if verify_password(payload.new_password, admin.hashed_password):
         raise HTTPException(status_code=400, detail="New password must be different from the current password")
 
+    # Every older token and support session stops working
     admin.hashed_password = get_password_hash(payload.new_password)
+    admin.token_version += 1
     db.commit()
 
     record_audit_log(
@@ -146,4 +149,5 @@ def change_super_admin_password(
         status="success",
     )
 
-    return {"message": "Password updated successfully"}
+    # This device stays logged in with a fresh token
+    return {"message": "Password updated successfully", "access_token": _admin_access_token(admin)}

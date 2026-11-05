@@ -15,6 +15,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { AlertCircle, Loader2, Plus, RotateCcw, Save, TriangleAlert, X } from 'lucide-react';
+import { useBlocker } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchChatFlow, resetChatFlow, saveChatFlow } from '@/store/chatFlow/chatFlowThunks';
 import { useThemeMode } from '@/hooks/useThemeMode';
@@ -68,6 +69,7 @@ function ChatMenuEditor() {
   const [startId, setStartId] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   const [offBoxTypes, setOffBoxTypes] = useState<FlowBoxType[]>([]);
+  const [unaddedModules, setUnaddedModules] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -81,6 +83,7 @@ function ChatMenuEditor() {
     setStartId(response.flow.start);
     setIsDefault(response.is_default);
     setOffBoxTypes(response.off_box_types);
+    setUnaddedModules(response.unadded_modules ?? []);
     setSelectedId(null);
     setSelectedEdgeId(null);
     setDirty(false);
@@ -99,6 +102,9 @@ function ChatMenuEditor() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Going to another page with unsaved changes asks first
+  const leaveBlocker = useBlocker(dirty);
 
   // Leaving or reloading the tab with unsaved changes asks first
   useEffect(() => {
@@ -227,6 +233,7 @@ function ChatMenuEditor() {
     setSaving(false);
     if (saveChatFlow.fulfilled.match(result)) {
       setIsDefault(false);
+      setUnaddedModules([]);
       // Edits made while saving are still unsaved
       if (latestFlow.current === saved) setDirty(false);
     }
@@ -347,6 +354,15 @@ function ChatMenuEditor() {
         </div>
       </div>
 
+      {unaddedModules.length > 0 && (
+        <div role="status" className="flex items-center gap-2 px-4 py-2 border-b border-outline-variant/40 bg-tertiary-container/40 text-xs text-on-surface">
+          <TriangleAlert className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {unaddedModules.join(', ')} couldn't be added to your menu: the start question is full, or already has an option with that title. Add the box yourself to offer it.
+          </span>
+        </div>
+      )}
+
       <div className="relative flex-1 min-h-0 flex">
         <div ref={canvasRef} className="flex-1 min-w-0">
           <FlowCanvasContext.Provider value={{ startId, offBoxTypes, issueBoxIds }}>
@@ -399,6 +415,23 @@ function ChatMenuEditor() {
           </aside>
         )}
       </div>
+
+      {leaveBlocker.state === 'blocked' && (
+        <div role="dialog" aria-modal="true" aria-label="Leave without saving" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="w-full max-w-md rounded-2xl bg-surface-container-low border border-outline-variant/40 shadow-xl">
+            <h2 className="px-5 pt-4 text-sm font-semibold text-on-surface">Leave without saving?</h2>
+            <p className="px-5 py-3 text-sm text-on-surface-variant">Your changes to the chat menu will be lost.</p>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-outline-variant/30">
+              <button type="button" onClick={() => leaveBlocker.reset()} className="px-4 py-2 rounded-xl text-sm text-on-surface hover:bg-surface-container cursor-pointer">
+                Stay
+              </button>
+              <button type="button" onClick={() => leaveBlocker.proceed()} className="px-4 py-2 rounded-xl bg-error text-on-error text-sm font-medium hover:bg-error/90 cursor-pointer">
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmReset && (
         <div role="dialog" aria-modal="true" aria-label="Reset the chat menu" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => !resetting && setConfirmReset(false)}>

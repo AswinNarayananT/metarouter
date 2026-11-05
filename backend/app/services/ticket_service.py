@@ -337,8 +337,8 @@ def add_ticket_note(db: Session, ticket: Ticket, content: str, user) -> TicketAc
 
 
 def release_chat_after_close(db: Session, conversation: Conversation):
-    # AI auto-reply off: the closed ticket's chat leaves the team's hands, so the customer's next message
-    # goes through the handover again (new team ticket, alert, reminders) instead of silently joining a taken-over chat
+    # An idle-closed ticket's chat leaves the team's hands: the customer's next message gets the AI, or with AI auto-reply
+    # off the handover again (new team ticket, alert, reminders), instead of silently joining a taken-over chat
     if conversation.status == ConversationStatus.ACTIVE and conversation.assigned_user_id is None:
         return
     conversation.status = ConversationStatus.ACTIVE

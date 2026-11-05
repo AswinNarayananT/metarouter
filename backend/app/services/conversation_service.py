@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy import func, or_, true
@@ -15,6 +16,12 @@ from app.realtime.events import publish_event
 # WhatsApp only allows free-form replies within 24 hours of the customer's last message
 CUSTOMER_SERVICE_WINDOW = timedelta(hours=24)
 DEFAULT_HANDOVER_ROLES = "admin,manager"
+# A message of only these words (or only emoji) asks for nothing, so it opens no team ticket. "yes" and "no" are left out: they can answer a question
+SMALL_TALK_WORDS = {
+    "hi", "hii", "hiii", "hai", "hello", "helo", "hey", "namaste", "namaskar", "namaskaram", "good", "morning", "afternoon", "evening", "night",
+    "thanks", "thank", "you", "thanku", "thankyou", "thx", "ty", "tq", "ok", "okay", "okk", "k", "fine", "great", "nice", "cool", "bye", "nanni", "shukriya", "dhanyavad"
+}
+SMALL_TALK_MAX_WORDS = 5
 
 # Same shapes are used by the REST API and the WebSocket events, so the frontend handles one format
 
@@ -171,6 +178,14 @@ def handover_roles(db: Session, organization_id: int) -> set:
 
 
 AI_AUTO_REPLY_OFF_ERROR = "AI auto-reply is off. Turn it on in AI Assistant to hand chats back."
+
+
+def is_small_talk(text: Optional[str]) -> bool:
+    # "hi", "thank you 🙏", "👍"; anything unknown counts as a real message, so a problem is never missed
+    if not text or not text.strip():
+        return False
+    words = re.findall(r"\w+", text.lower())
+    return len(words) <= SMALL_TALK_MAX_WORDS and all(word in SMALL_TALK_WORDS for word in words)
 
 
 def ai_auto_reply_on(db: Session, organization_id: int) -> bool:

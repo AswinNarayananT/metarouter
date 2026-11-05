@@ -102,9 +102,12 @@ const superAdminSlice = createSlice({
         state.passwordSuccess = false;
         state.passwordError = null;
       })
-      .addCase(changeSuperAdminPassword.fulfilled, (state) => {
+      .addCase(changeSuperAdminPassword.fulfilled, (state, action) => {
         state.isChangingPassword = false;
         state.passwordSuccess = true;
+        // The old token stopped working: this device carries on with the new one
+        state.token = action.payload.access_token;
+        localStorage.setItem('super_admin_token', action.payload.access_token);
       })
       .addCase(changeSuperAdminPassword.rejected, (state, action) => {
         state.isChangingPassword = false;

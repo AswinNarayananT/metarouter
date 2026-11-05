@@ -36,6 +36,10 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_whatsapp_numbers_task",
         "schedule": timedelta(minutes=settings.NUMBER_REFRESH_INTERVAL_MINUTES),
     },
+    "ensure-order-templates": {
+        "task": "ensure_order_templates_task",
+        "schedule": timedelta(minutes=settings.NUMBER_REFRESH_INTERVAL_MINUTES),
+    },
     "sweep-stuck-messages": {
         "task": "sweep_stuck_messages_task",
         "schedule": timedelta(minutes=settings.MESSAGE_SWEEP_INTERVAL_MINUTES),

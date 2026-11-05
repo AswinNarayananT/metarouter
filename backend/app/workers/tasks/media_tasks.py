@@ -16,6 +16,7 @@ from app.models.organization_model import Organization
 from app.services.whatsapp_service import get_media_info, download_media, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
 from app.services.channel_service import mark_number_disconnected, number_is_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.services.document_parser_service import parse_document, transcribe_audio, DocumentParseError
+from app.services.order_chat_service import handle_order_list
 from app.workers.tasks.chat_tasks import _get_or_create_conversation, respond_to_customer, update_customer_profile
 from app.core.redis_client import redis_client
 from app.realtime.notify import notify_new_messages, notify_attachment_updated
@@ -254,7 +255,17 @@ def parse_document_task(self, attachment_id: int):
             _transcribe_voice_note(self, db, attachment, content)
             return
 
-        # 3. Extract the details with Gemini
+        # 3. While ordering, a photo or PDF may be the customer's list
+        conversation = attachment.message.conversation
+        if conversation.intent == "order" and _can_reply(db, attachment) and handle_order_list(db, conversation, image=content, mime_type=attachment.mime_type):
+            attachment.document_type = "Order list"
+            attachment.parse_status = "skipped"
+            attachment.error = None
+            db.commit()
+            notify_attachment_updated(attachment)
+            return
+
+        # 4. Extract the details with Gemini
         try:
             parsed = parse_document(content, attachment.mime_type)
         except DocumentParseError as exc:
@@ -271,7 +282,7 @@ def parse_document_task(self, attachment_id: int):
             _acknowledge_document(db, attachment, f"[Document received] The customer sent a {attachment.kind} that could not be read automatically.")
             return
 
-        # 4. Save the results (shape matches the frontend ParsedDocument type)
+        # 5. Save the results (shape matches the frontend ParsedDocument type)
         attachment.document_type = parsed["document_type"]
         attachment.confidence = parsed["confidence"]
         attachment.parsed_data = {
@@ -285,7 +296,7 @@ def parse_document_task(self, attachment_id: int):
         db.commit()
         notify_attachment_updated(attachment)
 
-        # 5. Let the AI acknowledge what it read
+        # 6. Let the AI acknowledge what it read
         details = [f"{f['label']}: {f['value']}" for f in parsed["fields"]] + [f"{t['label']}: {t['value']}" for t in parsed["totals"]]
         summary = f"[Document received] The customer sent a {parsed['document_type']}. Details read from it: " + "; ".join(details)
         _acknowledge_document(db, attachment, summary)
@@ -329,7 +340,7 @@ def _transcribe_voice_note(task, db: Session, attachment: ChatAttachment, conten
 
     # 3. The AI answers what was said, as if it had been typed
     if transcript:
-        _acknowledge_document(db, attachment, transcript)
+        _acknowledge_document(db, attachment, transcript, spoken=True)
     else:
         _acknowledge_document(db, attachment, "[Voice note received] The voice note had no clear speech. Kindly ask the customer to repeat it or type their message.")
 
@@ -347,17 +358,20 @@ def _mark_download_failed(db: Session, attachment: ChatAttachment, error: str):
     _acknowledge_document(db, attachment, f"[{what.capitalize()} received] The customer sent a {what} that could not be downloaded. Kindly ask them to send it again or type their message.")
 
 
-def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str):
+def _can_reply(db: Session, attachment: ChatAttachment) -> bool:
     # AI stays silent while a team member is handling the chat
     conversation = attachment.message.conversation
     if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
-        return
+        return False
     # ... and when the number is disconnected (the reply couldn't be delivered)
     if number_is_disconnected(db, conversation.organization_id, conversation.phone_number_id):
-        return
+        return False
     # ... and when the workspace is inactive (suspended)
     org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
-    if not org or org.subscription_status == "inactive" or org.subscription_status != "active":
-        return
-    respond_to_customer(db, conversation, summary, from_media=True)
+    return bool(org) and org.subscription_status == "active"
+
+
+def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str, spoken: bool = False):
+    if _can_reply(db, attachment):
+        respond_to_customer(db, attachment.message.conversation, summary, from_media=True, spoken=spoken)
 

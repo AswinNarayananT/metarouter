@@ -648,6 +648,7 @@ def start_impersonation(organization_id: int, payload: ImpersonateUserRequest, r
     session = {
         "admin_id": current_admin.id,
         "admin_email": current_admin.email,
+        "admin_token_version": current_admin.token_version,
         "user_id": user.id,
         "organization_id": org.id
     }

@@ -6,11 +6,13 @@ import bcrypt
 import jwt
 from app.config import settings
 
+BCRYPT_MAX_BYTES = 72  # bcrypt refuses longer input, so hashing and checking both cut here
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    return bcrypt.checkpw(plain_password.encode("utf-8")[:BCRYPT_MAX_BYTES], hashed_password.encode("utf-8"))
 
 def get_password_hash(password: str) -> str:
-    pwd_bytes = password.encode("utf-8")[:72]
+    pwd_bytes = password.encode("utf-8")[:BCRYPT_MAX_BYTES]
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
@@ -36,7 +38,8 @@ def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "refresh", "jti": uuid.uuid4().hex})
+    # family: stays the same across rotations, so one login's tokens can be revoked together
+    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "refresh", "jti": uuid.uuid4().hex, "family": to_encode.get("family") or uuid.uuid4().hex})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:

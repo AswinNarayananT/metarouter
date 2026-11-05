@@ -10,7 +10,8 @@ class Invitation(Base):
     name = Column(String, nullable=False)  
     email = Column(String, index=True, nullable=False)
     role = Column(String, default="service", nullable=False)  # "admin", "manager", "service"
-    token = Column(String, unique=True, index=True, nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)  # SHA-256 hash; the real link exists only in the invitee's email
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # Who sent it: revoked when they lose admin access
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_used = Column(Boolean, default=False, nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)  # Cancelled by an admin: the link stops working

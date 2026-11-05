@@ -10,7 +10,7 @@ from app.core.features import require_feature
 from app.models.organization_model import User
 from app.models.chat_flow_model import ChatFlow
 from app.schemas.chat_flow_schema import ChatFlowDocument
-from app.services.chat_flow_service import load_flow, enabled_modules, off_box_types
+from app.services.chat_flow_service import load_flow, enabled_modules, off_box_types, unadded_module_titles
 
 router = APIRouter(
     prefix="/chat-flow",
@@ -36,11 +36,13 @@ def _validation_message(error: ValidationError) -> str:
 def get_chat_flow(db: Session = Depends(get_db), current_user: User = Depends(get_current_workspace_user)):
     _require_admin(current_user)
     flow, is_default = load_flow(db, current_user.organization_id)
+    known_modules = db.query(ChatFlow.known_modules).filter(ChatFlow.organization_id == current_user.organization_id).scalar()
 
     return {
         "flow": flow,
         "is_default": is_default,
-        "off_box_types": sorted(off_box_types(db, current_user.organization_id))
+        "off_box_types": sorted(off_box_types(db, current_user.organization_id)),
+        "unadded_modules": [] if is_default else unadded_module_titles(flow, known_modules, enabled_modules(db, current_user.organization_id))
     }
 
 

@@ -66,7 +66,6 @@ class InvitationDetail(BaseModel):
     name: str
     email: str
     role: str
-    invite_link: str
     resent: bool = False  # Replaced a pending invite: the old link no longer works
 
     class Config:
@@ -103,7 +102,6 @@ class InvitationListItem(BaseModel):
     status: InvitationStatus
     expires_at: datetime
     created_at: Optional[datetime] = None
-    invite_link: Optional[str] = None  # Pending invites only, for "Copy link"
 
 
 class PaginatedInvitationsResponse(BaseModel):

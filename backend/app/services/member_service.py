@@ -3,6 +3,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.organization_model import User
 from app.models.conversation_model import Conversation
+from app.models.invitation_model import Invitation
 from app.models.ticket_model import Ticket
 from app.realtime.connection_manager import user_group
 from app.realtime.events import publish_event
@@ -35,6 +36,15 @@ def other_active_admins(db: Session, member: User) -> int:
     ).count()
 
 
+def revoke_invites_sent_by(db: Session, member: User):
+    # Someone losing admin access can't keep access through a link they already hold (the caller commits)
+    db.query(Invitation).filter(
+        Invitation.created_by_id == member.id,
+        Invitation.is_used == False,
+        Invitation.revoked_at == None
+    ).update({"revoked_at": datetime.now(timezone.utc)}, synchronize_session=False)
+
+
 def archive_member(db: Session, member: User, actor: User, new_owner: Optional[User], removal_type: str, message: str) -> int:
     # 1. Hand over their chats (each open ticket follows its chat), then any ticket left over
     chats = assigned_chats_query(db, member).all()
@@ -54,6 +64,8 @@ def archive_member(db: Session, member: User, actor: User, new_owner: Optional[U
     member.removed_at = now
     member.removal_type = removal_type
     member.tokens_valid_after = now
+    member.token_version += 1
+    revoke_invites_sent_by(db, member)
     db.commit()
     db.refresh(member)
 

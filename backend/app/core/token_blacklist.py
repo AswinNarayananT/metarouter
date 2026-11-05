@@ -12,13 +12,29 @@ def _key(jti: str) -> str:
     return f"token-blacklist:{jti}"
 
 
-def blacklist_token(payload: dict, reason: str = "logout"):
+def _family_key(family: str) -> str:
+    return f"token-family-revoked:{family}"
+
+
+def blacklist_token(payload: dict, reason: str = "logout", only_first: bool = False):
+    # only_first: keep an earlier entry (a token's rotation time is set once, so replays can't extend its grace period)
     jti = payload.get("jti")
     remaining = int(payload.get("exp", 0) - time.time())
     if not jti or remaining <= 0:
         return  # Already expired: nothing to revoke
     try:
-        redis_client.set(_key(jti), reason, ex=remaining)
+        redis_client.set(_key(jti), reason, ex=remaining, nx=only_first)
+    except redis.RedisError:
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable. Try again shortly.")
+
+
+def revoke_token_family(payload: dict):
+    # Ends every refresh token of one login (logout, or a replaced token used again after its grace period)
+    family = payload.get("family")
+    if not family:
+        return
+    try:
+        redis_client.set(_family_key(family), "1", ex=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)
     except redis.RedisError:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable. Try again shortly.")
 
@@ -31,6 +47,9 @@ def is_token_revoked(payload: dict) -> bool:
 
     # Redis down: refuse rather than accept a token that might have been revoked
     try:
+        family = payload.get("family")
+        if family and redis_client.exists(_family_key(family)):
+            return True
         value = redis_client.get(_key(jti))
     except redis.RedisError:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable. Try again shortly.")

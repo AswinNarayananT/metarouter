@@ -26,8 +26,10 @@ from app.services.whatsapp_service import (
 from app.models.contact_model import ContactOptOut
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.models.organization_model import Organization
+from app.core.features import is_feature_enabled
 from app.core.redis_client import redis_client
 from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
+from app.services.order_template_service import create_missing_order_templates
 from app.realtime.notify import notify_message_status
 
 SEND_LOCK_SECONDS = 120  # Longer than one Meta request; released as soon as the task finishes
@@ -59,6 +61,27 @@ def _is_broadcast_message(db: Session, message: ChatMessage) -> bool:
 def _as_utc(value: datetime) -> datetime:
     # created_at is stored without a timezone but always written in UTC
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+@celery_app.task(name="ensure_order_templates_task")
+def ensure_order_templates_task(number_id: Optional[int] = None):
+    # On connecting a number, and on a schedule (a workspace that turned Orders on later); one number's failure doesn't stop the rest
+    db = SessionLocal()
+    try:
+        query = db.query(WhatsAppNumber).filter(WhatsAppNumber.status == "connected")
+        if number_id:
+            query = query.filter(WhatsAppNumber.id == number_id)
+        for number in query.all():
+            if not is_feature_enabled(db, number.organization_id, "orders"):
+                continue
+            try:
+                created = create_missing_order_templates(number)
+                if created:
+                    print(f"[ORDER TEMPLATES] number {number.id}: submitted {', '.join(created)}")
+            except (WhatsAppRetryableError, WhatsAppPermanentError) as exc:
+                print(f"[ORDER TEMPLATES] number {number.id}: {exc}")
+    finally:
+        db.close()
 
 
 @celery_app.task(name="send_whatsapp_message_task", bind=True, max_retries=5)

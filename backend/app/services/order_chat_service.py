@@ -13,15 +13,18 @@ from app.models.conversation_model import Conversation
 from app.models.product_model import Product
 from app.services.messaging_service import fit, queue_interactive_message, queue_outgoing_message, OutgoingMessageError, INTERACTIVE_BODY_MAX_CHARS, MAX_LIST_ROWS, ROW_TITLE_MAX_CHARS, ROW_DESCRIPTION_MAX_CHARS
 from app.services.product_service import current_products, stock_status
-from app.services.order_service import price_items, place_order, publish_order, order_details_text, item_lines_text, address_label, map_link, get_customer_address, workspace_currency
-from app.services.conversation_service import record_activity
+from app.services.order_service import price_items, place_order, publish_order, order_details_text, item_lines_text, address_label, map_link, get_customer_address, workspace_currency, last_order
+from app.services.order_list_service import read_order_list
+from app.services.conversation_service import record_activity, ai_auto_reply_on
 from app.services.notification_service import notify_team_of_order
 from app.utils.money import format_price
 
 # Ordering in chat: the prompt after "Place an order", and the category / product list menus (tap to browse)
 ORDERING_PROMPT = "What would you like to order? Just type it, send a voice note, or a photo of your list. 📝"
+TAP_ORDERING_PROMPT = "What would you like to order? Tap View products to see what we have. 📝"  # AI auto-reply off: nothing reads a typed list
 PRODUCT_LIST_OFFER = "You can also pick items from our product list:"
 VIEW_PRODUCTS_BUTTON = {"id": "browse:categories", "title": "📋 View products"}
+ORDER_AGAIN_BUTTON = {"id": "reorder:show", "title": "🔁 Order again"}
 NO_PRODUCTS_TEXT = "Sorry, we don't have any products listed right now. Please tell us what you need and our team will help."
 OTHER_CATEGORY = "Other"  # Products without a category
 PAGE_ROWS = MAX_LIST_ROWS - 1  # A full page keeps one row for "More"
@@ -142,6 +145,8 @@ LOCK_WAIT_SECONDS = 10
 PLACED_MEMORY_SECONDS = 300  # A late second tap on Confirm is told the order is already placed
 QUANTITY_PREFIX = "qty:"
 ORDER_PREFIX = "order:"
+PICK_PREFIX = "pick:"  # "pick:{product id}" / "pick:skip": which product an unclear list item meant
+REORDER_PREFIX = "reorder:"
 BODY_ROOM = INTERACTIVE_BODY_MAX_CHARS - 24  # A little spare under WhatsApp's limit
 
 ITEM_ADDED_BUTTONS = [{"id": "order:add", "title": "➕ Add another item"}, {"id": "order:place", "title": "✅ Place order"}, {"id": "order:cancel", "title": "❌ Cancel"}]
@@ -149,6 +154,7 @@ FULFILMENT_BUTTONS = [{"id": "order:fulfil:delivery", "title": "🚚 Delivery"},
 SAVED_ADDRESS_BUTTONS = [{"id": "order:address:same", "title": "✅ Same address"}, {"id": "order:address:new", "title": "📍 New address"}]
 SKIP_BUTTON = [{"id": "order:address:skip", "title": "Skip"}]
 CONFIRM_BUTTONS = [{"id": "order:confirm", "title": "✅ Confirm order"}, {"id": "order:cancel", "title": "❌ Cancel"}]
+LAST_ORDER_BUTTONS = [{"id": "reorder:same", "title": "🔁 Same again"}, {"id": "reorder:add", "title": "➕ Add to it"}, {"id": "reorder:new", "title": "🛒 New order"}]
 
 FULFILMENT_QUESTION = "How would you like to get your order?"
 LOCATION_REQUEST_TEXT = "Please share your delivery location (tap the button), or type your full address."
@@ -158,6 +164,9 @@ CANCELLED_TEXT = "Your order was cancelled. Tap View products whenever you're re
 NOTHING_AVAILABLE_TEXT = "Sorry, none of these items can be ordered right now. Tap View products to pick again."
 CHANGED_TEXT = "Prices or stock changed since you saw your order. Please check and confirm again."
 USE_BUTTONS_TEXT = "You have an order in progress. Please use the buttons above to continue, or tap ❌ Cancel to stop."
+LIST_HEAD_TEXT = "Here's what I got from your list ✅"
+NOTHING_FOUND_TEXT = "Sorry, we couldn't find these: {}. Tap View products to see what we have."
+LAST_ORDER_GONE_TEXT = "Sorry, the items from your last order aren't available right now. Tap View products to pick again."
 ADDRESS_MAX_CHARS = 500
 LEADING_NUMBER = re.compile(r"^\s*(\d{1,4})(?!\d)")  # "2", "2 packets", "3kg" -> the quantity
 
@@ -200,6 +209,13 @@ def order_in_progress(conversation_id: int) -> bool:
 
 def send_view_products(db: Session, conversation: Conversation, text: str):
     queue_interactive_message(db, conversation, text, buttons=[VIEW_PRODUCTS_BUTTON])
+
+
+def send_ordering_prompt(db: Session, conversation: Conversation, offer_last_order: bool = True):
+    # The start of an order: Order again appears for a returning customer
+    text = ORDERING_PROMPT if ai_auto_reply_on(db, conversation.organization_id) else TAP_ORDERING_PROMPT
+    returning = offer_last_order and last_order(db, conversation.organization_id, conversation.customer_phone)
+    queue_interactive_message(db, conversation, text, buttons=[VIEW_PRODUCTS_BUTTON, ORDER_AGAIN_BUTTON] if returning else [VIEW_PRODUCTS_BUTTON])
 
 
 def quantity_buttons(product_id: int) -> list:
@@ -246,13 +262,147 @@ def add_pending_item(db: Session, conversation: Conversation, selection: dict, q
     added = wanted - already
     name = fit(product.name, 150)
     head = (f"Added {name} × {added} ✅" if added > 0 else f"{name} is already in your order.") + (f"\n{note}" if note else "")
+    save_selection(conversation.id, selection)
+    queue_interactive_message(db, conversation, order_so_far_text(db, conversation, selection, head), buttons=ITEM_ADDED_BUTTONS)
+
+
+def order_so_far_text(db: Session, conversation: Conversation, selection: dict, head: str) -> str:
+    # The heading, the items and the total, fitted to WhatsApp's limit
     lines, _, total = price_items(db, conversation.organization_id, [tuple(i) for i in selection["items"]])
     currency = workspace_currency(db, conversation.organization_id)
     footer = f"Total: {format_price(total, currency)}"
     room = BODY_ROOM - len(head) - len(footer) - len("\n\nYour order so far:\n\n")
-    body = f"{head}\n\nYour order so far:\n{item_lines_text(lines, currency, room)}\n{footer}"
+    return f"{head}\n\nYour order so far:\n{item_lines_text(lines, currency, room)}\n{footer}"
+
+
+# ---- A list the customer typed, said or photographed ----
+
+def handle_order_list(db: Session, conversation: Conversation, text: Optional[str] = None, image: Optional[bytes] = None, mime_type: Optional[str] = None) -> bool:
+    # True = read as a list and answered; False = not a list, so it gets the normal reply
+    organization_id = conversation.organization_id
+    if not is_feature_enabled(db, organization_id, "orders") or not ai_auto_reply_on(db, organization_id):
+        return False
+    selection = get_selection(conversation.id)
+    if selection and selection.get("step") not in ("items", "choose"):
+        return False  # Past the items already (delivery, address, confirm)
+
+    # The AI call happens outside the step lock: it's much slower than a step
+    products = orderable_products(db, organization_id).order_by(func.lower(Product.name)).limit(settings.ORDER_LIST_CATALOG_MAX).all()
+    lines = read_order_list(products, text=text, image=image, mime_type=mime_type)
+    if not lines:
+        return False
+
+    with order_step_lock(conversation.id):
+        selection = get_selection(conversation.id) or {"items": []}
+        unclear, not_found = selection.get("unclear", []), selection.get("not_found", [])
+        by_id = {product.id: product for product in products}
+        for line in lines:
+            ids = line["product_ids"]
+            if len(ids) > 1:
+                unclear.append(line)
+            elif not ids:
+                not_found.append(line["requested"])
+            elif not add_list_item(selection, by_id[ids[0]], line["quantity"]):
+                not_found.append(fit(by_id[ids[0]].name, 60))
+        selection["unclear"], selection["not_found"] = unclear, not_found
+        continue_order_list(db, conversation, selection)
+    return True
+
+
+def add_list_item(selection: dict, product: Product, quantity: int) -> bool:
+    # False when it can't be added (out of stock, or the order is full)
+    items = {pid: qty for pid, qty in selection["items"]}
+    if stock_status(product) == "out" or (product.id not in items and len(items) >= settings.ORDER_MAX_ITEMS):
+        return False
+    wanted = min(items.get(product.id, 0) + quantity, settings.ORDER_ITEM_MAX_QUANTITY)
+    items[product.id] = min(wanted, product.stock_quantity) if product.track_stock else wanted
+    selection["items"] = [[pid, qty] for pid, qty in items.items()]
+    return True
+
+
+def continue_order_list(db: Session, conversation: Conversation, selection: dict):
+    # Ask about the next unclear item, or show the order once there are none left
+    while selection["unclear"]:
+        line = selection["unclear"][0]
+        products = [p for p in orderable_products(db, conversation.organization_id).filter(Product.id.in_(line["product_ids"])).order_by(func.lower(Product.name)).all() if stock_status(p) != "out"]
+        if len(products) > 1:
+            ask_unclear_item(db, conversation, selection, line, products)
+            return
+        selection["unclear"].pop(0)
+        if not products or not add_list_item(selection, products[0], line["quantity"]):
+            selection["not_found"].append(line["requested"])
+
+    not_found = ", ".join(selection.pop("not_found"))
+    selection.pop("unclear")
+    if not selection["items"]:
+        clear_selection(conversation.id)
+        send_view_products(db, conversation, NOTHING_FOUND_TEXT.format(fit(not_found, 600)))
+        return
+    selection["step"] = "items"
+    head = LIST_HEAD_TEXT + (f"\nCouldn't add: {fit(not_found, 300)}" if not_found else "")
     save_selection(conversation.id, selection)
-    queue_interactive_message(db, conversation, body, buttons=ITEM_ADDED_BUTTONS)
+    queue_interactive_message(db, conversation, order_so_far_text(db, conversation, selection, head), buttons=ITEM_ADDED_BUTTONS)
+
+
+def ask_unclear_item(db: Session, conversation: Conversation, selection: dict, line: dict, products: list):
+    selection["step"] = "choose"
+    save_selection(conversation.id, selection)
+    currency = workspace_currency(db, conversation.organization_id)
+    rows = [{"id": f"{PICK_PREFIX}{p.id}", "title": fit(p.name, ROW_TITLE_MAX_CHARS), "description": product_row_description(p, currency)} for p in products]
+    rows.append({"id": f"{PICK_PREFIX}skip", "title": "Skip this item"})
+    queue_interactive_message(db, conversation, f"Which {line['requested']} did you mean?", menu={"button": "Choose", "sections": [{"title": "Choose one", "rows": rows}]})
+
+
+def handle_pick(db: Session, conversation: Conversation, reply_id: str):
+    selection = get_selection(conversation.id)
+    if not selection or selection.get("step") != "choose" or not selection.get("unclear"):
+        return  # An older menu: this one was answered already
+    line = selection["unclear"][0]
+    choice = reply_id[len(PICK_PREFIX):]
+    if choice != "skip":
+        if not choice.isdigit() or int(choice) not in line["product_ids"]:
+            return  # A menu for an earlier item
+        product = orderable_products(db, conversation.organization_id).filter(Product.id == int(choice)).first()
+        if not product or not add_list_item(selection, product, line["quantity"]):
+            selection["not_found"].append(line["requested"])
+    selection["unclear"].pop(0)
+    continue_order_list(db, conversation, selection)
+
+
+# ---- Order again: the customer's last order at today's prices ----
+
+def last_order_items(db: Session, conversation: Conversation) -> list:
+    # (product id, quantity) pairs; a product deleted since has no id, and is left out
+    order = last_order(db, conversation.organization_id, conversation.customer_phone)
+    return [(item.product_id, item.quantity) for item in order.items if item.product_id] if order else []
+
+
+def handle_reorder(db: Session, conversation: Conversation, reply_id: str):
+    if reply_id == "reorder:new":
+        send_ordering_prompt(db, conversation, offer_last_order=False)
+        return
+
+    lines, problems, total = price_items(db, conversation.organization_id, last_order_items(db, conversation))
+    if not lines:
+        send_view_products(db, conversation, LAST_ORDER_GONE_TEXT)
+        return
+
+    if reply_id == "reorder:show":
+        currency = workspace_currency(db, conversation.organization_id)
+        warnings = "\n".join(f"⚠️ {fit(p['name'], 60)} {p['reason']}" for p in problems[:5])
+        footer = f"Total now: {format_price(total, currency)}" + (f"\n{warnings}" if warnings else "")
+        room = BODY_ROOM - len(footer) - len("Your last order:\n\n")
+        queue_interactive_message(db, conversation, f"Your last order:\n{item_lines_text(lines, currency, room)}\n{footer}", buttons=LAST_ORDER_BUTTONS)
+        return
+
+    selection = {"items": [[line["product_id"], line["quantity"]] for line in lines], "step": "items"}
+    if reply_id == "reorder:add":
+        save_selection(conversation.id, selection)
+        queue_interactive_message(db, conversation, order_so_far_text(db, conversation, selection, "Your last order is in ✅"), buttons=ITEM_ADDED_BUTTONS)
+    elif reply_id == "reorder:same":
+        selection["step"] = "fulfilment"
+        save_selection(conversation.id, selection)
+        queue_interactive_message(db, conversation, FULFILMENT_QUESTION, buttons=FULFILMENT_BUTTONS)
 
 
 def ask_address(db: Session, conversation: Conversation, selection: dict):
@@ -350,12 +500,17 @@ def confirm_order(db: Session, conversation: Conversation, selection: dict):
 
 def handle_order_tap(db: Session, conversation: Conversation, reply_id: Optional[str]) -> bool:
     # Quantity / order buttons; True = handled. Orders switched off: the tap is just text for the normal flow
-    if not reply_id or not reply_id.startswith((QUANTITY_PREFIX, ORDER_PREFIX)):
+    if not reply_id or not reply_id.startswith((QUANTITY_PREFIX, ORDER_PREFIX, PICK_PREFIX, REORDER_PREFIX)):
         return False
     if not is_feature_enabled(db, conversation.organization_id, "orders"):
         return False
     with order_step_lock(conversation.id):
-        handle_order_tap_locked(db, conversation, reply_id)
+        if reply_id.startswith(PICK_PREFIX):
+            handle_pick(db, conversation, reply_id)
+        elif reply_id.startswith(REORDER_PREFIX):
+            handle_reorder(db, conversation, reply_id)
+        else:
+            handle_order_tap_locked(db, conversation, reply_id)
     return True
 
 

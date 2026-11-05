@@ -81,7 +81,6 @@ export interface InvitationListItem {
   email: string;
   role: string;
   status: InvitationStatus;
-  invite_link?: string | null; // Pending invites only, for "Copy link"
   expires_at: string;
   created_at: string | null;
 }
@@ -111,7 +110,6 @@ export interface InvitationItemResult {
   name: string;
   email: string;
   role: string;
-  invite_link: string;
   resent?: boolean; // Replaced a pending invite: the old link no longer works
 }
 

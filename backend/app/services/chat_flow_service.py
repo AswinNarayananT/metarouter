@@ -73,6 +73,13 @@ def with_new_modules(flow: dict, known_modules: list, modules: set) -> dict:
     return flow
 
 
+def unadded_module_titles(flow: dict, known_modules: list, modules: set) -> list:
+    # Modules that are on but couldn't join the menu (no room, or an option already has that title): the admin is told
+    start = find_node(flow, flow["start"])
+    box_types = {node["type"] for node in flow["nodes"]}
+    return [option["title"] for option in ADDABLE_MODULE_OPTIONS if option["module"] in modules and option["module"] not in known_modules and option["box"] not in box_types]
+
+
 def load_flow(db: Session, organization_id: int) -> tuple[dict, bool]:
     # The saved menu (with any module turned on since), or the default one (True = default)
     saved = db.query(ChatFlow.flow, ChatFlow.known_modules).filter(ChatFlow.organization_id == organization_id).first()

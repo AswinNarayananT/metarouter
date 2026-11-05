@@ -11,7 +11,7 @@ from app.core.login_guard import check_login_allowed, record_failed_login, clear
 from app.models.organization_model import Organization, User, SUPPORTED_CURRENCIES
 from app.schemas.workspace_schema import TeamMemberResponse, PaginatedTeamMembersResponse, UpdateMemberRoleRequest, RemoveMemberRequest, MemberOpenWorkResponse, LeaveWorkspaceRequest, UpdateOrganizationRequest
 from app.services.notification_service import notify_role_changed, notify_member_left
-from app.services.member_service import archive_member, assigned_chats_query, assigned_tickets_query, other_active_admins, MEMBER_LEFT_MESSAGE
+from app.services.member_service import archive_member, assigned_chats_query, assigned_tickets_query, other_active_admins, revoke_invites_sent_by, MEMBER_LEFT_MESSAGE
 from app.services.audit_service import record_audit_log, get_client_ip
 from app.services.conversation_service import ai_auto_reply_on
 from app.realtime.connection_manager import CHAT_VISIBILITY_CHANGED, org_group, user_group
@@ -202,6 +202,8 @@ def update_member_role(user_id: int, payload: UpdateMemberRoleRequest, db: Sessi
         return member
 
     # 5. Save; the new permissions apply on their next request (roles are read from the database), and they're told
+    if member.role == "admin":
+        revoke_invites_sent_by(db, member)
     member.role = payload.role
     db.commit()
     db.refresh(member)

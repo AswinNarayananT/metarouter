@@ -14,7 +14,7 @@ from app.workers.tasks.email_tasks import send_password_reset_email_task
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token, get_current_user_payload, decode_token_ignoring_expiry
 from app.core.deps import get_current_workspace_user, token_issued_after_reset, ensure_workspace_active, WORKSPACE_SUSPENDED_ERROR, MEMBER_REMOVED_ERROR, MEMBER_LEFT_ERROR
 from app.core.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
-from app.core.token_blacklist import blacklist_token, is_token_revoked, rotation_marker
+from app.core.token_blacklist import blacklist_token, is_token_revoked, revoke_token_family, rotation_marker
 from app.core.features import get_organization_features
 from app.services.conversation_service import handover_roles, chat_visibility_for
 from app.core.redis_client import redis_client
@@ -93,7 +93,8 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
     token_payload = {
         "sub": user.email,
         "organization_id": org.id,
-        "role": user.role
+        "role": user.role,
+        "token_version": user.token_version
     }
     access_token = create_access_token(data=token_payload)
     refresh_token = create_refresh_token(data=token_payload)
@@ -143,8 +144,10 @@ def exchange_impersonation_code(payload: ImpersonationExchangeRequest, db: Sessi
         "sub": user.email,
         "organization_id": org.id,
         "role": user.role,
+        "token_version": user.token_version,
         "impersonated_by": session["admin_id"],
-        "impersonated_by_email": session["admin_email"]
+        "impersonated_by_email": session["admin_email"],
+        "impersonated_by_version": session.get("admin_token_version", 0)
     }
     access_token = create_access_token(data=token_payload, expires_delta=timedelta(minutes=settings.IMPERSONATION_TOKEN_EXPIRE_MINUTES))
 
@@ -176,8 +179,10 @@ def refresh_access_token(response: Response, refresh_token: Optional[str] = Cook
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    # Logged out, or already replaced by a newer refresh token
+    # Logged out, or already replaced by a newer refresh token. A replaced token used again after its
+    # grace period may be stolen, so that whole login ends
     if is_token_revoked(payload):
+        revoke_token_family(payload)
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     email: str = payload.get("sub")
@@ -199,14 +204,15 @@ def refresh_access_token(response: Response, refresh_token: Optional[str] = Cook
     new_token_payload = {
         "sub": user.email,
         "organization_id": org_id,
-        "role": user.role
+        "role": user.role,
+        "token_version": user.token_version
     }
     new_access_token = create_access_token(data=new_token_payload)
 
-    # Rotation: a new refresh token each time; the old one stops working after a short grace period,
-    # so a stolen refresh token can't be used for long
-    blacklist_token(payload, reason=rotation_marker())
-    _set_refresh_cookie(response, create_refresh_token(data=new_token_payload))
+    # Rotation: a new refresh token each time; the old one stops working after a short grace period that
+    # runs from its first use, so a stolen refresh token can't be used for long
+    blacklist_token(payload, reason=rotation_marker(), only_first=True)
+    _set_refresh_cookie(response, create_refresh_token(data={**new_token_payload, "family": payload.get("family")}))
 
     return {
         "access_token": new_access_token,
@@ -249,6 +255,7 @@ def logout(request: Request, response: Response, authorization: Optional[str] = 
         refresh_payload = decode_refresh_token(refresh_token)
         if refresh_payload:
             blacklist_token(refresh_payload)
+            revoke_token_family(refresh_payload)
 
     # 2. Remove the cookie from the browser (same attributes it was set with)
     response.delete_cookie(key="refresh_token", httponly=True, secure=settings.COOKIE_SECURE, samesite="lax")
@@ -317,10 +324,11 @@ def change_password(
     # Every token issued before now stops working (logs out other devices)
     current_user.hashed_password = get_password_hash(payload.new_password)
     current_user.tokens_valid_after = datetime.now(timezone.utc)
+    current_user.token_version += 1
     db.commit()
 
     # This device stays logged in with fresh tokens
-    token_payload = {"sub": current_user.email, "organization_id": current_user.organization_id, "role": current_user.role}
+    token_payload = {"sub": current_user.email, "organization_id": current_user.organization_id, "role": current_user.role, "token_version": current_user.token_version}
     _set_refresh_cookie(response, create_refresh_token(data=token_payload))
 
     return {"message": "Password updated successfully", "access_token": create_access_token(data=token_payload)}
@@ -397,6 +405,7 @@ def reset_password(payload: ResetPasswordRequest, request: Request, db: Session 
     now = datetime.now(timezone.utc)
     user.hashed_password = get_password_hash(payload.password)
     user.tokens_valid_after = now
+    user.token_version += 1
 
     # 3. This link and any other unused one stop working
     db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at == None).update({"used_at": now})

@@ -64,6 +64,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     tokens_valid_after = Column(DateTime(timezone=True), nullable=True)
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")  # Raised whenever every session must end: a token from an older version is refused
     removed_at = Column(DateTime(timezone=True), nullable=True)  # No longer in the workspace (None = current member)
     removal_type = Column(String(10), nullable=True)  # removed (by an admin) or left (themselves)
 

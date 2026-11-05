@@ -1,4 +1,7 @@
-import { ChevronDown, ChevronUp, Flag, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
+import { createContext, useContext, type ComponentProps, type ReactNode } from 'react';
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { ChevronDown, ChevronUp, Flag, GripVertical, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
 import {
   ACTION_TEXT_MAX,
   ANSWER_TEXT_MAX,
@@ -137,6 +140,29 @@ export function BoxEditor({ box, boxes, isStart, offBoxTypes, orgName, issues, o
   );
 }
 
+const DragHandleContext = createContext<ComponentProps<'button'>>({});
+
+// One option card: it follows the pointer while dragged and the others slide out of its way (up and down only)
+function SortableOption({ id, children }: { id: string; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: transform ? `translate3d(0, ${transform.y}px, 0)` : undefined, transition };
+
+  return (
+    <div ref={setNodeRef} style={style} className={`relative space-y-2 rounded-lg border bg-surface-container-low p-2.5 ${isDragging ? 'z-10 border-primary shadow-lg' : 'border-outline-variant/50'}`}>
+      <DragHandleContext.Provider value={{ ...attributes, ...listeners, ref: setActivatorNodeRef }}>{children}</DragHandleContext.Provider>
+    </div>
+  );
+}
+
+function DragHandle() {
+  const handle = useContext(DragHandleContext);
+  return (
+    <button type="button" {...handle} aria-label="Drag to change the order" title="Drag to change the order" className="shrink-0 touch-none cursor-grab active:cursor-grabbing text-on-surface-variant">
+      <GripVertical className="w-4 h-4" />
+    </button>
+  );
+}
+
 interface QuestionFieldsProps {
   box: QuestionBox;
   others: FlowBox[];
@@ -157,6 +183,15 @@ function QuestionFields({ box, others, boxes, offBoxTypes, onChange, resolveTarg
     onChange({ ...box, options });
   };
 
+  // Dragging an option by its handle: it lands where it was dropped
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const from = box.options.findIndex((option) => option.id === active.id);
+    const to = box.options.findIndex((option) => option.id === over.id);
+    onChange({ ...box, options: arrayMove(box.options, from, to) });
+  };
+
   return (
     <>
       <div className="space-y-1.5">
@@ -173,9 +208,12 @@ function QuestionFields({ box, others, boxes, offBoxTypes, onChange, resolveTarg
         <p className="text-[11px] text-on-surface-variant">
           Up to {MAX_BUTTONS} options with titles of {BUTTON_TITLE_MAX} characters or less show as buttons; otherwise the customer gets a list (up to {MAX_OPTIONS}).
         </p>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={box.options.map((option) => option.id)} strategy={verticalListSortingStrategy}>
         {box.options.map((option, index) => (
-          <div key={option.id} className="space-y-2 rounded-lg border border-outline-variant/50 bg-surface-container-low p-2.5">
+          <SortableOption key={option.id} id={option.id}>
             <div className="flex items-center gap-1">
+              {box.options.length > 1 && <DragHandle />}
               <input
                 aria-label={`Option ${index + 1} title`}
                 value={option.title}
@@ -224,8 +262,10 @@ function QuestionFields({ box, others, boxes, offBoxTypes, onChange, resolveTarg
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-          </div>
+          </SortableOption>
         ))}
+          </SortableContext>
+        </DndContext>
         {box.options.length < MAX_OPTIONS && (
           <button type="button" onClick={() => onChange({ ...box, options: [...box.options, newOption()] })} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 cursor-pointer">
             <Plus className="w-3.5 h-3.5" /> Add option

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider, Navigate } from 'react-router-dom';
 import { useAppSelector } from '@/store';
 
 // Public & Landing Pages
@@ -51,10 +51,10 @@ function SuperAdminLoginGate() {
   return <SuperAdminLogin />;
 }
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
+// A data router: pages can ask before leaving with unsaved changes (useBlocker)
+const router = createBrowserRouter(
+  createRoutesFromElements(
+      <>
         {/* ========================================== */}
         {/* Public & Authentication Routes             */}
         {/* ========================================== */}
@@ -247,9 +247,12 @@ function App() {
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
-  );
+      </>
+  )
+);
+
+function App() {
+  return <RouterProvider router={router} />;
 }
 
 export default App;

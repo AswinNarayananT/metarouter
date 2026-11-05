@@ -13,6 +13,7 @@ from app.realtime.connection_manager import org_group
 from app.realtime.events import publish_event
 from app.services.conversation_service import as_utc, first_name, last_customer_message_at, reply_window, record_activity
 from app.services.messaging_service import queue_outgoing_message
+from app.services.order_template_service import send_order_template
 from app.services.product_service import current_products, stock_status
 from app.utils.money import format_price
 
@@ -128,6 +129,15 @@ def order_details_text(lines: list, total, currency: str, fulfilment: str, addre
     footer = f"Total: {format_price(total, currency)}\n{where}"
     room = max_chars - len("Your order:\n\n") - len(footer)
     return f"Your order:\n{item_lines_text(lines, currency, room)}\n{footer}"
+
+
+def last_order(db: Session, organization_id: int, customer_phone: str) -> Optional[Order]:
+    # What Order again repeats: the newest order that wasn't rejected or cancelled
+    return db.query(Order).filter(
+        Order.organization_id == organization_id,
+        Order.customer_phone == customer_phone,
+        Order.status.notin_(REASON_STATUSES)
+    ).order_by(Order.created_at.desc(), Order.id.desc()).first()
 
 
 def get_customer_address(db: Session, organization_id: int, customer_phone: str) -> Optional[dict]:
@@ -351,7 +361,7 @@ def change_order_status(db: Session, order_id: int, organization_id: int, user: 
         db.rollback()
         raise
 
-    # 4. Message the customer only inside WhatsApp's 24-hour window (templates come later)
+    # 4. Inside WhatsApp's 24-hour window the update is a normal message; outside it, a template (step 5)
     text = customer_message(order, status, reason)
     conversation = db.get(Conversation, order.conversation_id) if order.conversation_id else None
     reachable = bool(text and conversation and conversation.phone_number_id and reply_window(last_customer_message_at(db, conversation.id))["window_open"])
@@ -370,6 +380,13 @@ def change_order_status(db: Session, order_id: int, organization_id: int, user: 
             event.customer_notified = False
             db.commit()
             print(f"[ORDER] #{order.number} (org {organization_id}) is {status}, but the customer message failed: {exc}")
+    elif text and conversation and conversation.phone_number_id:
+        try:
+            event.customer_notified = send_order_template(db, order, conversation, status, reason, text, user)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[ORDER] #{order.number} (org {organization_id}) is {status}, but the template failed: {exc}")
     if conversation:
         try:
             note = f" ({reason})" if reason else ""

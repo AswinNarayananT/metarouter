@@ -11,16 +11,16 @@ from app.models.contact_model import ContactOptOut
 from app.config import settings
 from app.core.features import is_feature_enabled
 from app.services.ai_service import generate_ai_response
-from app.services.messaging_service import queue_outgoing_message, queue_interactive_message
+from app.services.messaging_service import queue_outgoing_message, queue_interactive_message, send_in_order
 from app.services.intent_service import enabled_intent_options, tapped_intent, classify_first_message
 from app.services.chat_flow_service import FLOW_REPLY_PREFIX, load_flow, off_box_types, find_node, question_message, tapped_node, render_text
 from app.services.order_chat_service import (
-    ORDERING_PROMPT, PRODUCT_LIST_OFFER, VIEW_PRODUCTS_BUTTON, NO_PRODUCTS_TEXT, BROWSE_PREFIX, CATEGORY_PREFIX, PRODUCT_PREFIX,
+    PRODUCT_LIST_OFFER, VIEW_PRODUCTS_BUTTON, NO_PRODUCTS_TEXT, BROWSE_PREFIX, CATEGORY_PREFIX, PRODUCT_PREFIX,
     USE_BUTTONS_TEXT, category_menu, product_menu, parse_browse_reply, parse_category_reply, tapped_product,
-    start_quantity_step, handle_order_tap, handle_order_step, order_in_progress
+    start_quantity_step, handle_order_tap, handle_order_step, handle_order_list, order_in_progress, send_ordering_prompt
 )
 from app.realtime.notify import notify_new_messages, notify_handover
-from app.services.conversation_service import record_activity, ai_auto_reply_on, begin_visit_if_new, visit_first_message_id, last_conversation_activity_at
+from app.services.conversation_service import record_activity, ai_auto_reply_on, begin_visit_if_new, is_small_talk, visit_first_message_id, last_conversation_activity_at
 from app.services.notification_service import notify_team_of_handover
 from app.services.ticket_service import start_ticket_session, escalate_ticket, get_open_ticket, close_ticket
 
@@ -155,9 +155,10 @@ def process_chat_message_task(
             return
 
         # 4. Human takeover: keep the message for the agent, AI stays silent
-        # The team tracks it as a ticket (a new team ticket if the last one was closed); AI chats get one only for a problem
+        # The team tracks it as a ticket (a new team ticket if the last one was closed, unless it's only "thanks"); AI chats get one only for a problem
         if conversation.status == ConversationStatus.HUMAN_TAKEOVER:
-            start_ticket_session(db, conversation, user_msg.id)
+            if not is_small_talk(user_text):
+                start_ticket_session(db, conversation, user_msg.id)
             return
 
         # 5. Disconnected: no AI reply (it couldn't be delivered)
@@ -200,7 +201,7 @@ SUPPORT_PROMPT_TEXT = "Sorry to hear that. Please tell us what went wrong."
 OTHER_PROMPT_TEXT = "Sure! What can we help you with?"
 
 
-def respond_to_customer(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str] = None, location: Optional[dict] = None, from_media: bool = False):
+def respond_to_customer(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str] = None, location: Optional[dict] = None, from_media: bool = False, spoken: bool = False):
     # Customer Chats off (it includes the menus and the AI): nothing is sent
     if not is_feature_enabled(db, conversation.organization_id, "customer_chats"):
         return
@@ -217,25 +218,25 @@ def respond_to_customer(db: Session, conversation: Conversation, user_text: str,
     if order_in_progress(conversation.id) and is_feature_enabled(db, conversation.organization_id, "orders") and not ai_auto_reply_on(db, conversation.organization_id):
         queue_outgoing_message(db, conversation, sender="model", content=USE_BUTTONS_TEXT)
         return
-    # 2. The chat menu (asked once per visit) and what the customer came for: order, problem or something else
+    # 3. While ordering, what the customer typed or said may be a list of things to buy (a media notice never is)
+    if conversation.intent == "order" and not reply_id and not location and (spoken or not from_media) and handle_order_list(db, conversation, text=user_text):
+        return
+    # 4. The chat menu (asked once per visit) and what the customer came for: order, problem or something else
     if route_flow(db, conversation, user_text, reply_id):
         return
-    # 3. Everything else: the AI answers
+    # 5. Everything else: the AI answers
     reply_with_ai(db, conversation, user_text)
 
 
-ANSWER_THEN_QUESTION_SECONDS = 2  # A question right after an answer: sent a moment later so it arrives second
-
-
-def send_question(db: Session, conversation: Conversation, flow: dict, node: dict, off_boxes: set, after_answer: bool = False):
+def send_question(db: Session, conversation: Conversation, flow: dict, node: dict, off_boxes: set, send: bool = True) -> list:
     message = question_message(db, conversation, flow, node, off_boxes)
     if message.get("buttons") or message.get("menu"):
-        delay = {"send_after_seconds": ANSWER_THEN_QUESTION_SECONDS} if after_answer else {}
-        queue_interactive_message(db, conversation, message["body"], buttons=message.get("buttons"), menu=message.get("menu"), **delay)
+        saved = [queue_interactive_message(db, conversation, message["body"], buttons=message.get("buttons"), menu=message.get("menu"), send=send)]
     else:
-        queue_outgoing_message(db, conversation, sender="model", content=message["body"])
+        saved = queue_outgoing_message(db, conversation, sender="model", content=message["body"], send=send)
     conversation.menu_sent_at = datetime.now(timezone.utc)
     db.commit()
+    return saved
 
 
 def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id: Optional[str]) -> bool:
@@ -243,7 +244,7 @@ def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id
     organization_id = conversation.organization_id
     options = enabled_intent_options(db, organization_id)
     allowed = {option["id"] for option in options} | {"other"}
-    flow, is_default = load_flow(db, organization_id)
+    flow, _ = load_flow(db, organization_id)
     off_boxes = off_box_types(db, organization_id)
 
     # 1. A tap on the chat menu (an option deleted since, or leading to a module that's off, is just text for the AI)
@@ -262,8 +263,8 @@ def route_flow(db: Session, conversation: Conversation, user_text: str, reply_id
         db.commit()
         return start_intent(db, conversation, intent, user_text, tapped=True)
 
-    # 3. Already known this visit, or the default menu with only one option (nothing to ask): the normal flow
-    if conversation.intent or (is_default and len(options) < 2):
+    # 3. Already known this visit: the normal flow
+    if conversation.intent:
         return False
     start = find_node(flow, flow["start"])
 
@@ -318,12 +319,12 @@ def run_node(db: Session, conversation: Conversation, flow: dict, node: dict, us
         conversation.intent = "other"
         db.commit()
     if kind == "answer":
-        if text:
-            queue_outgoing_message(db, conversation, sender="model", content=text)
+        # Saved first and sent as one chain, so the question can't arrive before the answer
+        queued = queue_outgoing_message(db, conversation, sender="model", content=text, send=False) if text else []
         node = find_node(flow, node.get("next"))
-        if not node:
-            return True
-        send_question(db, conversation, flow, node, off_boxes, after_answer=bool(text))
+        if node:
+            queued += send_question(db, conversation, flow, node, off_boxes, send=False)
+        send_in_order(queued)
         return True
     send_question(db, conversation, flow, node, off_boxes)
     return True
@@ -333,10 +334,12 @@ def start_intent(db: Session, conversation: Conversation, intent: str, user_text
     ai_on = ai_auto_reply_on(db, conversation.organization_id)
 
     # Order: the product list (works without the AI, it's all taps); no ticket
-    # A typed order is answered by the AI first (reading it into a cart comes with the order module), then the list is offered
+    # A typed order is read as a list; anything else the AI answers, then the product list is offered
     if intent == "order":
         if tapped or not ai_on:
-            queue_interactive_message(db, conversation, ORDERING_PROMPT, buttons=[VIEW_PRODUCTS_BUTTON])
+            send_ordering_prompt(db, conversation)
+            return True
+        if handle_order_list(db, conversation, text=user_text):
             return True
         reply_with_ai(db, conversation, user_text)
         db.refresh(conversation)
@@ -420,8 +423,10 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
         return
 
     # AI auto-reply off (AI settings): the team answers, so the chat goes straight to them
+    # (not for "hi" or "thanks": the message stays in the chat, with no ticket or alert)
     if not ai_auto_reply_on(db, conversation.organization_id):
-        hand_over_to_team(db, conversation, user_text, AUTO_REPLY_OFF_CHAT_NOTE, AUTO_REPLY_OFF_TICKET_NOTE)
+        if not is_small_talk(user_text):
+            hand_over_to_team(db, conversation, user_text, AUTO_REPLY_OFF_CHAT_NOTE, AUTO_REPLY_OFF_TICKET_NOTE)
         return
 
     # 1. Generate AI reply

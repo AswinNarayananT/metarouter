@@ -10,7 +10,7 @@ from app.models.whatsapp_model import WhatsAppNumber
 from app.schemas.channel_schema import ConnectWhatsAppRequest
 from app.services.channel_service import disconnect_explanation, MANUAL_DISCONNECT_SUBCODE
 from app.services.whatsapp_service import exchange_signup_code, granted_waba_ids, waba_phone_number_ids, phone_number_details, register_phone_number, deregister_phone_number, subscribe_app_to_waba, unsubscribe_app_from_waba, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
-from app.workers.tasks.whatsapp_tasks import pause_number_broadcasts
+from app.workers.tasks.whatsapp_tasks import ensure_order_templates_task, pause_number_broadcasts
 
 # Always available (core): every messaging module needs a connected number
 router = APIRouter(prefix="/channels", tags=["Channels"])
@@ -132,6 +132,7 @@ def connect_whatsapp_number(payload: ConnectWhatsAppRequest, db: Session = Depen
     db.commit()
     db.refresh(number)
     print(f"[CHANNELS] {current_user.email} connected {number.display_phone_number} (WABA {number.waba_id}) to org {number.organization_id}")
+    ensure_order_templates_task.delay(number.id)
 
     return _number_data(number)
 

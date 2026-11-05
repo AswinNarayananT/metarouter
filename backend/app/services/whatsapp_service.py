@@ -239,9 +239,12 @@ def get_phone_number_status(phone_number_id: str, access_token: str) -> dict:
     }
 
 
-def get_message_templates(waba_id: str, access_token: str, max_pages: int = 10) -> list:
+def get_message_templates(waba_id: str, access_token: str, max_pages: int = 10, status: Optional[str] = "APPROVED") -> list:
+    # status=None lists templates in every state
     url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{waba_id}/message_templates"
-    params = {"status": "APPROVED", "fields": "name,language,category,status,parameter_format,components", "limit": 100}
+    params = {"fields": "name,language,category,status,parameter_format,components", "limit": 100}
+    if status:
+        params["status"] = status
     templates = []
 
     # Meta pages the list; follow "next" links up to max_pages
@@ -262,6 +265,12 @@ def get_message_templates(waba_id: str, access_token: str, max_pages: int = 10) 
         url, params = next_url, None  # The next link already contains the query
 
     return templates
+
+
+def create_message_template(waba_id: str, access_token: str, name: str, language: str, body: str, example: list) -> dict:
+    # Submitted for Meta's review; it can be sent once approved
+    component = {"type": "BODY", "text": body, "example": {"body_text": [example]}}
+    return _graph_call("POST", f"{waba_id}/message_templates", access_token, body={"name": name, "language": language, "category": "UTILITY", "components": [component]})
 
 
 def callback_data_for(message_id: int) -> str:

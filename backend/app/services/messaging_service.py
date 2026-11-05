@@ -26,14 +26,23 @@ class OutgoingMessageError(ValueError):
     pass
 
 
-def queue_outgoing_message(db: Session, conversation: Conversation, sender: str, content: str, sent_by_user_id: Optional[int] = None) -> list[ChatMessage]:
-    """
-    Single entry point for every message we send to a customer (AI replies, agent replies,
-    handover notices). Saves it as pending, then hands delivery to the send task.
-    """
+def send_in_order(messages: list[ChatMessage]):
+    # One message: send now; several: a chain, each sent only after the one before
     # Imported here to avoid a circular import (tasks import services)
     from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
 
+    if len(messages) == 1:
+        send_whatsapp_message_task.delay(messages[0].id)
+    elif messages:
+        chain(*[send_whatsapp_message_task.si(m.id) for m in messages]).delay()
+
+
+def queue_outgoing_message(db: Session, conversation: Conversation, sender: str, content: str, sent_by_user_id: Optional[int] = None, send: bool = True) -> list[ChatMessage]:
+    """
+    Single entry point for every message we send to a customer (AI replies, agent replies,
+    handover notices). Saves it as pending, then hands delivery to the send task
+    (send=False: the caller sends it with what follows, through send_in_order).
+    """
     # 1. Validate before anything is saved, so a bad payload never reaches Meta
     if sender not in OUTGOING_SENDERS:
         raise OutgoingMessageError(f"Sender must be one of {sorted(OUTGOING_SENDERS)}, got {sender!r}")
@@ -59,13 +68,23 @@ def queue_outgoing_message(db: Session, conversation: Conversation, sender: str,
     # Show them in the dashboard right away as pending (ticks follow as Meta reports delivery)
     notify_new_messages(db, messages)
 
-    # 3. One part: send now; several: a chain so they arrive in order
-    if len(messages) == 1:
-        send_whatsapp_message_task.delay(messages[0].id)
-    else:
-        chain(*[send_whatsapp_message_task.si(m.id) for m in messages]).delay()
+    # 3. Hand over to the send task
+    if send:
+        send_in_order(messages)
 
     return messages
+
+
+def queue_template_message(db: Session, conversation: Conversation, content: str, template_data: dict, sent_by_user_id: Optional[int] = None) -> ChatMessage:
+    # A template allowed outside the 24-hour window; content is what the chat shows
+    from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
+
+    message = ChatMessage(conversation_id=conversation.id, sender="human", message_type="template", content=content, template_data=template_data, status=MessageStatus.PENDING, sent_by_user_id=sent_by_user_id)
+    db.add(message)
+    db.commit()
+    notify_new_messages(db, [message])
+    send_whatsapp_message_task.delay(message.id)
+    return message
 
 
 def fit(text: str, limit: int) -> str:
@@ -74,13 +93,11 @@ def fit(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
-def queue_interactive_message(db: Session, conversation: Conversation, body: str, buttons: Optional[list] = None, menu: Optional[dict] = None, request_location: bool = False, send_after_seconds: int = 0) -> ChatMessage:
+def queue_interactive_message(db: Session, conversation: Conversation, body: str, buttons: Optional[list] = None, menu: Optional[dict] = None, request_location: bool = False, send: bool = True) -> ChatMessage:
     """
     Tap message to the customer: up to 3 reply buttons, a list menu (up to 10 rows) or a "Send location" button.
-    Saved as pending like any reply, then sent by the same send task (send_after_seconds: so it lands after a message queued just before).
+    Saved as pending like any reply, then sent by the same send task (send=False: see queue_outgoing_message).
     """
-    from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
-
     # 1. Validate before anything is saved
     if not conversation or not conversation.id or not conversation.phone_number_id:
         raise OutgoingMessageError("The conversation has no WhatsApp number to send from")
@@ -117,10 +134,8 @@ def queue_interactive_message(db: Session, conversation: Conversation, body: str
     db.add(message)
     db.commit()
     notify_new_messages(db, [message])
-    if send_after_seconds:
-        send_whatsapp_message_task.apply_async((message.id,), countdown=send_after_seconds)
-    else:
-        send_whatsapp_message_task.delay(message.id)
+    if send:
+        send_in_order([message])
     return message
 
 

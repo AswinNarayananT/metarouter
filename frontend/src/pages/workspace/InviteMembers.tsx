@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { Check, Copy, AlertCircle, Plus, Trash2, Ban, Loader2, Search, Send, X } from 'lucide-react';
+import { AlertCircle, Plus, Trash2, Ban, Loader2, Search, Send, X } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchInvitations, generateWorkspaceInvitations, resendInvitation, revokeInvitation } from '@/store/workspace/workspaceThunks';
 import { resetInviteState, clearWorkspaceError } from '@/store/workspace/workspaceSlice';
@@ -76,7 +76,6 @@ export function InviteMembers() {
   const dispatch = useAppDispatch();
   const { isInviting, inviteSuccess, lastInvitations, user } = useAppSelector((state) => state.workspace);
 
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   // Emails the server didn't invite, with the reason (shown under that email, or in the "Not invited" list)
   const [skipped, setSkipped] = useState<InvitationSkipped[]>([]);
 
@@ -131,17 +130,10 @@ export function InviteMembers() {
   const listError =
     formik.submitCount > 0 && typeof formik.errors.members === 'string' ? formik.errors.members : undefined;
 
-  const handleCopyLink = (link: string, index: number) => {
-    navigator.clipboard.writeText(link);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 3000);
-  };
-
   const handleReset = () => {
     dispatch(resetInviteState());
     dispatch(clearWorkspaceError());
     formik.resetForm();
-    setCopiedIndex(null);
     setSkipped([]);
   };
 
@@ -271,9 +263,9 @@ export function InviteMembers() {
         ) : (
           <div className="space-y-4">
             <div className="p-3.5 bg-primary/5 border border-primary/20 rounded-xl space-y-3">
-              <p className="text-xs font-medium text-on-surface">Secure Invite Links Generated Successfully!</p>
+              <p className="text-xs font-medium text-on-surface">Invites sent by email</p>
               <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                Copy and share each unique link with the respective member. Each link is valid for 3 days and can only be used once.
+                Each person gets their own link by email. It's valid for 3 days and can only be used once.
               </p>
 
               <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
@@ -289,21 +281,6 @@ export function InviteMembers() {
                         )}
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary-fixed text-on-primary-fixed capitalize">{invite.role}</span>
                       </span>
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        type="text"
-                        readOnly
-                        value={invite.invite_link}
-                        className="w-full bg-surface-container border border-outline-variant/40 rounded-md px-2 py-1 text-[11px] text-on-surface select-all"
-                      />
-                      <button
-                        onClick={() => handleCopyLink(invite.invite_link, index)}
-                        className="px-3 py-1 bg-primary text-on-primary rounded-md text-xs font-medium flex items-center gap-1 shrink-0 hover:bg-primary/90 transition-all cursor-pointer"
-                      >
-                        {copiedIndex === index ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedIndex === index ? 'Copied' : 'Copy'}</span>
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -381,16 +358,9 @@ function InvitationsList() {
     setPage(1);
   };
 
-  // Row actions: the invite in progress, the one asking "revoke?", and the one whose link was just copied
+  // Row actions: the invite in progress and the one asking "revoke?"
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<number | null>(null);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
-
-  const handleCopy = (id: number, link: string) => {
-    navigator.clipboard.writeText(link);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 3000);
-  };
 
   // Success and failure toasts come from store/errorToastMiddleware; the list reloads to show the new status
   const handleRevoke = async (id: number) => {
@@ -534,17 +504,6 @@ function InvitationsList() {
                       </span>
                     ) : (
                       <>
-                        {invite.invite_link && (
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(invite.id, invite.invite_link!)}
-                            title="Copy the invite link"
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-outline-variant/40 text-xs font-medium text-on-surface hover:bg-surface-container cursor-pointer"
-                          >
-                            {copiedId === invite.id ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
-                            {copiedId === invite.id ? 'Copied' : 'Copy link'}
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={() => handleResend(invite.id)}

@@ -22,7 +22,7 @@ from app.schemas.invitation_schema import (
     InvitationListItem,
     PaginatedInvitationsResponse
 )
-from app.core.security import  get_password_hash
+from app.core.security import get_password_hash, hash_invite_token
 from app.core.deps import get_current_workspace_user
 from app.config import settings
 from app.workers.tasks.email_tasks import send_invitation_email_task
@@ -117,7 +117,7 @@ def generate_invitations(
             skipped.append({"email": item.email, "reason": reason})
             continue
 
-        created_invitations.append(_send_invitation(db, org, item.name, item.email, item.role))
+        created_invitations.append(_send_invitation(db, org, item.name, item.email, item.role, current_user.id))
 
     return {
         "message": "Invitations generated and email tasks queued successfully",
@@ -169,10 +169,10 @@ def resend_invitation(invitation_id: int, db: Session = Depends(get_db), current
 
     # 4. A fresh 3-day link by email; the old one stops working
     org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
-    return _send_invitation(db, org, invitation.name, invitation.email, invitation.role)
+    return _send_invitation(db, org, invitation.name, invitation.email, invitation.role, current_user.id)
 
 
-def _send_invitation(db: Session, org: Organization, name: str, email: str, role: str) -> dict:
+def _send_invitation(db: Session, org: Organization, name: str, email: str, role: str, created_by_id: int) -> dict:
     # Invited before and not used yet: that link stops working, so one person has one valid invite
     now = datetime.now(timezone.utc)
     pending = db.query(Invitation).filter(
@@ -191,17 +191,16 @@ def _send_invitation(db: Session, org: Organization, name: str, email: str, role
         name=name,
         email=email.lower(),
         role=role,
-        token=token,
+        token=hash_invite_token(token),
+        created_by_id=created_by_id,
         expires_at=now + timedelta(days=3)
     ))
     db.commit()
 
-    invite_link = _invite_link(token)
+    # The link goes to the invitee's mailbox only: opening it is the proof they own the email, so it's never returned to the admin
+    send_invitation_email_task.delay(to_email=email, name=name, org_name=org.name, invite_link=_invite_link(token))
 
-    # Dispatch email task asynchronously via Celery
-    send_invitation_email_task.delay(to_email=email, name=name, org_name=org.name, invite_link=invite_link)
-
-    return {"name": name, "email": email, "role": role, "invite_link": invite_link, "resent": bool(pending)}
+    return {"name": name, "email": email, "role": role, "resent": bool(pending)}
 
 
 def _invite_link(token: str) -> str:
@@ -209,16 +208,14 @@ def _invite_link(token: str) -> str:
 
 
 def _invitation_list_item(invitation: Invitation, now: datetime) -> dict:
-    status = _invitation_status(invitation, now)
     return {
         "id": invitation.id,
         "name": invitation.name,
         "email": invitation.email,
         "role": invitation.role,
-        "status": status,
+        "status": _invitation_status(invitation, now),
         "expires_at": invitation.expires_at,
         "created_at": invitation.created_at,
-        "invite_link": _invite_link(invitation.token) if status == "pending" else None,
     }
 
 
@@ -231,7 +228,7 @@ def _find_invitation(db: Session, invitation_id: int, organization_id: int) -> I
 
 def _find_open_invitation(db: Session, token: str) -> Invitation:
     # The link from the email: unused, not revoked and not expired
-    invitation = db.query(Invitation).filter(Invitation.token == token, Invitation.is_used == False).first()
+    invitation = db.query(Invitation).filter(Invitation.token == hash_invite_token(token), Invitation.is_used == False).first()
     if invitation and invitation.revoked_at:
         raise HTTPException(status_code=400, detail="This invitation was cancelled. Ask your workspace admin for a new one.")
     if not invitation or invitation.expires_at < datetime.now(timezone.utc):
@@ -316,6 +313,7 @@ def accept_invitation(payload: AcceptInvitationRequest, db: Session = Depends(ge
         member.removed_at = None
         member.removal_type = None
         member.tokens_valid_after = now
+        member.token_version += 1
     else:
         # Create the new workspace user tied strictly to the organization
         member = User(

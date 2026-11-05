@@ -20,7 +20,6 @@ from app.models.attachment_model import ChatAttachment
 from app.workers.tasks.media_tasks import download_whatsapp_media_task, parse_document_task, media_retry_marker_key
 from app.models.ticket_model import Ticket, TicketActivity
 from app.services.ticket_service import close_ticket, release_chat_after_close
-from app.models.ai_settings_model import OrganizationAISettings
 from app.models.notification_model import Notification
 from app.services.notification_service import notify_unassigned_reminder
 from app.core.features import is_feature_enabled
@@ -262,7 +261,6 @@ def close_idle_tickets_task():
     db = SessionLocal()
     try:
         # 1. Tickets the AI is handling whose chat has had no message for a while (skip suspended workspaces)
-        #    Team tickets (open / in progress / waiting) are never closed automatically
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=settings.TICKET_IDLE_CLOSE_HOURS)
         last_activity = db.query(ChatMessage.conversation_id, func.max(ChatMessage.created_at).label("last_at")).filter(
             ChatMessage.sender != "system"
@@ -282,20 +280,17 @@ def close_idle_tickets_task():
             .all()
         )
 
-        # 2. Team tickets silent for longer, only in workspaces with AI auto-reply off (nothing else ever closes them there)
-        #    Filtered in SQL, so other workspaces' old team tickets can't fill the batch
+        # 2. Team tickets silent for longer, assigned or not: a forgotten one doesn't stay open forever
         team_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=settings.TICKET_TEAM_IDLE_CLOSE_HOURS)
         room = IDLE_TICKETS_PER_SWEEP - len(tickets)
         team_tickets = (
             db.query(Ticket)
             .join(last_activity, last_activity.c.conversation_id == Ticket.conversation_id)
             .join(Organization, Ticket.organization_id == Organization.id)
-            .join(OrganizationAISettings, OrganizationAISettings.organization_id == Ticket.organization_id)
             .filter(
                 Ticket.status.in_(("open", "in_progress", "waiting")),
                 last_activity.c.last_at < team_cutoff,
-                Organization.subscription_status == "active",
-                OrganizationAISettings.is_active.is_(False)
+                Organization.subscription_status == "active"
             )
             .order_by(Ticket.id)
             .limit(room)

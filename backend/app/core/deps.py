@@ -47,6 +47,10 @@ def get_current_super_admin(token: str = Depends(oauth2_scheme), db: Session = D
     if admin is None:
         raise credentials_exception
 
+    # Tokens from before the last password change are no longer valid
+    if payload.get("token_version", 0) != admin.token_version:
+        raise credentials_exception
+
     return admin
 
 def get_current_workspace_user(
@@ -113,14 +117,20 @@ def get_current_workspace_user(
     # A suspended workspace can't use the API
     ensure_workspace_active(db, user.organization_id)
 
-    # Super admin viewing as this user: look only, never change anything
-    if payload.get("impersonated_by") is not None and request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path not in READ_ONLY_ALLOWED_WRITES:
-        raise HTTPException(status_code=403, detail=READ_ONLY_SESSION_ERROR)
+    # Super admin viewing as this user: look only, never change anything, and only while their password is unchanged
+    if payload.get("impersonated_by") is not None:
+        admin_version = db.query(SuperAdmin.token_version).filter(SuperAdmin.id == payload["impersonated_by"]).scalar()
+        if admin_version is None or payload.get("impersonated_by_version", 0) != admin_version:
+            raise credentials_exception
+        if request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path not in READ_ONLY_ALLOWED_WRITES:
+            raise HTTPException(status_code=403, detail=READ_ONLY_SESSION_ERROR)
 
     return user
 
 
 def token_issued_after_reset(payload: dict, user: User) -> bool:
+    if payload.get("token_version", 0) != user.token_version:
+        return False
     if not user.tokens_valid_after:
         return True
     issued_at = payload.get("iat")
