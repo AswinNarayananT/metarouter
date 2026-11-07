@@ -26,7 +26,7 @@ def _is_retryable(exc: Exception) -> bool:
     return isinstance(exc, genai_errors.APIError) and exc.code == 429
 
 
-@celery_app.task(name="process_knowledge_document_task", bind=True, max_retries=3)
+@celery_app.task(name="process_knowledge_document_task", bind=True, max_retries=3, soft_time_limit=settings.KNOWLEDGE_TASK_TIME_LIMIT_SECONDS, time_limit=settings.KNOWLEDGE_TASK_TIME_LIMIT_SECONDS + 60)
 def process_knowledge_document_task(self, document_id: int):
     db = SessionLocal()
     lock_key = f"kb:lock:{document_id}"

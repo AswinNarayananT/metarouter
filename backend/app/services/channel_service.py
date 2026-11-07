@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.whatsapp_model import WhatsAppNumber
 from app.services.whatsapp_service import WhatsAppTokenError
@@ -23,6 +24,17 @@ DEFAULT_DISCONNECT_EXPLANATION = "WhatsApp stopped accepting our connection to y
 
 def disconnect_explanation(subcode: Optional[int]) -> str:
     return DISCONNECT_EXPLANATIONS.get(subcode, DEFAULT_DISCONNECT_EXPLANATION)
+
+
+def get_workspace_number(db: Session, organization_id: int, phone_number_id: str) -> WhatsAppNumber:
+    number = db.query(WhatsAppNumber).filter(WhatsAppNumber.organization_id == organization_id, WhatsAppNumber.phone_number_id == phone_number_id).first()
+    if not number:
+        raise HTTPException(status_code=404, detail="WhatsApp number not found for this workspace")
+
+    # Templates, preview, create and resume all need a working token
+    if number.status == "disconnected":
+        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
+    return number
 
 
 def number_is_disconnected(db: Session, organization_id: int, phone_number_id: Optional[str]) -> bool:

@@ -308,7 +308,8 @@ def update_ticket(db: Session, ticket: Ticket, changes: dict, user) -> Ticket:
         ticket.subgroup_id = None  # A subgroup belongs to its group
         lines.append(("labels", f"{name} moved it to {group.name}" if group else f"{name} removed the group"))
     if "subgroup_id" in changes and changes["subgroup_id"] != ticket.subgroup_id:
-        subgroup = db.query(TicketGroup).filter(TicketGroup.id == changes["subgroup_id"], TicketGroup.parent_id == ticket.group_id).first() if changes["subgroup_id"] else None
+        # No group means no subgroup: parent_id == None would match any workspace's top-level group
+        subgroup = db.query(TicketGroup).filter(TicketGroup.id == changes["subgroup_id"], TicketGroup.organization_id == ticket.organization_id, TicketGroup.parent_id == ticket.group_id).first() if changes["subgroup_id"] and ticket.group_id else None
         ticket.subgroup_id = subgroup.id if subgroup else None
         if subgroup:
             lines.append(("labels", f"{name} set the subgroup to {subgroup.name}"))

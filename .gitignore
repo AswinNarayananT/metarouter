@@ -20,3 +20,6 @@ frontend/.DS_Store
 # --- Docker & Database Storage ---
 postgres_data/
 .env
+
+# --- Temporary Telegram test bridge (never committed) ---
+telegram_bridge/

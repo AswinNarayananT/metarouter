@@ -28,6 +28,7 @@ import { WorkspaceOverview } from '@/pages/workspace/WorkspaceOverview';
 import { CustomerChats } from '@/pages/workspace/CustomerChats';
 import { Tickets } from '@/pages/workspace/Tickets';
 import { Broadcasts } from '@/pages/workspace/Broadcasts';
+import { Templates } from '@/pages/workspace/Templates';
 import { NewBroadcast } from '@/pages/workspace/NewBroadcast';
 import { BroadcastDetail } from '@/pages/workspace/BroadcastDetail';
 import { TeamMembers } from '@/pages/workspace/TeamMembers';
@@ -202,6 +203,16 @@ const router = createBrowserRouter(
               <AdminOnlyRoute>
                 <FeatureRoute feature="broadcasts" featureTitle="Broadcast Details">
                   <BroadcastDetail />
+                </FeatureRoute>
+              </AdminOnlyRoute>
+            }
+          />
+          <Route
+            path="templates"
+            element={
+              <AdminOnlyRoute>
+                <FeatureRoute feature="broadcasts" featureTitle="Templates">
+                  <Templates />
                 </FeatureRoute>
               </AdminOnlyRoute>
             }

@@ -16,6 +16,7 @@ from app.api.v1.webhooks import router as webhook_router
 from app.api.v1.ai_settings import router as ai_settings_router
 from app.api.v1.attachments import router as attachments_router
 from app.api.v1.broadcasts import router as broadcasts_router
+from app.api.v1.templates import router as templates_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.realtime import router as realtime_router
 from app.api.v1.conversations import router as conversations_router
@@ -78,6 +79,7 @@ app.include_router(webhook_router, prefix="/api/v1")
 app.include_router(ai_settings_router, prefix="/api/v1")
 app.include_router(attachments_router, prefix="/api/v1")
 app.include_router(broadcasts_router, prefix="/api/v1")
+app.include_router(templates_router, prefix="/api/v1")
 app.include_router(channels_router, prefix="/api/v1")
 app.include_router(realtime_router, prefix="/api/v1")
 app.include_router(conversations_router, prefix="/api/v1")

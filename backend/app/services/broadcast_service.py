@@ -167,6 +167,8 @@ def summarize_template(template: dict) -> dict:
         "name": template.get("name"),
         "language": template.get("language"),
         "category": template.get("category"),
+        "status": template.get("status"),
+        "rejected_reason": template.get("rejected_reason"),
         "body_text": body_text,
         "variable_count": len(set(VARIABLE_PATTERN.findall(body_text))),
         "supported": reason is None,

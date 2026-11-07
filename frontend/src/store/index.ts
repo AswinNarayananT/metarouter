@@ -6,6 +6,7 @@ import organizationReducer from './superAdmin/organizationSlice';
 import auditLogReducer from './superAdmin/auditLogSlice';
 import workspaceReducer from './workspace/workspaceSlice';
 import broadcastReducer from './broadcast/broadcastSlice';
+import templatesReducer from './templates/templatesSlice';
 import knowledgeReducer from './knowledge/knowledgeSlice';
 import chatReducer from './chat/chatSlice';
 import notificationReducer from './notifications/notificationSlice';
@@ -21,6 +22,7 @@ export const store = configureStore({
     auditLogs: auditLogReducer,
     workspace: workspaceReducer,
     broadcast: broadcastReducer,
+    templates: templatesReducer,
     knowledge: knowledgeReducer,
     chat: chatReducer,
     notifications: notificationReducer,

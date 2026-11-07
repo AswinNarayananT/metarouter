@@ -1,17 +1,35 @@
+import ipaddress
 from typing import Optional, Any, Dict
 from sqlalchemy.orm import Session
 from fastapi import Request
+from app.config import settings
 from app.models.audit_log_model import AuditLog
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
 
 
 def get_client_ip(request: Optional[Request]) -> Optional[str]:
     if not request:
         return None
-    # Check X-Forwarded-For if behind proxy
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else None
+    peer = request.client.host if request.client else None
+
+    # X-Forwarded-For is written by the client, so it's only believed from a configured proxy
+    trusted = {ip.strip() for ip in settings.TRUSTED_PROXY_IPS.split(",") if ip.strip()}
+    if peer not in trusted:
+        return peer
+
+    # The proxy adds on the right: the last address that isn't a proxy of ours is who connected to it
+    for value in reversed(request.headers.get("x-forwarded-for", "").split(",")):
+        value = value.strip()
+        if _is_ip(value) and value not in trusted:
+            return value
+    return peer
 
 
 def record_audit_log(

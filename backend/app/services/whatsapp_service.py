@@ -242,7 +242,7 @@ def get_phone_number_status(phone_number_id: str, access_token: str) -> dict:
 def get_message_templates(waba_id: str, access_token: str, max_pages: int = 10, status: Optional[str] = "APPROVED") -> list:
     # status=None lists templates in every state
     url = f"{settings.META_GRAPH_API_URL}/{settings.META_API_VERSION}/{waba_id}/message_templates"
-    params = {"fields": "name,language,category,status,parameter_format,components", "limit": 100}
+    params = {"fields": "name,language,category,status,rejected_reason,parameter_format,components", "limit": 100}
     if status:
         params["status"] = status
     templates = []
@@ -267,10 +267,17 @@ def get_message_templates(waba_id: str, access_token: str, max_pages: int = 10, 
     return templates
 
 
-def create_message_template(waba_id: str, access_token: str, name: str, language: str, body: str, example: list) -> dict:
-    # Submitted for Meta's review; it can be sent once approved
-    component = {"type": "BODY", "text": body, "example": {"body_text": [example]}}
-    return _graph_call("POST", f"{waba_id}/message_templates", access_token, body={"name": name, "language": language, "category": "UTILITY", "components": [component]})
+def create_message_template(waba_id: str, access_token: str, name: str, language: str, body: str, example: list, category: str = "UTILITY") -> dict:
+    # Submitted for Meta's review; it can be sent once approved. Examples go only with variables: Meta refuses an empty one
+    component = {"type": "BODY", "text": body}
+    if example:
+        component["example"] = {"body_text": [example]}
+    return _graph_call("POST", f"{waba_id}/message_templates", access_token, body={"name": name, "language": language, "category": category, "components": [component]})
+
+
+def delete_message_template(waba_id: str, access_token: str, name: str) -> dict:
+    # Removes the name in every language
+    return _graph_call("DELETE", f"{waba_id}/message_templates", access_token, params={"name": name})
 
 
 def callback_data_for(message_id: int) -> str:

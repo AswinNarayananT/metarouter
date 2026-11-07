@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     IMPERSONATION_TOKEN_EXPIRE_MINUTES: int = 30  # Read-only support session in a client workspace; no refresh token, it just ends
     IMPERSONATION_CODE_EXPIRE_SECONDS: int = 60  # One-time code the admin tab hands to the new workspace tab
     COOKIE_SECURE: bool = False  # True in production (HTTPS): the refresh-token cookie is then only sent over HTTPS
+    TRUSTED_PROXY_IPS: str = ""  # Comma-separated proxy addresses whose X-Forwarded-For is believed; empty = none (the header is ignored)
+    WS_SESSION_CHECK_SECONDS: int = 30  # An open live-updates socket re-checks its session this often
 
     # Login protection: failed attempts allowed per email + IP and per IP, then locked for LOGIN_LOCKOUT_MINUTES
     LOGIN_MAX_ATTEMPTS: int = 5
@@ -47,6 +49,10 @@ class Settings(BaseSettings):
     KNOWLEDGE_CHUNK_SIZE: int = 1000  # Characters per chunk sent for embedding
     KNOWLEDGE_CHUNK_OVERLAP: int = 200  # Characters repeated between chunks so answers aren't cut off
     KNOWLEDGE_MAX_DOCUMENTS: int = 50  # Per organization
+    KNOWLEDGE_MAX_PDF_PAGES: int = 500
+    KNOWLEDGE_MAX_TEXT_CHARS: int = 2000000  # A small file can hold far more text than its size suggests
+    KNOWLEDGE_TASK_TIME_LIMIT_SECONDS: int = 600  # Reading and embedding one document; a stuck one fails instead of holding a worker
+    AI_MESSAGES_PER_CUSTOMER_PER_HOUR: int = 30  # Over this, the chat goes to the team and Gemini stops being called for it
 
     # Broadcasts
     BROADCAST_MESSAGES_PER_SECOND: int = 20  # Spread sends below Meta's per-number throughput

@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   Package,
   Workflow,
+  FileText,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { logoutWorkspaceSession, fetchCurrentUser, fetchOrganization } from '@/store/workspace/workspaceThunks';
@@ -85,6 +86,7 @@ export function WorkspaceLayout() {
     { label: 'Customer Chats', path: '/dashboard/chats', icon: MessageSquare, feature: 'customer_chats' },
     { label: 'Tickets', path: '/dashboard/tickets', icon: Ticket, feature: 'customer_chats' },
     { label: 'Broadcast', path: '/dashboard/broadcast', icon: Send, feature: 'broadcasts', adminOnly: true },
+    { label: 'Templates', path: '/dashboard/templates', icon: FileText, feature: 'broadcasts', adminOnly: true },
     // Orders module: orders and products
     { label: 'Orders', path: '/dashboard/orders', icon: ShoppingBag, feature: 'orders' },
     { label: 'Products', path: '/dashboard/products', icon: Package, feature: 'orders' },

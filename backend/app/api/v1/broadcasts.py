@@ -9,11 +9,10 @@ from app.database import get_db
 from app.config import settings
 from app.core.deps import get_current_workspace_user
 from app.models.organization_model import User, Organization
-from app.models.whatsapp_model import WhatsAppNumber
 from app.models.conversation_model import ChatMessage
 from app.models.broadcast_model import Broadcast, BroadcastRecipient
 from app.services.whatsapp_service import get_message_templates, WhatsAppRetryableError, WhatsAppPermanentError, WhatsAppTokenError
-from app.services.channel_service import mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
+from app.services.channel_service import get_workspace_number, mark_number_disconnected, NUMBER_DISCONNECTED_ERROR
 from app.services.broadcast_service import parse_contacts_csv, build_audience, summarize_template, render_body, check_number_quality, tier_capacity
 from app.workers.tasks.broadcast_tasks import process_broadcast_task
 from app.workers.tasks.whatsapp_tasks import send_whatsapp_message_task
@@ -34,7 +33,7 @@ def list_templates(phone_number_id: str = Query(...), db: Session = Depends(get_
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only workspace administrators can manage broadcasts")
 
-    number = _get_number(db, current_user.organization_id, phone_number_id)
+    number = get_workspace_number(db, current_user.organization_id, phone_number_id)
 
     try:
         templates = get_message_templates(number.waba_id, number.access_token)
@@ -249,7 +248,7 @@ def resume_broadcast(broadcast_id: int, db: Session = Depends(get_db), current_u
         raise HTTPException(status_code=400, detail="Cannot resume broadcasts while the workspace is inactive")
 
     # 2. The number must have recovered from a low quality rating
-    number = _get_number(db, current_user.organization_id, broadcast.phone_number_id)
+    number = get_workspace_number(db, current_user.organization_id, broadcast.phone_number_id)
     quality = check_number_quality(number)
     if quality["blocked"]:
         raise HTTPException(status_code=400, detail=quality["warning"])
@@ -283,24 +282,9 @@ def resume_broadcast(broadcast_id: int, db: Session = Depends(get_db), current_u
     }
 
 
-def _get_number(db: Session, organization_id: int, phone_number_id: str) -> WhatsAppNumber:
-    number = db.query(WhatsAppNumber).filter(
-        WhatsAppNumber.organization_id == organization_id,
-        WhatsAppNumber.phone_number_id == phone_number_id
-    ).first()
-
-    if not number:
-        raise HTTPException(status_code=404, detail="WhatsApp number not found for this workspace")
-
-    # Templates, preview, create and resume all need a working token
-    if number.status == "disconnected":
-        raise HTTPException(status_code=400, detail=NUMBER_DISCONNECTED_ERROR)
-    return number
-
-
 def _prepare_broadcast(db: Session, current_user: User, phone_number_id: str, template_name: str, template_language: str, variables: str, use_contact_name: bool, consent_confirmed: bool, file: Optional[UploadFile]) -> dict:
     # 1. The number must belong to this workspace
-    number = _get_number(db, current_user.organization_id, phone_number_id)
+    number = get_workspace_number(db, current_user.organization_id, phone_number_id)
 
     # 2. The template must exist, be approved and be a supported kind
     try:

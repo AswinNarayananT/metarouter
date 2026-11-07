@@ -9,6 +9,7 @@ from app.models.organization_model import Organization
 from app.models.whatsapp_model import WhatsAppNumber
 from app.models.contact_model import ContactOptOut
 from app.config import settings
+from app.core.ai_budget import use_ai_budget
 from app.core.features import is_feature_enabled
 from app.services.ai_service import generate_ai_response
 from app.services.messaging_service import queue_outgoing_message, queue_interactive_message, send_in_order
@@ -218,7 +219,15 @@ def respond_to_customer(db: Session, conversation: Conversation, user_text: str,
     if order_in_progress(conversation.id) and is_feature_enabled(db, conversation.organization_id, "orders") and not ai_auto_reply_on(db, conversation.organization_id):
         queue_outgoing_message(db, conversation, sender="model", content=USE_BUTTONS_TEXT)
         return
-    # 3. While ordering, what the customer typed or said may be a list of things to buy (a media notice never is)
+    # 3. Everything from here can call Gemini: over the customer's hourly limit, the team takes the chat and the AI stops
+    #    (files were counted when they were read)
+    if not from_media and ai_auto_reply_on(db, conversation.organization_id) and not use_ai_budget(conversation.organization_id, conversation.customer_phone):
+        conversation.status = ConversationStatus.HUMAN_TAKEOVER
+        db.commit()
+        queue_outgoing_message(db, conversation, sender="model", content=HANDOVER_FALLBACK_TEXT)
+        hand_over_to_team(db, conversation, user_text, "Too many messages for the AI: sent to the team")
+        return
+    # While ordering, what the customer typed or said may be a list of things to buy (a media notice never is)
     if conversation.intent == "order" and not reply_id and not location and (spoken or not from_media) and handle_order_list(db, conversation, text=user_text):
         return
     # 4. The chat menu (asked once per visit) and what the customer came for: order, problem or something else
@@ -432,6 +441,11 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
     # 1. Generate AI reply
     ai_raw_reply = generate_ai_response(db, conversation, user_text)
 
+    # The team may have taken the chat while the model was answering: it's theirs now
+    db.refresh(conversation)
+    if conversation.status != ConversationStatus.ACTIVE:
+        return
+
     # A problem reported: track it as a ticket from the visit's first message (the AI keeps helping)
     if ai_raw_reply and ISSUE_TAG in ai_raw_reply:
         ai_raw_reply = ai_raw_reply.replace(ISSUE_TAG, "").strip()
@@ -454,8 +468,9 @@ def reply_with_ai(db: Session, conversation: Conversation, user_text: str):
         # 3. The customer needs nothing else: say goodbye, then file and close the ticket
         clean_reply = ai_raw_reply.replace(RESOLVED_TAG, "").strip() or "Glad I could help! Have a great day."
         queue_outgoing_message(db, conversation, sender="model", content=clean_reply)
+        # Only a ticket the AI is handling: one the team owns stays open until they close it
         ticket = get_open_ticket(db, conversation.id)
-        if ticket:
+        if ticket and ticket.status == "ai_handling":
             close_ticket(db, ticket, "resolved_by_ai")
     else:
         queue_outgoing_message(db, conversation, sender="model", content=ai_raw_reply)

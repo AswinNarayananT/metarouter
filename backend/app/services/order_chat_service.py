@@ -3,6 +3,7 @@ import re
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -11,7 +12,8 @@ from app.core.features import is_feature_enabled
 from app.core.redis_client import redis_client
 from app.models.conversation_model import Conversation
 from app.models.product_model import Product
-from app.services.messaging_service import fit, queue_interactive_message, queue_outgoing_message, OutgoingMessageError, INTERACTIVE_BODY_MAX_CHARS, MAX_LIST_ROWS, ROW_TITLE_MAX_CHARS, ROW_DESCRIPTION_MAX_CHARS
+from app.services.chat_flow_service import load_flow, find_node, off_box_types, question_message
+from app.services.messaging_service import fit, queue_interactive_message, queue_outgoing_message, send_in_order, OutgoingMessageError, INTERACTIVE_BODY_MAX_CHARS, MAX_LIST_ROWS, ROW_TITLE_MAX_CHARS, ROW_DESCRIPTION_MAX_CHARS
 from app.services.product_service import current_products, stock_status
 from app.services.order_service import price_items, place_order, publish_order, order_details_text, item_lines_text, address_label, map_link, get_customer_address, workspace_currency, last_order
 from app.services.order_list_service import read_order_list
@@ -147,6 +149,7 @@ QUANTITY_PREFIX = "qty:"
 ORDER_PREFIX = "order:"
 PICK_PREFIX = "pick:"  # "pick:{product id}" / "pick:skip": which product an unclear list item meant
 REORDER_PREFIX = "reorder:"
+ANYTHING_ELSE_PREFIX = "order:more:"  # Asked after an order is placed; the order itself is finished by then
 BODY_ROOM = INTERACTIVE_BODY_MAX_CHARS - 24  # A little spare under WhatsApp's limit
 
 ITEM_ADDED_BUTTONS = [{"id": "order:add", "title": "➕ Add another item"}, {"id": "order:place", "title": "✅ Place order"}, {"id": "order:cancel", "title": "❌ Cancel"}]
@@ -154,6 +157,7 @@ FULFILMENT_BUTTONS = [{"id": "order:fulfil:delivery", "title": "🚚 Delivery"},
 SAVED_ADDRESS_BUTTONS = [{"id": "order:address:same", "title": "✅ Same address"}, {"id": "order:address:new", "title": "📍 New address"}]
 SKIP_BUTTON = [{"id": "order:address:skip", "title": "Skip"}]
 CONFIRM_BUTTONS = [{"id": "order:confirm", "title": "✅ Confirm order"}, {"id": "order:cancel", "title": "❌ Cancel"}]
+ANYTHING_ELSE_BUTTONS = [{"id": "order:more:yes", "title": "Yes"}, {"id": "order:more:no", "title": "No"}]
 LAST_ORDER_BUTTONS = [{"id": "reorder:same", "title": "🔁 Same again"}, {"id": "reorder:add", "title": "➕ Add to it"}, {"id": "reorder:new", "title": "🛒 New order"}]
 
 FULFILMENT_QUESTION = "How would you like to get your order?"
@@ -164,6 +168,9 @@ CANCELLED_TEXT = "Your order was cancelled. Tap View products whenever you're re
 NOTHING_AVAILABLE_TEXT = "Sorry, none of these items can be ordered right now. Tap View products to pick again."
 CHANGED_TEXT = "Prices or stock changed since you saw your order. Please check and confirm again."
 USE_BUTTONS_TEXT = "You have an order in progress. Please use the buttons above to continue, or tap ❌ Cancel to stop."
+ANYTHING_ELSE_TEXT = "Anything else we can help you with?"
+MORE_OPTIONS_TEXT = "What can we help you with?"  # The chat menu's options again, without the greeting
+GOODBYE_TEXT = "Thank you! 😊"
 LIST_HEAD_TEXT = "Here's what I got from your list ✅"
 NOTHING_FOUND_TEXT = "Sorry, we couldn't find these: {}. Tap View products to see what we have."
 LAST_ORDER_GONE_TEXT = "Sorry, the items from your last order aren't available right now. Tap View products to pick again."
@@ -480,13 +487,25 @@ def confirm_order(db: Session, conversation: Conversation, selection: dict):
     clear_selection(conversation.id)
     redis_client.set(PLACED_KEY.format(conversation.id), order.number, ex=PLACED_MEMORY_SECONDS)
 
+    # What the customer came for is done: whatever they say next starts fresh
+    conversation.intent = None
+    conversation.menu_sent_at = None
+    db.commit()
+
     # 4. Tell the customer and the team (each step on its own: the order exists whatever happens next)
     show = "Show this number to the delivery person." if order.fulfilment == "delivery" else "Show this number when you pick it up."
     head = f"✅ Order #{order.number} is placed! {show} We'll message you when it's accepted."
     details = order_details_text(lines, order.total, order.currency, order.fulfilment, selection.get("address"), 3000)
     how = "Delivery" if order.fulfilment == "delivery" else "Pickup"
+
+    def tell_customer():
+        # One chain, so "Anything else?" can't arrive before the confirmation
+        queued = queue_outgoing_message(db, conversation, sender="model", content=f"{head}\n\n{details}", send=False)
+        queued.append(queue_interactive_message(db, conversation, ANYTHING_ELSE_TEXT, buttons=ANYTHING_ELSE_BUTTONS, send=False))
+        send_in_order(queued)
+
     for step in (
-        lambda: queue_outgoing_message(db, conversation, sender="model", content=f"{head}\n\n{details}"),
+        tell_customer,
         lambda: record_activity(db, conversation, f"Order #{order.number} placed ({format_price(order.total, order.currency)}, {how})"),
         lambda: notify_team_of_order(db, conversation, order),
         lambda: publish_order(order),
@@ -498,6 +517,22 @@ def confirm_order(db: Session, conversation: Conversation, selection: dict):
             print(f"[ORDER] #{order.number} (org {order.organization_id}) placed, but a follow-up step failed: {exc}")
 
 
+def handle_anything_else(db: Session, conversation: Conversation, reply_id: str):
+    # "Yes": the chat menu's own options, in other words; tapping one works exactly like the greeting's
+    if reply_id != f"{ANYTHING_ELSE_PREFIX}yes":
+        queue_outgoing_message(db, conversation, sender="model", content=GOODBYE_TEXT)
+        return
+
+    flow, _ = load_flow(db, conversation.organization_id)
+    message = question_message(db, conversation, flow, find_node(flow, flow["start"]), off_box_types(db, conversation.organization_id), text=MORE_OPTIONS_TEXT)
+    if message.get("buttons") or message.get("menu"):
+        queue_interactive_message(db, conversation, message["body"], buttons=message.get("buttons"), menu=message.get("menu"))
+    else:
+        queue_outgoing_message(db, conversation, sender="model", content=message["body"])
+    conversation.menu_sent_at = datetime.now(timezone.utc)
+    db.commit()
+
+
 def handle_order_tap(db: Session, conversation: Conversation, reply_id: Optional[str]) -> bool:
     # Quantity / order buttons; True = handled. Orders switched off: the tap is just text for the normal flow
     if not reply_id or not reply_id.startswith((QUANTITY_PREFIX, ORDER_PREFIX, PICK_PREFIX, REORDER_PREFIX)):
@@ -505,7 +540,9 @@ def handle_order_tap(db: Session, conversation: Conversation, reply_id: Optional
     if not is_feature_enabled(db, conversation.organization_id, "orders"):
         return False
     with order_step_lock(conversation.id):
-        if reply_id.startswith(PICK_PREFIX):
+        if reply_id.startswith(ANYTHING_ELSE_PREFIX):
+            handle_anything_else(db, conversation, reply_id)
+        elif reply_id.startswith(PICK_PREFIX):
             handle_pick(db, conversation, reply_id)
         elif reply_id.startswith(REORDER_PREFIX):
             handle_reorder(db, conversation, reply_id)

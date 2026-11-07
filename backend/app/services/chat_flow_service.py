@@ -114,10 +114,11 @@ def render_text(db: Session, conversation: Conversation, text: str) -> str:
     return text.strip()
 
 
-def question_message(db: Session, conversation: Conversation, flow: dict, node: dict, off_boxes: set) -> dict:
+def question_message(db: Session, conversation: Conversation, flow: dict, node: dict, off_boxes: set, text: Optional[str] = None) -> dict:
     # Up to 3 short options go out as buttons, more (or longer titles) as a list; no option left = the text alone
+    # text: the same options asked in other words (not the greeting again)
     options = visible_options(flow, node, off_boxes)
-    body = fit(render_text(db, conversation, node["text"]) or FALLBACK_QUESTION_TEXT, INTERACTIVE_BODY_MAX_CHARS)
+    body = fit(render_text(db, conversation, text or node["text"]) or FALLBACK_QUESTION_TEXT, INTERACTIVE_BODY_MAX_CHARS)
     if not options:
         return {"body": body}
 

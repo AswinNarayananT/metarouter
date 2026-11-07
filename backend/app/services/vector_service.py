@@ -41,7 +41,15 @@ def extract_pdf_pages(file_path: str) -> List[str]:
         reader = PdfReader(file_path)
         if reader.is_encrypted:
             raise KnowledgeDocumentError("This PDF is password protected. Upload a copy without a password.")
-        pages = [page.extract_text() or "" for page in reader.pages]
+        if len(reader.pages) > settings.KNOWLEDGE_MAX_PDF_PAGES:
+            raise KnowledgeDocumentError(f"This PDF has more than {settings.KNOWLEDGE_MAX_PDF_PAGES} pages. Upload a shorter one.")
+        pages = []
+        total_chars = 0
+        for page in reader.pages:
+            pages.append(page.extract_text() or "")
+            total_chars += len(pages[-1])
+            if total_chars > settings.KNOWLEDGE_MAX_TEXT_CHARS:
+                raise KnowledgeDocumentError("This PDF has too much text. Upload a shorter one.")
     except KnowledgeDocumentError:
         raise
     except Exception as exc:

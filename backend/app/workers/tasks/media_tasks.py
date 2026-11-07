@@ -22,6 +22,7 @@ from app.core.redis_client import redis_client
 from app.realtime.notify import notify_new_messages, notify_attachment_updated
 from app.services.ticket_service import start_ticket_session
 from app.services.conversation_service import begin_visit_if_new, last_conversation_activity_at
+from app.core.ai_budget import use_ai_budget
 from app.core.features import is_feature_enabled
 
 RETRY_BASE_SECONDS = 30
@@ -246,7 +247,21 @@ def parse_document_task(self, attachment_id: int):
         if not locked:
             return
 
-        # 2. Read the stored file
+        # 2. Everything below calls Gemini: not for a suspended workspace, or a customer over their hourly limit
+        #    (the file stays saved for the team; a retry was already counted)
+        skip_reason = None
+        if not _workspace_active(db, attachment.organization_id):
+            skip_reason = "Workspace is suspended"
+        elif self.request.retries == 0 and not use_ai_budget(attachment.organization_id, attachment.message.conversation.customer_phone):
+            skip_reason = "Too many messages for the AI"
+        if skip_reason:
+            attachment.parse_status = "skipped"
+            attachment.error = skip_reason
+            db.commit()
+            notify_attachment_updated(attachment)
+            return
+
+        # Read the stored file
         with open(os.path.join(settings.MEDIA_STORAGE_PATH, attachment.storage_path), "rb") as f:
             content = f.read()
 
@@ -358,6 +373,10 @@ def _mark_download_failed(db: Session, attachment: ChatAttachment, error: str):
     _acknowledge_document(db, attachment, f"[{what.capitalize()} received] The customer sent a {what} that could not be downloaded. Kindly ask them to send it again or type their message.")
 
 
+def _workspace_active(db: Session, organization_id: int) -> bool:
+    return db.query(Organization.subscription_status).filter(Organization.id == organization_id).scalar() == "active"
+
+
 def _can_reply(db: Session, attachment: ChatAttachment) -> bool:
     # AI stays silent while a team member is handling the chat
     conversation = attachment.message.conversation
@@ -367,8 +386,7 @@ def _can_reply(db: Session, attachment: ChatAttachment) -> bool:
     if number_is_disconnected(db, conversation.organization_id, conversation.phone_number_id):
         return False
     # ... and when the workspace is inactive (suspended)
-    org = db.query(Organization).filter(Organization.id == conversation.organization_id).first()
-    return bool(org) and org.subscription_status == "active"
+    return _workspace_active(db, conversation.organization_id)
 
 
 def _acknowledge_document(db: Session, attachment: ChatAttachment, summary: str, spoken: bool = False):

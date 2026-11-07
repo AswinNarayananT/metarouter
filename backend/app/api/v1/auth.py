@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 import json
 import hashlib
 import secrets
+import uuid
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -89,12 +90,13 @@ def workspace_login(payload: WorkspaceLoginRequest, request: Request, response: 
     if org.subscription_status != "active":
         raise HTTPException(status_code=403, detail=WORKSPACE_SUSPENDED_ERROR)
 
-    # 3. Generate tokens carrying isolation data
+    # 3. Generate tokens carrying isolation data (family: one login, so logout can end all its tokens together)
     token_payload = {
         "sub": user.email,
         "organization_id": org.id,
         "role": user.role,
-        "token_version": user.token_version
+        "token_version": user.token_version,
+        "family": uuid.uuid4().hex
     }
     access_token = create_access_token(data=token_payload)
     refresh_token = create_refresh_token(data=token_payload)
@@ -205,14 +207,15 @@ def refresh_access_token(response: Response, refresh_token: Optional[str] = Cook
         "sub": user.email,
         "organization_id": org_id,
         "role": user.role,
-        "token_version": user.token_version
+        "token_version": user.token_version,
+        "family": payload.get("family")
     }
     new_access_token = create_access_token(data=new_token_payload)
 
     # Rotation: a new refresh token each time; the old one stops working after a short grace period that
     # runs from its first use, so a stolen refresh token can't be used for long
     blacklist_token(payload, reason=rotation_marker(), only_first=True)
-    _set_refresh_cookie(response, create_refresh_token(data={**new_token_payload, "family": payload.get("family")}))
+    _set_refresh_cookie(response, create_refresh_token(data=new_token_payload))
 
     return {
         "access_token": new_access_token,
@@ -230,6 +233,7 @@ def logout(request: Request, response: Response, authorization: Optional[str] = 
         access_payload = get_current_user_payload(token)
         if access_payload:
             blacklist_token(access_payload)
+            revoke_token_family(access_payload)
         # An expired token is still checked for being a support session
         session_payload = access_payload or decode_token_ignoring_expiry(token)
 
@@ -328,7 +332,7 @@ def change_password(
     db.commit()
 
     # This device stays logged in with fresh tokens
-    token_payload = {"sub": current_user.email, "organization_id": current_user.organization_id, "role": current_user.role, "token_version": current_user.token_version}
+    token_payload = {"sub": current_user.email, "organization_id": current_user.organization_id, "role": current_user.role, "token_version": current_user.token_version, "family": uuid.uuid4().hex}
     _set_refresh_cookie(response, create_refresh_token(data=token_payload))
 
     return {"message": "Password updated successfully", "access_token": create_access_token(data=token_payload)}

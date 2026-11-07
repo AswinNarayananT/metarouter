@@ -2,8 +2,8 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-# Downloads need limiting here: unlimited, npm crashes during the Docker build
-RUN npm ci --maxsockets=4 --no-audit --no-fund
+# npm sometimes crashes partway through inside a Docker build ("Exit handler never called"): try again before giving up
+RUN npm ci --maxsockets=4 --no-audit --no-fund || npm ci --maxsockets=4 --no-audit --no-fund || npm ci --maxsockets=4 --no-audit --no-fund
 COPY . .
 # API and WebSocket URLs come from docker-compose (root .env); .env files are not copied into the image
 ARG VITE_API_URL

@@ -71,7 +71,7 @@ def _describe_message(message: dict) -> dict:
         return {"text": reply.get("title", ""), "message_type": "text", "message_data": {"reply_id": reply.get("id")}}
 
     if msg_type == "location":
-        # "📍 Shared location: Brototype, Infopark Rd (10.0159, 76.3419)" - the AI can answer about it
+        # "📍 Shared location: Neurosta, Main Rd (10.0159, 76.3419)" - the AI can answer about it
         location = message.get("location", {})
         place = ", ".join(p for p in (location.get("name"), location.get("address")) if p)
         coordinates = f"{location.get('latitude')}, {location.get('longitude')}"
